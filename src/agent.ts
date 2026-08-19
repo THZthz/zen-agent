@@ -398,11 +398,6 @@ export class ZenAgent {
           input: call.input,
         });
       }
-      active.session.llmMessages.push({
-        role: "assistant",
-        content: assistantParts,
-      });
-
       const toolResults: Array<{
         toolCallId: string;
         toolName: string;
@@ -417,6 +412,10 @@ export class ZenAgent {
         }
       }
 
+      active.session.llmMessages.push({
+        role: "assistant",
+        content: assistantParts,
+      });
       active.session.llmMessages.push({
         role: "tool",
         content: toolResults.map((result) => ({

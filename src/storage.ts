@@ -153,7 +153,52 @@ export async function readStoredSession(
   if (!parsed.config.systemPrompt) {
     parsed.config.systemPrompt = "";
   }
+  parsed.llmMessages = sanitizeLlmMessages(parsed.llmMessages);
   return parsed;
+}
+
+export function sanitizeLlmMessages(messages: ModelMessage[]): ModelMessage[] {
+  const callIds = new Set<string>();
+  const resolvedIds = new Set<string>();
+
+  for (const message of messages) {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const part of message.content as Array<{ type?: string; toolCallId?: string }>) {
+        if (part.type === "tool-call" && part.toolCallId) {
+          callIds.add(part.toolCallId);
+        }
+      }
+    } else if (message.role === "tool" && Array.isArray(message.content)) {
+      for (const part of message.content as Array<{ type?: string; toolCallId?: string }>) {
+        if (part.type === "tool-result" && part.toolCallId) {
+          resolvedIds.add(part.toolCallId);
+        }
+      }
+    }
+  }
+
+  const unresolved = new Set(
+    [...callIds].filter((id) => !resolvedIds.has(id)),
+  );
+  if (unresolved.size === 0) {
+    return messages;
+  }
+
+  return messages.filter((message) => {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      const parts = message.content as Array<{ type?: string; toolCallId?: string }>;
+      if (parts.some((p) => p.type === "tool-call" && p.toolCallId && unresolved.has(p.toolCallId))) {
+        return false;
+      }
+    }
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      const parts = message.content as Array<{ type?: string; toolCallId?: string }>;
+      if (parts.some((p) => p.type === "tool-result" && p.toolCallId && unresolved.has(p.toolCallId))) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 export async function findSessionCwd(sessionId: string): Promise<string | undefined> {
