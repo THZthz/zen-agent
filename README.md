@@ -6,6 +6,8 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Bash execution always uses Zed's ACP terminal (no local bash subprocess)
 - No permission prompts (approval policy: `never`)
 - Sessions are stored in `<project>/.sessions/`
+- LLM request/response transcripts are stored as `<project>/.sessions/<sessionId>.jsonl`
+- Runtime diagnostics are stored in `<project>/.sessions/zen-agent.log`
 - LLM provider: Deepseek via the Vercel AI SDK
 - Selectable models:
   - `deepseek-v4-flash`
@@ -101,6 +103,16 @@ These are exposed as ACP session config options and can be changed with `session
 | `DEEPSEEK_API_KEY` | — | Deepseek API key (required) |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI-compatible base URL |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Fallback model when no session config is present |
+
+## Logs
+
+Inside each project's `.sessions/` directory:
+
+| File | Purpose |
+| --- | --- |
+| `<sessionId>.json` | Session state for resume/load |
+| `<sessionId>.jsonl` | LLM request/response transcript |
+| `zen-agent.log` | Runtime diagnostic log |
 
 ## Development
 

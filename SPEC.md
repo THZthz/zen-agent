@@ -100,6 +100,8 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
   - `title`
   - `events` (ACP `session/update` payloads for replay)
   - `llmMessages` (AI SDK message history for continued conversation)
+- LLM request/response transcripts are appended to `<cwd>/.sessions/<sessionId>.jsonl`.
+- Runtime diagnostics are appended to `<cwd>/.sessions/zen-agent.log`.
 - Return `{ sessionId }`.
 - `mcpServers` and `additionalDirectories` are accepted but ignored.
 - The `.sessions/` directory is created if missing.

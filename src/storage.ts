@@ -43,6 +43,14 @@ export function sessionPath(cwd: string, sessionId: string): string {
   return join(sessionDirectory(cwd), `${sessionId}.json`);
 }
 
+export function sessionLlmLogPath(cwd: string, sessionId: string): string {
+  return join(sessionDirectory(cwd), `${sessionId}.jsonl`);
+}
+
+export function runtimeLogPath(cwd: string): string {
+  return join(sessionDirectory(cwd), "zen-agent.log");
+}
+
 function generateSessionId(): string {
   return `sess_${randomBytes(12).toString("hex")}`;
 }

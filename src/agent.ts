@@ -12,11 +12,14 @@ import {
   findSessionCwd,
   listStoredSessions,
   readStoredSession,
+  runtimeLogPath,
+  sessionLlmLogPath,
   writeSession,
   type ModelId,
   type StoredSession,
   type ThinkingEffort,
 } from "./storage.js";
+import { appendJsonLine, makeLogEntry } from "./logger.js";
 import { runLlmStep, SYSTEM_PROMPT, type LlmToolCall } from "./llm/deepseek.js";
 
 interface ActiveSession {
@@ -125,6 +128,9 @@ export class ZenAgent {
       session,
       abortController: null,
     });
+    void this.logRuntime(params.cwd, "info", "session created", {
+      sessionId: session.sessionId,
+    });
     this.scheduleAvailableCommands(session.sessionId, cx);
     return {
       sessionId: session.sessionId,
@@ -141,6 +147,9 @@ export class ZenAgent {
     this.sessions.set(params.sessionId, {
       session,
       abortController: null,
+    });
+    void this.logRuntime(params.cwd, "info", "session loaded", {
+      sessionId: session.sessionId,
     });
 
     for (const update of session.events) {
@@ -165,6 +174,9 @@ export class ZenAgent {
     this.sessions.set(params.sessionId, {
       session,
       abortController: null,
+    });
+    void this.logRuntime(params.cwd, "info", "session resumed", {
+      sessionId: session.sessionId,
     });
     this.scheduleAvailableCommands(session.sessionId, cx);
     return {
@@ -253,6 +265,10 @@ export class ZenAgent {
 
     try {
       const userText = await this.promptBlocksToText(params.prompt);
+      void this.logRuntime(active.session.cwd, "info", "prompt received", {
+        sessionId: params.sessionId,
+        text: userText,
+      });
       const slashCommand = this.parseSlashCommand(userText);
 
       if (slashCommand) {
@@ -285,8 +301,15 @@ export class ZenAgent {
       return { stopReason };
     } catch (error) {
       if (controller.signal.aborted) {
+        void this.logRuntime(active.session.cwd, "warn", "prompt cancelled", {
+          sessionId: params.sessionId,
+        });
         return { stopReason: "cancelled" };
       }
+      void this.logRuntime(active.session.cwd, "error", "prompt failed", {
+        sessionId: params.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     } finally {
       active.abortController = null;
@@ -302,6 +325,15 @@ export class ZenAgent {
   ): Promise<acp.StopReason> {
     for (let step = 0; step < MAX_TURN_STEPS; step++) {
       const assistantMessageId = newMessageId();
+
+      void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
+        type: "llm_request",
+        timestamp: new Date().toISOString(),
+        model: active.session.config.model,
+        thinkingEffort: active.session.config.thinkingEffort,
+        system: this.buildSystemPrompt(active.session),
+        messages: active.session.llmMessages,
+      });
 
       const llmResult = await runLlmStep({
         messages: active.session.llmMessages,
@@ -323,6 +355,14 @@ export class ZenAgent {
             content: { type: "text", text: delta },
           });
         },
+      });
+
+      void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
+        type: "llm_response",
+        timestamp: new Date().toISOString(),
+        text: llmResult.text,
+        toolCalls: llmResult.toolCalls,
+        finishReason: llmResult.finishReason,
       });
 
       if (llmResult.toolCalls.length === 0) {
@@ -540,6 +580,11 @@ export class ZenAgent {
         outputByteLimit: 1_000_000,
       });
       terminalId = createResp.terminalId;
+      void this.logRuntime(active.session.cwd, "info", "terminal created", {
+        sessionId: active.session.sessionId,
+        terminalId,
+        command,
+      });
 
       await this.emit(active, cx, {
         sessionUpdate: "tool_call_update",
@@ -559,6 +604,13 @@ export class ZenAgent {
       });
 
       await releaseTerminal();
+      void this.logRuntime(active.session.cwd, "info", "terminal finished", {
+        sessionId: active.session.sessionId,
+        terminalId,
+        command,
+        exitCode: exit.exitCode,
+        signal: exit.signal,
+      });
 
       const cancelled = cancelledBySignal || signal.aborted;
       const status = cancelled || exit.exitCode !== 0 ? "failed" : "completed";
@@ -688,6 +740,37 @@ export class ZenAgent {
     active?.abortController?.abort();
   }
 
+  private async logRuntime(
+    cwd: string,
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    details?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await appendJsonLine(
+        runtimeLogPath(cwd),
+        makeLogEntry(level, message, details),
+      );
+    } catch {
+      // Logging must never break the agent.
+    }
+  }
+
+  private async logLlmExchange(
+    cwd: string,
+    sessionId: string,
+    entry: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await appendJsonLine(
+        sessionLlmLogPath(cwd, sessionId),
+        entry,
+      );
+    } catch {
+      // Logging must never break the agent.
+    }
+  }
+
   private scheduleAvailableCommands(
     sessionId: string,
     cx: acp.AgentContext,
@@ -759,6 +842,9 @@ export class ZenAgent {
 
     active.session.config.systemPrompt = command.argument;
     await this.save(active);
+    void this.logRuntime(active.session.cwd, "info", "system prompt updated", {
+      sessionId: active.session.sessionId,
+    });
 
     await this.emit(active, cx, {
       sessionUpdate: "agent_message_chunk",
