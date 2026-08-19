@@ -152,7 +152,7 @@ export class ZenAgent {
       sessionId: session.sessionId,
     });
 
-    for (const update of session.events) {
+    for (const update of this.coalesceReplayEvents(session.events)) {
       await cx.notify(acp.methods.client.session.update, {
         sessionId: session.sessionId,
         update,
@@ -738,6 +738,38 @@ export class ZenAgent {
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
     active?.abortController?.abort();
+  }
+
+  private coalesceReplayEvents(events: acp.SessionUpdate[]): acp.SessionUpdate[] {
+    const result: acp.SessionUpdate[] = [];
+
+    for (const event of events) {
+      const last = result[result.length - 1];
+
+      if (
+        last &&
+        (event.sessionUpdate === "agent_thought_chunk" ||
+          event.sessionUpdate === "agent_message_chunk") &&
+        last.sessionUpdate === event.sessionUpdate &&
+        "messageId" in last &&
+        "messageId" in event &&
+        last.messageId === event.messageId &&
+        last.content.type === "text" &&
+        event.content.type === "text"
+      ) {
+        result[result.length - 1] = {
+          ...last,
+          content: {
+            type: "text",
+            text: last.content.text + event.content.text,
+          },
+        } as acp.SessionUpdate;
+      } else {
+        result.push(event);
+      }
+    }
+
+    return result;
   }
 
   private async logRuntime(
