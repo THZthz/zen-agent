@@ -112,7 +112,15 @@ After `session/new`, `session/load`, or `session/resume`, Zen Agent sends an `av
 | --- | --- |
 | `prompt` | Set a custom system prompt / session instructions. |
 
-The user can type `/prompt <text>` as the first message. Zen Agent stores the text as the session's custom system prompt and returns `end_turn` without invoking the model. Subsequent prompts combine the default system prompt with the custom instructions.
+The user can type `/prompt <text>` as the first message. The input is unstructured text, so multi-line content is supported:
+
+```text
+/prompt
+Always prefer safe refactors.
+Add tests for all changes.
+```
+
+Zen Agent stores the text after `/prompt` (including newlines) as the session's custom system prompt and returns `end_turn` without invoking the model. Subsequent prompts combine the default system prompt with the custom instructions.
 
 ## 5. Agent Turn Lifecycle (`session/prompt`)
 

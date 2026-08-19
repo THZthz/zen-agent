@@ -63,13 +63,23 @@ Zen Agent advertises a slash command in the agent panel:
 | --- | --- |
 | `/prompt <text>` | Set a custom system prompt / session instructions before continuing |
 
-Example:
+Examples:
+
+Single-line:
 
 ```text
 /prompt Always prefer safe refactors and add tests.
 ```
 
-The custom instructions are combined with the default Zen Agent system prompt for the rest of the session.
+Multi-line:
+
+```text
+/prompt
+Always prefer safe refactors.
+Add tests for all changes.
+```
+
+Everything after `/prompt` — including newlines — is captured as the custom system prompt. The custom instructions are combined with the default Zen Agent system prompt for the rest of the session.
 
 ## Session Configuration
 
