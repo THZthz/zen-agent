@@ -1,7 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelMessage } from "ai";
 import {
@@ -13,6 +13,7 @@ import {
   listStoredSessions,
   readStoredSession,
   runtimeLogPath,
+  sessionDirectory,
   sessionLlmLogPath,
   writeSession,
   type ModelId,
@@ -431,6 +432,19 @@ export class ZenAgent {
     return "max_turn_requests";
   }
 
+  private truncateCommand(command: string): string {
+    const maxLines = 5;
+    const maxLength = 300;
+    const lines = command.split("\n");
+    if (lines.length > maxLines) {
+      return `${lines.slice(0, maxLines).join("\n")}\n... [truncated]`;
+    }
+    if (command.length > maxLength) {
+      return `${command.slice(0, maxLength)}... [truncated]`;
+    }
+    return command;
+  }
+
   private async executeLlmToolCall(
     active: ActiveSession,
     cx: acp.AgentContext,
@@ -500,10 +514,16 @@ export class ZenAgent {
       };
     }
 
+    const logPath = join(
+      sessionDirectory(active.session.cwd),
+      `terminal-${call.id}.log`,
+    );
+    const wrappedCommand = `set -o pipefail\n{ ${command} ; } 2>&1 | tee "${logPath}"`;
+
     await this.emit(active, cx, {
       sessionUpdate: "tool_call",
       toolCallId: call.id,
-      title: `$ ${command}`,
+      title: `$ ${this.truncateCommand(command)}`,
       kind: "execute",
       status: "pending",
       rawInput: { command },
@@ -573,7 +593,7 @@ export class ZenAgent {
       const createResp = await cx.request(acp.methods.client.terminal.create, {
         sessionId: active.session.sessionId,
         command: "/bin/bash",
-        args: ["-lc", command],
+        args: ["-lc", wrappedCommand],
         cwd: active.session.cwd,
         env: [],
         outputByteLimit: 1_000_000,
@@ -616,6 +636,7 @@ export class ZenAgent {
       const outputText =
         outputResp.output ||
         (status === "completed" ? "(no output)" : `exit code ${exit.exitCode ?? "unknown"}`);
+      const outputForModel = outputText + `\n\n[Full output saved to ${logPath}]`;
 
       await this.emit(active, cx, {
         sessionUpdate: "tool_call_update",
@@ -628,13 +649,14 @@ export class ZenAgent {
           signal: exit.signal,
           truncated: outputResp.truncated,
           cancelled,
+          fullOutputPath: logPath,
         },
       });
 
       return {
         toolCallId: call.id,
         toolName: "bash",
-        output: { type: "text", value: outputText },
+        output: { type: "text", value: outputForModel },
       };
     } catch (error) {
       await releaseTerminal();
