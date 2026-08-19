@@ -1,0 +1,45 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# TypeScript
+
+> TypeScript library for the Agent Client Protocol
+
+The [@agentclientprotocol/sdk](https://www.npmjs.com/package/@agentclientprotocol/sdk) npm
+package provides implementations of both sides of the Agent Client Protocol that
+you can use to build your own agent server or client.
+
+To get started, add the package as a dependency to your project:
+
+```bash theme={null}
+npm install @agentclientprotocol/sdk
+```
+
+Depending on what kind of tool you're building, you'll start with either the
+[`agent()`](https://agentclientprotocol.github.io/typescript-sdk/functions/agent.html)
+or
+[`client()`](https://agentclientprotocol.github.io/typescript-sdk/functions/client.html)
+function to register typed handlers for the ACP methods you support and connect
+to your counterpart. The
+[examples directory](https://github.com/agentclientprotocol/typescript-sdk/tree/main/src/examples)
+contains runnable implementations of both sides that can be driven from your terminal or from
+an ACP Client like [Zed](https://zed.dev), making them great starting points for
+your own integration!
+
+Browse the [TypeScript library reference](https://agentclientprotocol.github.io/typescript-sdk) for detailed API documentation.
+
+## Deprecated classes
+
+Earlier versions of the library were built around the
+[AgentSideConnection](https://agentclientprotocol.github.io/typescript-sdk/classes/AgentSideConnection.html)
+and
+[ClientSideConnection](https://agentclientprotocol.github.io/typescript-sdk/classes/ClientSideConnection.html)
+classes. These classes are now deprecated in favor of the fluent `agent()` and
+`client()` APIs. They remain available for backwards compatibility, but new
+integrations should use the fluent API as shown in the
+[examples](https://github.com/agentclientprotocol/typescript-sdk/tree/main/src/examples).
+
+## Users
+
+For a complete, production-ready implementation of an ACP agent, check out [Gemini CLI](https://github.com/google-gemini/gemini-cli/tree/main/packages/cli/src/acp).
