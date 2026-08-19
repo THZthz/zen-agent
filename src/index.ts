@@ -9,7 +9,7 @@ const output = Writable.toWeb(process.stdout);
 const input = Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>;
 const stream = acp.ndJsonStream(output, input);
 
-acp
+const connection = acp
   .agent({ name: "zen-agent" })
   .onRequest("initialize", (ctx) => agent.initialize(ctx.params))
   .onRequest("authenticate", (ctx) => agent.authenticate(ctx.params))
@@ -23,3 +23,8 @@ acp
   .onRequest("session/prompt", (ctx) => agent.prompt(ctx.params, ctx.client))
   .onNotification("session/cancel", (ctx) => agent.cancel(ctx.params))
   .connect(stream);
+
+void connection.closed.then(() => process.exit(0)).catch(() => process.exit(1));
+process.stdin.on("end", () => process.exit(0));
+process.on("SIGHUP", () => process.exit(0));
+process.on("SIGTERM", () => process.exit(0));
