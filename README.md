@@ -9,7 +9,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - LLM request/response transcripts are stored as `<project>/.sessions/llm/<sessionId>.jsonl`
 - Runtime diagnostics are stored in `<project>/.sessions/logs/zen-agent.log`
 - Full terminal output is saved to `<project>/.sessions/terminals/<sessionId>/terminal-<callId>.log` via `script`; the model receives truncated output plus the log path
-- LLM provider: Deepseek via the Vercel AI SDK
+- LLM provider: Deepseek via its OpenAI-compatible chat completions API, with a direct SSE client (`runLlmStep` in `src/llm/deepseek.ts`)
 - Selectable models:
   - `deepseek-v4-flash`
   - `deepseek-v4-pro`
@@ -143,6 +143,20 @@ When you send a new message (or press Stop) while Zen Agent is working, Zed send
 - **Between steps** — the turn stops at the next boundary check.
 
 A hard abort (terminal killed, stream cut) only happens on `session/close`, `session/delete`, or after `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` as an escape hatch for runaway commands. Zed's Stop button uses the same `session/cancel` notification as force-send (the protocol carries no reason field), so it is graceful too.
+
+## Live Streaming of Thinking & Answers
+
+Zen Agent talks to DeepSeek's OpenAI-compatible chat completions endpoint **directly** (own SSE parser in `runLlmStep`) instead of going through the Vercel AI SDK's `streamText` + `@ai-sdk/openai`. Reason:
+
+`@ai-sdk/openai` runs `throwIfOpenAIStreamErrorBeforeOutput`, which reads ahead from the response until it sees the first "output" chunk (non-empty `delta.content` or a tool call). In DeepSeek thinking mode the reasoning phase only carries `delta.reasoning_content`, which that check cannot see — so the SDK swallowed the **entire reasoning phase** and delivered it as a buffered burst once the answer started. Visually the thinking block appeared to not stream at all (and the answer was delayed behind the flushed backlog).
+
+Our direct client parses each SSE event as it arrives, so:
+
+- `delta.reasoning_content` is forwarded to Zed as `agent_thought_chunk` **live**, token by token.
+- `delta.content` is forwarded as `agent_message_chunk` live.
+- Streaming `delta.tool_calls` fragments are accumulated per index and emitted as complete tool calls.
+- Usage is read from DeepSeek's raw chunk (`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`), which the SDK's zod schema strips — so the cache hit ratio and CNY cost are now accurate.
+- Retries (429/5xx) happen only before the first byte, so an in-flight stream is never replayed.
 
 Default pricing (official DeepSeek V4 pricing, CNY per 1M tokens). Off-peak price is half the peak price. Peak hours are Beijing time 09:00-12:00 and 14:00-18:00; all other hours are off-peak:
 

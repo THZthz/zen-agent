@@ -1,27 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   costYuan,
-  extractUsage,
   getModelPricing,
   isPeakTime,
+  parseDeepSeekUsage,
+  runLlmStep,
 } from "./deepseek.js";
 
 const timing = { llmMs: 5000, thinkingMs: 2000, answeringMs: 3000 };
 
-describe("extractUsage", () => {
-  it("reads DeepSeek-style cache tokens from raw usage", () => {
-    const usage = extractUsage(
+describe("parseDeepSeekUsage", () => {
+  it("reads DeepSeek-style cache tokens and reasoning tokens from raw usage", () => {
+    const usage = parseDeepSeekUsage(
       {
-        inputTokens: 10000,
-        outputTokens: 500,
-        totalTokens: 10500,
-        inputTokenDetails: { noCacheTokens: undefined, cacheReadTokens: undefined, cacheWriteTokens: undefined },
-        outputTokenDetails: { textTokens: undefined, reasoningTokens: 200 },
-        raw: {
-          prompt_cache_hit_tokens: 8000,
-          prompt_cache_miss_tokens: 2000,
-          completion_tokens_details: { reasoning_tokens: 200 },
-        },
+        prompt_tokens: 10000,
+        completion_tokens: 500,
+        total_tokens: 10500,
+        prompt_cache_hit_tokens: 8000,
+        prompt_cache_miss_tokens: 2000,
+        completion_tokens_details: { reasoning_tokens: 200 },
       },
       timing,
     );
@@ -29,6 +26,7 @@ describe("extractUsage", () => {
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(10000);
     expect(usage?.outputTokens).toBe(500);
+    expect(usage?.totalTokens).toBe(10500);
     expect(usage?.cacheReadTokens).toBe(8000);
     expect(usage?.cacheMissTokens).toBe(2000);
     expect(usage?.reasoningTokens).toBe(200);
@@ -37,36 +35,19 @@ describe("extractUsage", () => {
     expect(usage?.answeringMs).toBe(3000);
   });
 
-  it("falls back to inputTokenDetails.cacheReadTokens and input-minus-cache for miss", () => {
-    const usage = extractUsage(
-      {
-        inputTokens: 10000,
-        outputTokens: 100,
-        totalTokens: 10100,
-        inputTokenDetails: { noCacheTokens: 6000, cacheReadTokens: 4000, cacheWriteTokens: 0 },
-        outputTokenDetails: { textTokens: 100, reasoningTokens: 0 },
-        raw: {},
-      },
+  it("falls back to input-minus-cache for miss and sums totals when absent", () => {
+    const usage = parseDeepSeekUsage(
+      { prompt_tokens: 10000, completion_tokens: 100, prompt_cache_hit_tokens: 4000 },
       timing,
     );
-
     expect(usage?.cacheReadTokens).toBe(4000);
     expect(usage?.cacheMissTokens).toBe(6000);
+    expect(usage?.totalTokens).toBe(10100);
   });
 
   it("returns null when no token counts are reported", () => {
-    const usage = extractUsage(
-      {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
-        raw: {},
-      },
-      timing,
-    );
-    expect(usage).toBeNull();
+    expect(parseDeepSeekUsage(undefined, timing)).toBeNull();
+    expect(parseDeepSeekUsage({}, timing)).toBeNull();
   });
 });
 
@@ -157,5 +138,295 @@ describe("costYuan (official DeepSeek V4 pricing, CNY per 1M tokens)", () => {
       outputCnyPerM: 27.0,
     });
     expect(costYuan(usagePro, pricing)).toBeCloseTo(27.3, 5);
+  });
+});
+
+describe("runLlmStep (live SSE, no AI SDK)", () => {
+  const originalEnv = { ...process.env };
+  let server: import("node:http").Server | undefined;
+
+  const makeChunk = (delta: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    `data: ${JSON.stringify({
+      id: "1",
+      object: "chat.completion.chunk",
+      created: 1,
+      model: "deepseek",
+      choices: [{ index: 0, delta, finish_reason: null }],
+      ...extra,
+    })}\n\n`;
+
+  function startServer(handler: (res: import("node:http").ServerResponse) => void): Promise<number> {
+    return new Promise((resolve) => {
+      const srv = require("node:http").createServer((_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        handler(res);
+      });
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+  }
+
+  beforeEach(() => {
+    process.env.DEEPSEEK_API_KEY = "test";
+    process.env.DEEPSEEK_MODEL = "deepseek-v4-flash";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    server?.close();
+    server = undefined;
+    vi.restoreAllMocks();
+  });
+
+  it("streams reasoning_content LIVE (before the answer starts) and reads cache tokens", async () => {
+    const port = await startServer((res) => {
+      res.write(makeChunk({ role: "assistant", content: "" }));
+      setTimeout(() => {
+        res.write(makeChunk({ reasoning_content: "Let me think. " }));
+      }, 150);
+      setTimeout(() => {
+        res.write(makeChunk({ reasoning_content: "Second thought." }));
+      }, 300);
+      setTimeout(() => {
+        res.write(makeChunk({ content: "The answer." }));
+      }, 450);
+      setTimeout(() => {
+        res.write(
+          makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }),
+        );
+        res.write(
+          makeChunk(
+            {},
+            {
+              choices: [],
+              usage: {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+                prompt_cache_hit_tokens: 90,
+                prompt_cache_miss_tokens: 10,
+                completion_tokens_details: { reasoning_tokens: 8 },
+              },
+            },
+          ),
+        );
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }, 600);
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    const t0 = Date.now();
+    const reasoningArrivals: number[] = [];
+    const textArrivals: number[] = [];
+    const result = await runLlmStep({
+      messages: [{ role: "user", content: "hi" }],
+      system: "sys",
+      model: "deepseek-v4-flash",
+      thinkingEffort: "max",
+      onReasoningDelta: async () => { reasoningArrivals.push(Date.now() - t0); },
+      onTextDelta: async () => { textArrivals.push(Date.now() - t0); },
+    });
+
+    expect(result.text).toBe("The answer.");
+    expect(result.finishReason).toBe("stop");
+    // Reasoning arrived BEFORE the answer started (450ms) — the AI SDK
+    // buffered everything to ~600ms; our direct client must not.
+    expect(reasoningArrivals.length).toBe(2);
+    expect(reasoningArrivals[0]).toBeLessThan(450);
+    expect(reasoningArrivals[1]).toBeGreaterThan(150);
+    expect(textArrivals[0]).toBeGreaterThanOrEqual(450);
+    // Raw cache tokens survive parsing.
+    expect(result.usage?.cacheReadTokens).toBe(90);
+    expect(result.usage?.cacheMissTokens).toBe(10);
+    expect(result.usage?.reasoningTokens).toBe(8);
+  });
+
+  it("accumulates streaming tool call fragments", async () => {
+    const port = await startServer((res) => {
+      res.write(
+        makeChunk({
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name: "bash", arguments: '{"command":' },
+            },
+          ],
+        }),
+      );
+      res.write(makeChunk({ tool_calls: [{ index: 0, function: { arguments: '"echo hi"}' } }] }));
+      res.write(
+        makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }),
+      );
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    const result = await runLlmStep({
+      messages: [{ role: "user", content: "run" }],
+      model: "deepseek-v4-flash",
+      thinkingEffort: "off",
+    });
+
+    expect(result.finishReason).toBe("tool-calls");
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]).toEqual({
+      id: "call_1",
+      name: "bash",
+      input: { command: "echo hi" },
+    });
+    expect(result.text).toBe("");
+  });
+
+  it("converts stored tool-result history to the wire format (assistant+tool messages)", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer((req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+        let body = "";
+        req.on("data", (d: Buffer) => (body += d.toString()));
+        req.on("end", () => {
+          requestBody = JSON.parse(body);
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write(makeChunk({ content: "ok" }));
+          res.write(
+            makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }),
+          );
+          res.write("data: [DONE]\n\n");
+          res.end();
+        });
+      });
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    const result = await runLlmStep({
+      messages: [
+        { role: "user", content: "check" },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "running" },
+            { type: "tool-call", toolCallId: "c1", toolName: "bash", input: { command: "ls" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            { type: "tool-result", toolCallId: "c1", toolName: "bash", output: { type: "text", value: "file.txt" } },
+          ],
+        },
+      ],
+      model: "deepseek-v4-flash",
+      thinkingEffort: "off",
+    });
+
+    expect(result.text).toBe("ok");
+    const messages = requestBody?.messages as Array<Record<string, unknown>>;
+    expect(messages).toHaveLength(3);
+    expect(messages[1]).toMatchObject({
+      role: "assistant",
+      content: "running",
+      tool_calls: [
+        {
+          id: "c1",
+          type: "function",
+          function: { name: "bash", arguments: '{"command":"ls"}' },
+        },
+      ],
+    });
+    expect(messages[2]).toEqual({
+      role: "tool",
+      tool_call_id: "c1",
+      content: "file.txt",
+    });
+    expect(requestBody?.reasoning_effort).toBeUndefined();
+  });
+
+  it("sends reasoning_effort when thinking is enabled", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer((req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+        let body = "";
+        req.on("data", (d: Buffer) => (body += d.toString()));
+        req.on("end", () => {
+          requestBody = JSON.parse(body);
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write(makeChunk({ content: "ok" }));
+          res.write(
+            makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }),
+          );
+          res.write("data: [DONE]\n\n");
+          res.end();
+        });
+      });
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    await runLlmStep({
+      messages: [{ role: "user", content: "hi" }],
+      model: "deepseek-v4-flash",
+      thinkingEffort: "high",
+    });
+
+    expect(requestBody?.reasoning_effort).toBe("high");
+    expect(requestBody?.stream).toBe(true);
+    expect((requestBody?.tools as unknown[]).length).toBe(1);
+  });
+
+  it("handles CRLF-delimited SSE events (some servers use \r\n)", async () => {
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer(
+        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          const chunk = (delta: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+            `data: ${JSON.stringify({
+              id: "1",
+              object: "chat.completion.chunk",
+              choices: [{ index: 0, delta, finish_reason: null }],
+              ...extra,
+            })}\r\n\r\n`;
+          res.write(chunk({ role: "assistant", content: "" }));
+          res.write(chunk({ reasoning_content: "think" }));
+          res.write(chunk({ content: "done" }));
+          res.write(chunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
+          res.write("data: [DONE]\r\n\r\n");
+          res.end();
+        },
+      );
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    const reasoning: string[] = [];
+    const result = await runLlmStep({
+      messages: [{ role: "user", content: "hi" }],
+      model: "deepseek-v4-flash",
+      thinkingEffort: "off",
+      onReasoningDelta: async (d) => {
+        reasoning.push(d);
+      },
+    });
+
+    expect(reasoning).toEqual(["think"]);
+    expect(result.text).toBe("done");
+    expect(result.finishReason).toBe("stop");
   });
 });
