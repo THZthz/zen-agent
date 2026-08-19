@@ -25,8 +25,7 @@ Always work from the session working directory unless you need to reference abso
 When you have completed the user's request, respond with a concise summary of what you did.`;
 
 export const bashTool = tool({
-  description:
-    "Execute a bash command in the session working directory using the client terminal. The command is completely unrestricted.",
+  description: "Execute a bash command in current OS. The command is completely unrestricted.",
   inputSchema: z.object({
     command: z.string().describe("The bash command to execute."),
   }),

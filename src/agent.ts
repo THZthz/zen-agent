@@ -733,7 +733,7 @@ export class ZenAgent {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: "Usage: /prompt <custom system prompt or instructions>",
+          text: this.buildSystemPrompt(active.session),
         },
       });
       return "end_turn";
@@ -754,12 +754,7 @@ export class ZenAgent {
   }
 
   private buildSystemPrompt(session: StoredSession): string {
-    if (!session.config.systemPrompt) {
-      return SYSTEM_PROMPT;
-    }
-      return `${SYSTEM_PROMPT}
-
-${session.config.systemPrompt}`;
+    return session.config.systemPrompt || SYSTEM_PROMPT;
   }
 
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {

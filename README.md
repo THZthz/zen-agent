@@ -61,7 +61,8 @@ Zen Agent advertises a slash command in the agent panel:
 
 | Command | Description |
 | --- | --- |
-| `/prompt <text>` | Set a custom system prompt / session instructions before continuing |
+| `/prompt <text>` | Replace the entire system prompt for this session |
+| `/prompt` | Print the current system prompt |
 
 Examples:
 
@@ -79,7 +80,7 @@ Always prefer safe refactors.
 Add tests for all changes.
 ```
 
-Everything after `/prompt` — including newlines — is captured as the custom system prompt. The custom instructions are combined with the default Zen Agent system prompt for the rest of the session.
+Everything after `/prompt` — including newlines — replaces the default system prompt entirely for the rest of the session. Running `/prompt` with no content prints the current effective system prompt.
 
 ## Session Configuration
 
