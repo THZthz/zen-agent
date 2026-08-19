@@ -25,7 +25,7 @@ Prefer small, targeted bash commands. Avoid large output from using bash tool.
 When modifying files, use shell tools such as cat, sed, awk, or tee. Prefer using rg, fdfind (fd), jq, uv if they exist.`;
 
 export const bashTool = tool({
-  description: "Execute a bash command in current OS. The command is completely unrestricted. Full terminal output is saved to <project>/.sessions/terminal-<toolCallId>.log; if output is large, read specific parts from that file with sed/tail instead of requesting huge output.",
+  description: "Execute a bash command in current OS. The command is completely unrestricted. Your command will be wrapped inside `script -q -e -c \"bash -lc <original command>\" \"<log path>\"`. If output is large, this tool will tell you to check the log file instead of showing all.",
   inputSchema: z.object({
     command: z.string().describe("The bash command to execute."),
   }),

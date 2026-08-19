@@ -902,7 +902,12 @@ export class ZenAgent {
   }
 
   private buildSystemPrompt(session: StoredSession): string {
-    return session.config.systemPrompt || SYSTEM_PROMPT;
+    const environmentInfo = [
+      `Working directory: ${session.cwd}`,
+      `Current date/time: ${new Date().toISOString()}`,
+    ].join("\n");
+    const base = session.config.systemPrompt || SYSTEM_PROMPT;
+    return `${base}\n---\n${environmentInfo}`;
   }
 
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
