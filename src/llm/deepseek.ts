@@ -2,6 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { isStepCount, streamText, tool } from "ai";
 import { z } from "zod";
 import type { ModelMessage } from "ai";
+import type { ModelId, ThinkingEffort } from "../storage.js";
 
 export interface LlmToolCall {
   id: string;
@@ -31,14 +32,14 @@ export const bashTool = tool({
   }),
 });
 
-export function createDeepseekModel() {
+export function createDeepseekModel(model?: ModelId | string) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY environment variable is required");
   }
 
   const baseURL = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
-  const modelName = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+  const modelName = model ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 
   const provider = createOpenAI({
     name: "deepseek",
@@ -53,12 +54,23 @@ export async function runLlmStep(options: {
   messages: ModelMessage[];
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void | Promise<void>;
+  model?: ModelId;
+  thinkingEffort?: ThinkingEffort;
 }): Promise<LlmStepResult> {
-  const model = createDeepseekModel();
+  const model = createDeepseekModel(options.model);
 
   let text = "";
   let finishReason = "unknown";
   const toolCalls: LlmToolCall[] = [];
+
+  const providerOptions =
+    options.thinkingEffort && options.thinkingEffort !== "off"
+      ? {
+          openai: {
+            reasoningEffort: options.thinkingEffort,
+          },
+        }
+      : undefined;
 
   const result = streamText({
     model,
@@ -69,6 +81,7 @@ export async function runLlmStep(options: {
     },
     stopWhen: isStepCount(1),
     abortSignal: options.signal,
+    providerOptions,
   });
 
   for await (const part of result.fullStream) {

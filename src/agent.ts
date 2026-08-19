@@ -6,12 +6,16 @@ import { fileURLToPath } from "node:url";
 import type { ModelMessage } from "ai";
 import {
   createStoredSession,
+  DEFAULT_MODEL,
+  DEFAULT_THINKING_EFFORT,
   deleteStoredSession,
   findSessionCwd,
   listStoredSessions,
   readStoredSession,
   writeSession,
+  type ModelId,
   type StoredSession,
+  type ThinkingEffort,
 } from "./storage.js";
 import { executeBash } from "./tools/bash.js";
 import { runLlmStep, type LlmToolCall } from "./llm/deepseek.js";
@@ -22,6 +26,41 @@ interface ActiveSession {
 }
 
 const MAX_TURN_STEPS = 25;
+
+const MODEL_CONFIG_OPTION = {
+  id: "model",
+  name: "Model",
+  description: "Deepseek model used for this session",
+  category: "model",
+  type: "select",
+  currentValue: DEFAULT_MODEL,
+  options: [
+    {
+      value: "deepseek-v4-flash",
+      name: "Deepseek V4 Flash",
+      description: "Fast model for everyday coding tasks",
+    },
+    {
+      value: "deepseek-v4-pro",
+      name: "Deepseek V4 Pro",
+      description: "More powerful model for complex tasks",
+    },
+  ],
+};
+
+const THINKING_CONFIG_OPTION = {
+  id: "thinking_effort",
+  name: "Thinking Effort",
+  description: "Reasoning effort used by the model",
+  category: "thought_level",
+  type: "select",
+  currentValue: DEFAULT_THINKING_EFFORT,
+  options: [
+    { value: "off", name: "Off", description: "Disable extended thinking" },
+    { value: "high", name: "High", description: "Use high reasoning effort" },
+    { value: "max", name: "Max", description: "Use maximum reasoning effort" },
+  ],
+};
 
 function newMessageId(): string {
   return `msg_${randomBytes(8).toString("hex")}`;
@@ -74,7 +113,10 @@ export class ZenAgent {
       session,
       abortController: null,
     });
-    return { sessionId: session.sessionId };
+    return {
+      sessionId: session.sessionId,
+      configOptions: this.getConfigOptions(session),
+    };
   }
 
   async loadSession(
@@ -95,7 +137,9 @@ export class ZenAgent {
       });
     }
 
-    return {};
+    return {
+      configOptions: this.getConfigOptions(session),
+    };
   }
 
   async resumeSession(
@@ -107,7 +151,9 @@ export class ZenAgent {
       session,
       abortController: null,
     });
-    return {};
+    return {
+      configOptions: this.getConfigOptions(session),
+    };
   }
 
   async listSessions(
@@ -137,6 +183,39 @@ export class ZenAgent {
     this.abortActiveSession(params.sessionId);
     this.sessions.delete(params.sessionId);
     return {};
+  }
+
+  async setSessionConfigOption(
+    params: acp.SetSessionConfigOptionRequest,
+  ): Promise<acp.SetSessionConfigOptionResponse> {
+    const active = this.sessions.get(params.sessionId);
+    if (!active) {
+      throw new Error(`Session ${params.sessionId} not found`);
+    }
+
+    const value = String(params.value);
+
+    switch (params.configId) {
+      case "model": {
+        if (value !== "deepseek-v4-flash" && value !== "deepseek-v4-pro") {
+          throw new Error(`Unknown model: ${value}`);
+        }
+        active.session.config.model = value as ModelId;
+        break;
+      }
+      case "thinking_effort": {
+        if (value !== "off" && value !== "high" && value !== "max") {
+          throw new Error(`Unknown thinking effort: ${value}`);
+        }
+        active.session.config.thinkingEffort = value as ThinkingEffort;
+        break;
+      }
+      default:
+        throw new Error(`Unknown config option: ${params.configId}`);
+    }
+
+    await this.save(active);
+    return { configOptions: this.getConfigOptions(active.session) };
   }
 
   cancel(params: acp.CancelNotification): void {
@@ -194,6 +273,8 @@ export class ZenAgent {
       const llmResult = await runLlmStep({
         messages: active.session.llmMessages,
         signal,
+        model: active.session.config.model,
+        thinkingEffort: active.session.config.thinkingEffort,
         onTextDelta: async (delta) => {
           await this.emit(active, cx, {
             sessionUpdate: "agent_message_chunk",
@@ -462,6 +543,19 @@ export class ZenAgent {
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
     active?.abortController?.abort();
+  }
+
+  private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
+    return [
+      {
+        ...MODEL_CONFIG_OPTION,
+        currentValue: session.config.model,
+      } as acp.SessionConfigOption,
+      {
+        ...THINKING_CONFIG_OPTION,
+        currentValue: session.config.thinkingEffort,
+      } as acp.SessionConfigOption,
+    ];
   }
 
   private async emit(

@@ -5,6 +5,17 @@ import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 
+export type ModelId = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type ThinkingEffort = "off" | "high" | "max";
+
+export const DEFAULT_MODEL: ModelId = "deepseek-v4-flash";
+export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "off";
+
+export interface SessionConfig {
+  model: ModelId;
+  thinkingEffort: ThinkingEffort;
+}
+
 export interface StoredSession {
   sessionId: string;
   cwd: string;
@@ -13,6 +24,7 @@ export interface StoredSession {
   title: string | null;
   events: SessionUpdate[];
   llmMessages: ModelMessage[];
+  config: SessionConfig;
 }
 
 interface SessionIndex {
@@ -89,6 +101,10 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
     title: null,
     events: [],
     llmMessages: [],
+    config: {
+      model: DEFAULT_MODEL,
+      thinkingEffort: DEFAULT_THINKING_EFFORT,
+    },
   };
   await writeSession(session);
   await rememberSession(session);
@@ -116,6 +132,12 @@ export async function readStoredSession(
   }
   if (parsed.cwd !== cwd) {
     throw new Error(`Session ${sessionId} belongs to ${parsed.cwd}, not ${cwd}`);
+  }
+  if (!parsed.config) {
+    parsed.config = {
+      model: DEFAULT_MODEL,
+      thinkingEffort: DEFAULT_THINKING_EFFORT,
+    };
   }
   return parsed;
 }

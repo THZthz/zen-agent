@@ -19,6 +19,7 @@ acp
   .onRequest("session/delete", (ctx) => agent.deleteSession(ctx.params))
   .onRequest("session/resume", (ctx) => agent.resumeSession(ctx.params))
   .onRequest("session/close", (ctx) => agent.closeSession(ctx.params))
+  .onRequest("session/set_config_option", (ctx) => agent.setSessionConfigOption(ctx.params))
   .onRequest("session/prompt", (ctx) => agent.prompt(ctx.params, ctx.client))
   .onNotification("session/cancel", (ctx) => agent.cancel(ctx.params))
   .connect(stream);

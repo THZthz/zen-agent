@@ -54,6 +54,7 @@ This document is the implementation specification. It will be updated as decisio
 | `session/resume` | Load a stored session without replaying history. |
 | `session/delete` | Delete a stored session. |
 | `session/close` | Cancel any active work for a session. |
+| `session/set_config_option` | Change model or thinking effort for a session. |
 | `session/prompt` | Run a full agent turn: call the LLM, execute `bash` tool calls, stream updates, return `stopReason`. |
 | `session/cancel` | Abort the active prompt for the given session. |
 
@@ -188,7 +189,16 @@ The agent uses the **Vercel AI SDK** with **Deepseek** through Deepseek's OpenAI
 | --- | --- |
 | `DEEPSEEK_API_KEY` | Deepseek API key (required). |
 | `DEEPSEEK_BASE_URL` | Deepseek-compatible base URL (default: `https://api.deepseek.com/v1`). |
-| `DEEPSEEK_MODEL` | Model name (default: `deepseek-chat`). |
+| `DEEPSEEK_MODEL` | Fallback model name (default: `deepseek-v4-flash`). |
+
+Sessions expose two ACP config options:
+
+| Option | Values |
+| --- | --- |
+| `model` | `deepseek-v4-flash`, `deepseek-v4-pro` |
+| `thinking_effort` | `off`, `high`, `max` |
+
+`off` omits the provider reasoning effort parameter; `high` and `max` map to OpenAI-compatible `reasoning_effort` values.
 
 ### 7.2 Integration
 

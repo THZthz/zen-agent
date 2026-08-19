@@ -6,6 +6,13 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - No permission prompts (approval policy: `never`)
 - Sessions are stored in `<project>/sessions/`
 - LLM provider: Deepseek via the Vercel AI SDK
+- Selectable models:
+  - `deepseek-v4-flash`
+  - `deepseek-v4-pro`
+- Selectable thinking effort:
+  - `off`
+  - `high`
+  - `max`
 
 ## Requirements
 
@@ -32,14 +39,31 @@ Point Zed's ACP agent at the built entrypoint:
 
 ```json
 {
-  "agent": {
-    "command": "node",
-    "args": ["/path/to/zen-agent/dist/index.js"]
+  "agent_servers": {
+    "Zen Agent": {
+      "type": "custom",
+      "command": "node",
+      "args": ["/home/amias/zen-agent/dist/index.js"],
+      "env": {
+        "DEEPSEEK_API_KEY": "your-deepseek-api-key"
+      }
+    }
   }
 }
 ```
 
 The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
+
+## Session Configuration
+
+When a session is created or loaded, Zed can display two configuration selectors:
+
+| Option | Values |
+| --- | --- |
+| Model | `deepseek-v4-flash`, `deepseek-v4-pro` |
+| Thinking Effort | `off`, `high`, `max` |
+
+These are exposed as ACP session config options and can be changed with `session/set_config_option`.
 
 ## Environment Variables
 
@@ -47,7 +71,7 @@ The agent reads newline-delimited JSON-RPC from stdin and writes responses to st
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | — | Deepseek API key (required) |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI-compatible base URL |
-| `DEEPSEEK_MODEL` | `deepseek-chat` | Deepseek model name |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Fallback model when no session config is present |
 
 ## Development
 
