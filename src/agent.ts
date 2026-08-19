@@ -316,6 +316,13 @@ export class ZenAgent {
             content: { type: "text", text: delta },
           });
         },
+        onReasoningDelta: async (delta) => {
+          await this.emit(active, cx, {
+            sessionUpdate: "agent_thought_chunk",
+            messageId: assistantMessageId,
+            content: { type: "text", text: delta },
+          });
+        },
       });
 
       if (llmResult.toolCalls.length === 0) {

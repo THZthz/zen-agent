@@ -137,7 +137,8 @@ Zen Agent stores the text after `/prompt` (including newlines) as the session's 
       - full session history,
       - a single `bash` function/tool definition.
    b. Stream text deltas from the LLM as `session/update` with `sessionUpdate: "agent_message_chunk"`.
-   c. If the LLM returns one or more `bash` tool calls:
+   c. Stream reasoning/thinking deltas from the LLM as `session/update` with `sessionUpdate: "agent_thought_chunk"`.
+   d. If the LLM returns one or more `bash` tool calls:
       - For each call:
         1. Send `session/update` with `sessionUpdate: "tool_call"`:
            - `toolCallId`
@@ -146,14 +147,14 @@ Zen Agent stores the text after `/prompt` (including newlines) as the session's 
            - `status: "pending"`
            - `rawInput: { command }`
         2. Send `session/update` with `sessionUpdate: "tool_call_update"` and `status: "in_progress"`.
-        3. Execute `bash` in the session `cwd` (see §6).
+        3. Execute `bash` through Zed's terminal (see §6).
         4. Send `session/update` with `sessionUpdate: "tool_call_update"` and:
            - `status: "completed"` (or `"failed"` on non-zero exit / spawn error),
-           - `content` with the command output as text,
+           - `content` with the terminal output,
            - `rawOutput: { output, exitCode, cancelled, truncated }`.
       - Append the assistant tool-call message and the tool result to session history.
       - Continue the loop.
-   d. If the LLM returns no tool calls, finish the turn.
+   e. If the LLM returns no tool calls, finish the turn.
 6. Return `{ stopReason: "end_turn" }`.
 7. If `session/cancel` is received:
    - Abort the active turn's `AbortController`.

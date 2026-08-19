@@ -53,6 +53,7 @@ export async function runLlmStep(options: {
   messages: ModelMessage[];
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void | Promise<void>;
+  onReasoningDelta?: (delta: string) => void | Promise<void>;
   model?: ModelId;
   thinkingEffort?: ThinkingEffort;
   system?: string;
@@ -82,6 +83,7 @@ export async function runLlmStep(options: {
     stopWhen: isStepCount(1),
     abortSignal: options.signal,
     providerOptions,
+    includeRawChunks: true,
   });
 
   for await (const part of result.fullStream) {
@@ -89,6 +91,10 @@ export async function runLlmStep(options: {
       case "text-delta": {
         text += part.text;
         await options.onTextDelta?.(part.text);
+        break;
+      }
+      case "reasoning-delta": {
+        await options.onReasoningDelta?.(part.text);
         break;
       }
       case "tool-call": {
@@ -101,6 +107,20 @@ export async function runLlmStep(options: {
       }
       case "finish-step": {
         finishReason = part.finishReason;
+        break;
+      }
+      case "raw": {
+        const raw = part.rawValue as {
+          choices?: Array<{
+            delta?: {
+              reasoning_content?: unknown;
+            };
+          }>;
+        };
+        const reasoningContent = raw.choices?.[0]?.delta?.reasoning_content;
+        if (typeof reasoningContent === "string" && reasoningContent.length > 0) {
+          await options.onReasoningDelta?.(reasoningContent);
+        }
         break;
       }
       default:

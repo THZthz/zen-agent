@@ -14,6 +14,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
   - `off`
   - `high`
   - `max`
+- Streams LLM thinking/reasoning content to Zed as `agent_thought_chunk`
 
 ## Requirements
 
