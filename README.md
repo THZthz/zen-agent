@@ -104,6 +104,7 @@ These are exposed as ACP session config options and can be changed with `session
 | `DEEPSEEK_API_KEY` | — | Deepseek API key (required) |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI-compatible base URL |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Fallback model when no session config is present |
+| `ZEN_AGENT_MAX_TURN_STEPS` | `25` | Maximum number of LLM/tool rounds per user prompt |
 
 ## Logs
 

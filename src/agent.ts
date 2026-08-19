@@ -29,7 +29,19 @@ interface ActiveSession {
   abortController: AbortController | null;
 }
 
-const MAX_TURN_STEPS = 25;
+const MAX_TURN_STEPS = parseMaxTurnSteps();
+
+function parseMaxTurnSteps(): number {
+  const raw = process.env.ZEN_AGENT_MAX_TURN_STEPS;
+  if (!raw) {
+    return 25;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 25;
+  }
+  return parsed;
+}
 
 const MODEL_CONFIG_OPTION = {
   id: "model",
