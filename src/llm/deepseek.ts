@@ -175,7 +175,18 @@ function toNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function extractUsage(
+export /**
+ * Normalizes the AI SDK's LanguageModelUsage into our LlmUsage.
+ *
+ * DeepSeek's OpenAI-compatible API reports cache tokens in its own fields
+ * (`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` in `usage.raw`),
+ * which `@ai-sdk/openai` does NOT map into `inputTokenDetails` — it only
+ * reads OpenAI-style `prompt_tokens_details.cached_tokens`. So we read the
+ * raw fields first and fall back to the SDK's mapping when they are absent.
+ * Reasoning tokens likewise come from `completion_tokens_details.reasoning_tokens`
+ * (DeepSeek's `reasoning_content` mode) or the SDK's `outputTokenDetails`.
+ */
+function extractUsage(
   usage: LanguageModelUsage | undefined,
   timing: { llmMs: number; thinkingMs: number; answeringMs: number },
 ): LlmUsage | null {
@@ -229,6 +240,12 @@ export async function runLlmStep(options: {
 }): Promise<LlmStepResult> {
   const model = createDeepseekModel(options.model);
 
+  // Timing: "thinking" is the wall time from request start until the first
+  // answer (non-reasoning) token arrives — i.e. TTFB, dominated by the
+  // model's reasoning phase when thinking is enabled. "answering" is the
+  // remaining stream time. If the step only produced reasoning (no text,
+  // e.g. a tool-call-only step), firstTextAt stays null and thinking covers
+  // the whole request.
   const requestStart = Date.now();
   let firstTextAt: number | null = null;
   let lastReasoningAt: number | null = null;

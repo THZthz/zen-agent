@@ -119,6 +119,7 @@ These are exposed as ACP session config options and can be changed with `session
 | `DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M input tokens not served from cache (overrides the effective rate for the current period) |
 | `DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M output tokens (overrides the effective rate for the current period) |
 | `ZEN_AGENT_SHOW_STATS` | `1` | Set to `0` to hide the per-turn stats line in the conversation |
+| `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` | `0` (wait forever) | Hard-abort escape hatch: if a graceful cancel (user follow-up or Stop) is pending longer than this, the in-flight LLM step / bash tool is forcibly aborted. `0` waits indefinitely |
 
 ## Information Displayed to the User
 
@@ -132,6 +133,16 @@ Zen Agent reports what it can through ACP, and Zed renders it natively in the ag
 | Bash tool call duration | Appended to each tool call's output card as `⏱ 3.2s` |
 
 The stats line is display-only: it is never added to the LLM message history, so it does not consume context tokens. Cumulative input/output/thought/cache token counts are also returned in the experimental `usage` field of the `session/prompt` response, which Zed reads when its ACP beta flag is enabled.
+
+## Cancellation & Force-Send
+
+When you send a new message (or press Stop) while Zen Agent is working, Zed sends an ACP `session/cancel` notification and **waits for the current turn to respond before delivering your new message** (`thread_view.rs`). Zen Agent honors this with a *graceful cancel* — it never kills the agent mid-work:
+
+- **While the model is thinking/answering** — the current LLM step runs to completion, then the turn ends with `stopReason: "cancelled"`. If the step proposed tool calls, they are discarded (your follow-up supersedes them).
+- **While a bash tool is running** — the command finishes and its results are saved to the conversation history (so the next turn has full context), then the turn ends with `stopReason: "cancelled"`. The tool card shows `completed`.
+- **Between steps** — the turn stops at the next boundary check.
+
+A hard abort (terminal killed, stream cut) only happens on `session/close`, `session/delete`, or after `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` as an escape hatch for runaway commands. Zed's Stop button uses the same `session/cancel` notification as force-send (the protocol carries no reason field), so it is graceful too.
 
 Default pricing (official DeepSeek V4 pricing, CNY per 1M tokens). Off-peak price is half the peak price. Peak hours are Beijing time 09:00-12:00 and 14:00-18:00; all other hours are off-peak:
 

@@ -36,6 +36,33 @@ import {
 interface ActiveSession {
   session: StoredSession;
   abortController: AbortController | null;
+  /**
+   * Set when the client sends `session/cancel`. Instead of aborting the
+   * current unit of work immediately (which would kill an in-flight bash
+   * command or cut the model off mid-thought), the running turn stops at the
+   * next safe boundary and responds with stopReason "cancelled".
+   *
+   * Zed's own flow relies on this: `thread_view.rs` (`stop_current_and_send_new_message`
+   * and `dispatch_queued_entry`) sends `session/cancel`, awaits the prompt
+   * response, and only then sends the follow-up `session/prompt`. So a
+   * graceful stop is what lets the new user message be "inserted" after the
+   * current tool call step / thinking step instead of interrupting it.
+   */
+  gracefulCancel: boolean;
+  /** Hard-abort escape hatch scheduled when a graceful cancel is requested. */
+  cancelTimer: NodeJS.Timeout | null;
+}
+
+/** Safety valve for graceful cancel: hard-abort after this long. 0 = wait forever. */
+const GRACEFUL_CANCEL_TIMEOUT_MS = parseGracefulCancelTimeoutMs();
+
+function parseGracefulCancelTimeoutMs(): number {
+  const raw = process.env.ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS;
+  if (!raw) {
+    return 0;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 const MAX_TURN_STEPS = parseMaxTurnSteps();
@@ -107,6 +134,15 @@ function newSessionIdForPrompt(): string {
 
 type StreamKind = "thought" | "message";
 
+/**
+ * Batches streamed LLM deltas into small, throttled chunks.
+ *
+ * Zed renders each `agent_message_chunk`/`agent_thought_chunk` update
+ * incrementally (`agent_ui/.../thread_view.rs`), and flooding it with
+ * per-token updates across a slow JSON-RPC pipe makes the UI janky and drops
+ * chunks. Throttling to ~24 chars per 16ms tick keeps the output visibly
+ * streaming while staying well within Zed's per-update handling budget.
+ */
 class StreamThrottle {
   private queue: Array<{ kind: StreamKind; text: string }> = [];
   private timer: NodeJS.Timeout | null = null;
@@ -250,6 +286,24 @@ export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
 
+  private makeActiveSession(session: StoredSession): ActiveSession {
+    return {
+      session,
+      abortController: null,
+      gracefulCancel: false,
+      cancelTimer: null,
+    };
+  }
+
+  /** Clears any pending graceful-cancel state (flag + hard-abort timer). */
+  private clearGracefulCancel(active: ActiveSession): void {
+    active.gracefulCancel = false;
+    if (active.cancelTimer) {
+      clearTimeout(active.cancelTimer);
+      active.cancelTimer = null;
+    }
+  }
+
   async initialize(
     params: acp.InitializeRequest,
   ): Promise<acp.InitializeResponse> {
@@ -288,10 +342,7 @@ export class ZenAgent {
       throw new Error("cwd must be an absolute path");
     }
     const session = await createStoredSession(params.cwd);
-    this.sessions.set(session.sessionId, {
-      session,
-      abortController: null,
-    });
+    this.sessions.set(session.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session created", {
       sessionId: session.sessionId,
     });
@@ -308,10 +359,7 @@ export class ZenAgent {
   ): Promise<acp.LoadSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
     this.abortActiveSession(params.sessionId);
-    this.sessions.set(params.sessionId, {
-      session,
-      abortController: null,
-    });
+    this.sessions.set(params.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session loaded", {
       sessionId: session.sessionId,
     });
@@ -338,10 +386,7 @@ export class ZenAgent {
   ): Promise<acp.ResumeSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
     this.abortActiveSession(params.sessionId);
-    this.sessions.set(params.sessionId, {
-      session,
-      abortController: null,
-    });
+    this.sessions.set(params.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session resumed", {
       sessionId: session.sessionId,
     });
@@ -413,8 +458,51 @@ export class ZenAgent {
     return { configOptions: this.getConfigOptions(active.session) };
   }
 
+  /**
+   * Graceful cancel (ACP `session/cancel`).
+   *
+   * Zed sends this notification for ALL interruption paths — the Stop button
+   * (`thread_view.rs::cancel_generation`), force-send while generating
+   * (`thread_view.rs::stop_current_and_send_new_message`) and "steer" queued
+   * messages (`thread_view.rs::dispatch_queued_entry`) — and it carries no
+   * reason field, so they are indistinguishable here.
+   *
+   * We therefore never hard-abort on cancel: the running turn keeps executing
+   * until the current LLM step (thinking/answering) or bash tool call
+   * completes, then responds `stopReason: "cancelled"`. Zed awaits that
+   * response before delivering the follow-up message, which is what makes the
+   * new message appear after the interrupted unit of work rather than
+   * mid-way through it.
+   *
+   * A hard abort still happens on `session/close` / `session/delete`, and
+   * optionally after `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` as an escape
+   * hatch for runaway commands.
+   */
   cancel(params: acp.CancelNotification): void {
-    this.abortActiveSession(params.sessionId);
+    const active = this.sessions.get(params.sessionId);
+    if (!active || active.gracefulCancel) {
+      return;
+    }
+    if (!active.abortController) {
+      // No turn is running; nothing to stop. The flag is not set so a later
+      // prompt starts fresh.
+      return;
+    }
+    active.gracefulCancel = true;
+    void this.logRuntime(active.session.cwd, "info", "graceful cancel requested", {
+      sessionId: params.sessionId,
+    });
+    if (GRACEFUL_CANCEL_TIMEOUT_MS > 0) {
+      active.cancelTimer = setTimeout(() => {
+        active.cancelTimer = null;
+        void this.logRuntime(active.session.cwd, "warn", "graceful cancel timed out; hard abort", {
+          sessionId: params.sessionId,
+          timeoutMs: GRACEFUL_CANCEL_TIMEOUT_MS,
+        });
+        active.abortController?.abort();
+      }, GRACEFUL_CANCEL_TIMEOUT_MS);
+      active.cancelTimer.unref?.();
+    }
   }
 
   async prompt(
@@ -426,7 +514,11 @@ export class ZenAgent {
       throw new Error(`Session ${params.sessionId} not found`);
     }
 
+    // A new prompt can only arrive after the previous turn's response in
+    // Zed's flow (it awaits the cancelled turn first), but defensively abort
+    // any still-running turn and always start with a clean cancel state.
     this.abortActiveSession(params.sessionId);
+    this.clearGracefulCancel(active);
     const controller = new AbortController();
     active.abortController = controller;
 
@@ -464,7 +556,13 @@ export class ZenAgent {
       });
       await this.save(active);
 
-      return this.runTurn(active, cx, controller.signal);
+      // IMPORTANT: must `await` here. `return promise` inside try/finally runs
+      // the finally block IMMEDIATELY (the returned promise is adopted
+      // asynchronously outside the function), which would null
+      // active.abortController while the turn is still running and break
+      // graceful cancel (cancel() would see no controller).
+      const response = await this.runTurn(active, cx, controller.signal);
+      return response;
     } catch (error) {
       if (controller.signal.aborted) {
         void this.logRuntime(active.session.cwd, "warn", "prompt cancelled", {
@@ -479,6 +577,7 @@ export class ZenAgent {
       throw error;
     } finally {
       active.abortController = null;
+      this.clearGracefulCancel(active);
       active.session.updatedAt = new Date().toISOString();
       await this.save(active).catch(() => {});
     }
@@ -507,6 +606,13 @@ export class ZenAgent {
     };
 
     for (let step = 0; step < MAX_TURN_STEPS; step++) {
+      // Graceful-cancel boundary: stop before starting a new LLM step (i.e.
+      // when the previous tool call step already completed, or when the
+      // cancel arrived between steps).
+      if (active.gracefulCancel) {
+        return finalize("cancelled");
+      }
+
       const assistantMessageId = newMessageId();
 
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
@@ -566,6 +672,9 @@ export class ZenAgent {
       }
 
       if (llmResult.toolCalls.length === 0) {
+        // The model finished its answer. If a cancel arrived while it was
+        // streaming, the turn still ends "cancelled" (the client interrupted
+        // it), but the completed answer is kept in the conversation history.
         const content =
           llmResult.text.length > 0
             ? [{ type: "text" as const, text: llmResult.text }]
@@ -575,7 +684,18 @@ export class ZenAgent {
           content,
         });
         await this.save(active);
-        return finalize(this.stopReasonFromFinish(llmResult.finishReason));
+        return finalize(
+          active.gracefulCancel ? "cancelled" : this.stopReasonFromFinish(llmResult.finishReason),
+        );
+      }
+
+      // A cancel requested during the LLM step means "stop after thinking
+      // completes". The step is done, so stop here and DISCARD the tool calls
+      // it proposed: the user's follow-up supersedes them. They were never
+      // executed, so nothing is persisted (and nothing was emitted to Zed
+      // either — tool_call entries are only created in executeLlmToolCall).
+      if (active.gracefulCancel) {
+        return finalize("cancelled");
       }
 
       const assistantParts: Array<{
@@ -590,14 +710,6 @@ export class ZenAgent {
       if (llmResult.text.length > 0) {
         assistantParts.push({ type: "text", text: llmResult.text });
       }
-      for (const call of llmResult.toolCalls) {
-        assistantParts.push({
-          type: "tool-call",
-          toolCallId: call.id,
-          toolName: call.name,
-          input: call.input,
-        });
-      }
       const toolResults: Array<{
         toolCallId: string;
         toolName: string;
@@ -605,12 +717,29 @@ export class ZenAgent {
       }> = [];
 
       for (const call of llmResult.toolCalls) {
+        // The bash tool runs to completion even when a graceful cancel is
+        // pending: the abort listener in executeLlmToolCall only fires on a
+        // HARD abort (session close/delete or the timeout escape hatch), so
+        // the command is never killed mid-run by a user follow-up.
         const toolStart = Date.now();
         const result = await this.executeLlmToolCall(active, cx, call, signal);
         turn.toolMs += Date.now() - toolStart;
         toolResults.push(result);
+        assistantParts.push({
+          type: "tool-call",
+          toolCallId: call.id,
+          toolName: call.name,
+          input: call.input,
+        });
         if (signal.aborted) {
           throw new Error("aborted");
+        }
+        // Graceful-cancel boundary: stop right after this tool call finishes
+        // ("insert after the tool call step"). assistantParts only includes
+        // the calls that actually ran, keeping the LLM message history
+        // consistent (no unresolved tool calls).
+        if (active.gracefulCancel) {
+          break;
         }
       }
 
@@ -628,6 +757,12 @@ export class ZenAgent {
         })),
       });
       await this.save(active);
+
+      // The completed tool call's results were persisted above, so the next
+      // turn (the user's follow-up) has full context of what ran.
+      if (active.gracefulCancel) {
+        return finalize("cancelled");
+      }
     }
 
     return finalize("max_turn_requests");
@@ -667,9 +802,13 @@ export class ZenAgent {
   }
 
   /**
-   * Report context window usage and cumulative cost to the client. Zed renders
-   * this as the token-usage ring in the agent panel header, whose tooltip shows
-   * "Context: used / max" and "Cost: amount CNY".
+   * Report context window usage and cumulative cost to the client.
+   *
+   * Zed maps this ACP update in `acp_thread.rs` (SessionUpdate::UsageUpdate)
+   * into its TokenUsage/SessionCost and renders it in the agent panel header
+   * (`agent_ui/.../thread_view.rs::render_token_usage`) as a token-usage ring
+   * whose tooltip shows "Context: used / max" and "Cost: amount CNY". The
+   * ring also warns at 80% and marks the thread exceeded at 100% of `size`.
    */
   private async reportUsage(
     active: ActiveSession,
@@ -691,7 +830,17 @@ export class ZenAgent {
     });
   }
 
-  /** Emit a compact per-turn stats line as its own message in the thread. */
+  /**
+   * Emit a compact per-turn stats line as its own message in the thread.
+   *
+   * There is no ACP field for turns/steps/timing/cache-ratio, so this is
+   * displayed as a regular agent message. It is deliberately NOT pushed to
+   * `llmMessages` (it would waste context tokens on the next LLM request),
+   * and it uses a fresh messageId so Zed renders it as its own bubble. Note
+   * Zed auto-sends queued follow-up messages on the turn's Stopped event
+   * (`agent_ui/.../conversation_view.rs`), so this stats bubble is always
+   * followed by the user's next message rather than being dropped.
+   */
   private async emitTurnStats(
     active: ActiveSession,
     cx: acp.AgentContext,
@@ -712,8 +861,13 @@ export class ZenAgent {
   }
 
   /**
-   * Experimental ACP PromptResponse.usage: Zed reads this (behind the
-   * AcpBetaFeatureFlag) to track cumulative input/output/thought/cache tokens.
+   * Experimental ACP PromptResponse.usage.
+   *
+   * The field is marked UNSTABLE in the ACP spec. Zed only consumes it behind
+   * its `AcpBetaFeatureFlag` (`acp_thread.rs`, "response.usage"), where it
+   * updates the thread's cumulative input/output token counters. We still
+   * send it unconditionally — a stable fallback for other clients and for
+   * when Zed's beta flag is enabled.
    */
   private buildExperimentalUsage(session: StoredSession): acp.Usage | null {
     const usage = session.usage;
@@ -734,6 +888,16 @@ export class ZenAgent {
     return `'${value.replace(/'/g, `'\\''`)}'`;
   }
 
+  /**
+   * Runs a bash tool call through Zed's ACP terminal API.
+   *
+   * Zed exposes client-side terminals (`acp::methods.client.terminal.*`) that
+   * run in Zed's own PTY on the host; we create one per call, stream its
+   * output to Zed as a `tool_call_update` (which Zed renders as a live
+   * terminal card), and wait for exit before collecting output. The abort
+   * listener below kills the terminal ONLY on a hard abort — a graceful
+   * cancel (user follow-up / Stop) lets the command finish.
+   */
   private async executeLlmToolCall(
     active: ActiveSession,
     cx: acp.AgentContext,
@@ -1067,15 +1231,28 @@ export class ZenAgent {
 
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
-    active?.abortController?.abort();
+    if (!active) {
+      return;
+    }
+    // Hard abort: used by session/close, session/delete and defensively when a
+    // new prompt arrives while a turn is still running. Kills any in-flight
+    // bash terminal (via the abort listener in executeLlmToolCall) and aborts
+    // the LLM stream.
+    this.clearGracefulCancel(active);
+    active.abortController?.abort();
   }
 
   private prepareReplayEvents(events: acp.SessionUpdate[]): acp.SessionUpdate[] {
     // Only replay tool calls that have BOTH an initial `tool_call` event and a
     // final (completed/failed) `tool_call_update`. Calls interrupted mid-run
-    // have no result worth showing, and replaying them as "pending" would
-    // leave phantom entries in the thread. Zed also creates a spurious
-    // "Tool call not found" failed entry for updates without an initial event.
+    // (e.g. hard-aborted) have no result worth showing, and replaying them as
+    // "pending" would leave phantom entries in the thread. Zed also creates a
+    // spurious "Tool call not found" failed entry for any update without a
+    // matching initial event (`acp_thread.rs::update_tool_call`), which is
+    // exactly what we want to avoid on reload.
+    //
+    // Note: a tool call that finished during a GRACEFUL cancel has both its
+    // initial event and a final completed update, so it replays normally.
     const initialCallIds = new Set<string>();
     const finalizedCallIds = new Set<string>();
     for (const event of events) {
@@ -1120,6 +1297,9 @@ export class ZenAgent {
   }
 
   private stripTerminalContent(event: acp.SessionUpdate): acp.SessionUpdate {
+    // Zed binds terminal cards to live terminals by ID; a stale terminalId
+    // from a previous Zed run cannot be re-attached, so replay the text
+    // output instead of the terminal reference.
     if (event.sessionUpdate !== "tool_call_update" || !event.content) {
       return event;
     }

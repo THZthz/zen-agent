@@ -61,6 +61,15 @@ export function emptySessionUsage(): SessionUsage {
   };
 }
 
+/**
+ * Persistent session state.
+ *
+ * Zed loads a session via `session/load` and replays our stored `events`
+ * (see ZenAgent.prepareReplayEvents) to rebuild the thread; `llmMessages` is
+ * what gets sent to the LLM on the next prompt. `usage` accumulates across
+ * turns so the ACP `usage_update` cost (CNY) is cumulative, matching what
+ * Zed's SessionCost expects ("Total cumulative cost for session").
+ */
 export interface StoredSession {
   sessionId: string;
   cwd: string;
