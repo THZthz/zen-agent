@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk";
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelMessage } from "ai";
@@ -15,6 +15,7 @@ import {
   runtimeLogPath,
   sessionDirectory,
   sessionLlmLogPath,
+  terminalDirectory,
   writeSession,
   type ModelId,
   type StoredSession,
@@ -433,7 +434,7 @@ export class ZenAgent {
   }
 
   private shellQuote(value: string): string {
-    return `'${value.replace(/'/g, `'\''`)}'`;
+    return `'${value.replace(/'/g, `'\\''`)}'`;
   }
 
   private async executeLlmToolCall(
@@ -505,11 +506,16 @@ export class ZenAgent {
       };
     }
 
-    const logPath = join(
-      sessionDirectory(active.session.cwd),
-      `terminal-${call.id}.log`,
+    const terminalDir = terminalDirectory(
+      active.session.cwd,
+      active.session.sessionId,
     );
-    const wrappedCommand = `script -q -e -c "bash -lc ${this.shellQuote(command)}" "${logPath}"`;
+    const logPath = join(terminalDir, `terminal-${call.id}.log`);
+    const commandScriptPath = join(terminalDir, `terminal-${call.id}.sh`);
+    await mkdir(terminalDir, { recursive: true });
+    await writeFile(commandScriptPath, command, "utf8");
+    const scriptCommand = `bash ${this.shellQuote(commandScriptPath)}`;
+    const wrappedCommand = `script -q -e -c ${this.shellQuote(scriptCommand)} ${this.shellQuote(logPath)}`;
 
     await this.emit(active, cx, {
       sessionUpdate: "tool_call",
@@ -641,6 +647,7 @@ export class ZenAgent {
           truncated: outputResp.truncated,
           cancelled,
           fullOutputPath: logPath,
+          commandScriptPath,
         },
       });
 

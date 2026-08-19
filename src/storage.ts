@@ -39,16 +39,32 @@ export function sessionDirectory(cwd: string): string {
   return join(cwd, ".sessions");
 }
 
+export function sessionStateDirectory(cwd: string): string {
+  return join(sessionDirectory(cwd), "sessions");
+}
+
+export function sessionLlmDirectory(cwd: string): string {
+  return join(sessionDirectory(cwd), "llm");
+}
+
+export function runtimeLogDirectory(cwd: string): string {
+  return join(sessionDirectory(cwd), "logs");
+}
+
+export function terminalDirectory(cwd: string, sessionId: string): string {
+  return join(sessionDirectory(cwd), "terminals", sessionId);
+}
+
 export function sessionPath(cwd: string, sessionId: string): string {
-  return join(sessionDirectory(cwd), `${sessionId}.json`);
+  return join(sessionStateDirectory(cwd), `${sessionId}.json`);
 }
 
 export function sessionLlmLogPath(cwd: string, sessionId: string): string {
-  return join(sessionDirectory(cwd), `${sessionId}.jsonl`);
+  return join(sessionLlmDirectory(cwd), `${sessionId}.jsonl`);
 }
 
 export function runtimeLogPath(cwd: string): string {
-  return join(sessionDirectory(cwd), "zen-agent.log");
+  return join(runtimeLogDirectory(cwd), "zen-agent.log");
 }
 
 function generateSessionId(): string {
@@ -122,7 +138,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
 }
 
 export async function writeSession(session: StoredSession): Promise<void> {
-  await ensureDirectory(sessionDirectory(session.cwd));
+  await ensureDirectory(sessionStateDirectory(session.cwd));
   await writeFile(
     sessionPath(session.cwd, session.sessionId),
     `${JSON.stringify(session, null, 2)}\n`,
@@ -210,7 +226,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
   if (cwd) {
     let files: string[];
     try {
-      files = await readdir(sessionDirectory(cwd));
+      files = await readdir(sessionStateDirectory(cwd));
     } catch {
       return [];
     }
@@ -219,7 +235,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
     for (const file of files) {
       if (!file.endsWith(".json")) continue;
       try {
-        const raw = await readFile(join(sessionDirectory(cwd), file), "utf8");
+        const raw = await readFile(join(sessionStateDirectory(cwd), file), "utf8");
         const parsed = JSON.parse(raw) as StoredSession;
         sessions.push({
           sessionId: parsed.sessionId,

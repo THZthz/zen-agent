@@ -5,10 +5,10 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Single tool: `bash`
 - Bash execution always uses Zed's ACP terminal (no local bash subprocess)
 - No permission prompts (approval policy: `never`)
-- Sessions are stored in `<project>/.sessions/`
-- LLM request/response transcripts are stored as `<project>/.sessions/<sessionId>.jsonl`
-- Runtime diagnostics are stored in `<project>/.sessions/zen-agent.log`
-- Full terminal output is saved to `<project>/.sessions/terminal-<callId>.log` via `script`; the model receives truncated output plus the log path
+- Session state is stored in `<project>/.sessions/sessions/<sessionId>.json`
+- LLM request/response transcripts are stored as `<project>/.sessions/llm/<sessionId>.jsonl`
+- Runtime diagnostics are stored in `<project>/.sessions/logs/zen-agent.log`
+- Full terminal output is saved to `<project>/.sessions/terminals/<sessionId>/terminal-<callId>.log` via `script`; the model receives truncated output plus the log path
 - LLM provider: Deepseek via the Vercel AI SDK
 - Selectable models:
   - `deepseek-v4-flash`
@@ -109,12 +109,13 @@ These are exposed as ACP session config options and can be changed with `session
 
 Inside each project's `.sessions/` directory:
 
-| File | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `<sessionId>.json` | Session state for resume/load |
-| `<sessionId>.jsonl` | LLM request/response transcript |
-| `zen-agent.log` | Runtime diagnostic log |
-| `terminal-<callId>.log` | Full terminal output for a bash tool call |
+| `sessions/<sessionId>.json` | Session state for resume/load |
+| `llm/<sessionId>.jsonl` | LLM request/response transcript |
+| `logs/zen-agent.log` | Runtime diagnostic log |
+| `terminals/<sessionId>/terminal-<callId>.log` | Full terminal output for a bash tool call |
+| `terminals/<sessionId>/terminal-<callId>.sh` | Saved bash command script for a tool call |
 
 ## Development
 
