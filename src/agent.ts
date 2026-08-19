@@ -432,19 +432,6 @@ export class ZenAgent {
     return "max_turn_requests";
   }
 
-  private truncateCommand(command: string): string {
-    const maxLines = 5;
-    const maxLength = 300;
-    const lines = command.split("\n");
-    if (lines.length > maxLines) {
-      return `${lines.slice(0, maxLines).join("\n")}\n... [truncated]`;
-    }
-    if (command.length > maxLength) {
-      return `${command.slice(0, maxLength)}... [truncated]`;
-    }
-    return command;
-  }
-
   private async executeLlmToolCall(
     active: ActiveSession,
     cx: acp.AgentContext,
@@ -523,7 +510,7 @@ export class ZenAgent {
     await this.emit(active, cx, {
       sessionUpdate: "tool_call",
       toolCallId: call.id,
-      title: `$ ${this.truncateCommand(command)}`,
+      title: `$ ${command}`,
       kind: "execute",
       status: "pending",
       rawInput: { command },
