@@ -9,6 +9,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_THINKING_EFFORT,
   deleteStoredSession,
+  emptySessionUsage,
   findSessionCwd,
   listStoredSessions,
   readStoredSession,
@@ -22,7 +23,15 @@ import {
   type ThinkingEffort,
 } from "./storage.js";
 import { appendJsonLine, makeLogEntry } from "./logger.js";
-import { runLlmStep, SYSTEM_PROMPT, type LlmToolCall } from "./llm/deepseek.js";
+import {
+  costYuan,
+  getContextWindowTokens,
+  getModelPricing,
+  runLlmStep,
+  SYSTEM_PROMPT,
+  type LlmToolCall,
+  type LlmUsage,
+} from "./llm/deepseek.js";
 
 interface ActiveSession {
   session: StoredSession;
@@ -161,6 +170,80 @@ class StreamThrottle {
       this.schedule();
     }
   }
+}
+
+interface TurnStats {
+  steps: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheMissTokens: number;
+  reasoningTokens: number;
+  costYuan: number;
+  llmMs: number;
+  thinkingMs: number;
+  answeringMs: number;
+  toolMs: number;
+}
+
+function emptyTurnStats(): TurnStats {
+  return {
+    steps: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheMissTokens: 0,
+    reasoningTokens: 0,
+    costYuan: 0,
+    llmMs: 0,
+    thinkingMs: 0,
+    answeringMs: 0,
+    toolMs: 0,
+  };
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatTokens(count: number): string {
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M`;
+  }
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}K`;
+  }
+  return String(count);
+}
+
+function formatYuan(amount: number): string {
+  if (amount > 0 && amount < 0.01) {
+    return amount.toFixed(4);
+  }
+  return amount.toFixed(3);
+}
+
+function roundYuan(amount: number): number {
+  return Math.round(amount * 10_000) / 10_000;
+}
+
+function cacheHitPercent(turn: TurnStats): string {
+  const total = turn.cacheReadTokens + turn.cacheMissTokens;
+  if (total === 0) {
+    return "n/a";
+  }
+  return `${Math.round((turn.cacheReadTokens / total) * 100)}%`;
+}
+
+function showTurnStats(): boolean {
+  const raw = process.env.ZEN_AGENT_SHOW_STATS;
+  if (raw === undefined) {
+    return true;
+  }
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
 }
 
 export class ZenAgent {
@@ -381,8 +464,7 @@ export class ZenAgent {
       });
       await this.save(active);
 
-      const stopReason = await this.runTurn(active, cx, controller.signal);
-      return { stopReason };
+      return this.runTurn(active, cx, controller.signal);
     } catch (error) {
       if (controller.signal.aborted) {
         void this.logRuntime(active.session.cwd, "warn", "prompt cancelled", {
@@ -406,7 +488,24 @@ export class ZenAgent {
     active: ActiveSession,
     cx: acp.AgentContext,
     signal: AbortSignal,
-  ): Promise<acp.StopReason> {
+  ): Promise<acp.PromptResponse> {
+    const turn = emptyTurnStats();
+    let contextUsed: number | undefined;
+
+    const finalize = async (
+      stopReason: acp.StopReason,
+    ): Promise<acp.PromptResponse> => {
+      this.mergeTurnStats(active, turn);
+      await this.reportUsage(active, cx, contextUsed);
+      if (showTurnStats()) {
+        await this.emitTurnStats(active, cx, turn);
+      }
+      return {
+        stopReason,
+        usage: this.buildExperimentalUsage(active.session),
+      };
+    };
+
     for (let step = 0; step < MAX_TURN_STEPS; step++) {
       const assistantMessageId = newMessageId();
 
@@ -457,7 +556,14 @@ export class ZenAgent {
         text: llmResult.text,
         toolCalls: llmResult.toolCalls,
         finishReason: llmResult.finishReason,
+        usage: llmResult.usage,
       });
+
+      if (llmResult.usage) {
+        this.accumulateTurnUsage(active, turn, llmResult.usage);
+        contextUsed = llmResult.usage.inputTokens;
+        await this.reportUsage(active, cx, contextUsed);
+      }
 
       if (llmResult.toolCalls.length === 0) {
         const content =
@@ -469,7 +575,7 @@ export class ZenAgent {
           content,
         });
         await this.save(active);
-        return this.stopReasonFromFinish(llmResult.finishReason);
+        return finalize(this.stopReasonFromFinish(llmResult.finishReason));
       }
 
       const assistantParts: Array<{
@@ -499,7 +605,9 @@ export class ZenAgent {
       }> = [];
 
       for (const call of llmResult.toolCalls) {
+        const toolStart = Date.now();
         const result = await this.executeLlmToolCall(active, cx, call, signal);
+        turn.toolMs += Date.now() - toolStart;
         toolResults.push(result);
         if (signal.aborted) {
           throw new Error("aborted");
@@ -522,7 +630,104 @@ export class ZenAgent {
       await this.save(active);
     }
 
-    return "max_turn_requests";
+    return finalize("max_turn_requests");
+  }
+
+  private accumulateTurnUsage(
+    active: ActiveSession,
+    turn: TurnStats,
+    usage: LlmUsage,
+  ): void {
+    turn.steps += 1;
+    turn.inputTokens += usage.inputTokens;
+    turn.outputTokens += usage.outputTokens;
+    turn.cacheReadTokens += usage.cacheReadTokens;
+    turn.cacheMissTokens += usage.cacheMissTokens;
+    turn.reasoningTokens += usage.reasoningTokens;
+    turn.llmMs += usage.llmMs;
+    turn.thinkingMs += usage.thinkingMs;
+    turn.answeringMs += usage.answeringMs;
+    turn.costYuan += costYuan(usage, getModelPricing(active.session.config.model));
+  }
+
+  private mergeTurnStats(active: ActiveSession, turn: TurnStats): void {
+    const usage = active.session.usage;
+    usage.turns += 1;
+    usage.steps += turn.steps;
+    usage.inputTokens += turn.inputTokens;
+    usage.outputTokens += turn.outputTokens;
+    usage.cacheReadTokens += turn.cacheReadTokens;
+    usage.cacheMissTokens += turn.cacheMissTokens;
+    usage.reasoningTokens += turn.reasoningTokens;
+    usage.costYuan += turn.costYuan;
+    usage.llmMs += turn.llmMs;
+    usage.thinkingMs += turn.thinkingMs;
+    usage.answeringMs += turn.answeringMs;
+    usage.toolMs += turn.toolMs;
+  }
+
+  /**
+   * Report context window usage and cumulative cost to the client. Zed renders
+   * this as the token-usage ring in the agent panel header, whose tooltip shows
+   * "Context: used / max" and "Cost: amount CNY".
+   */
+  private async reportUsage(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    contextUsed: number | undefined,
+  ): Promise<void> {
+    if (contextUsed === undefined) {
+      return;
+    }
+    const size = getContextWindowTokens();
+    await this.emit(active, cx, {
+      sessionUpdate: "usage_update",
+      used: Math.min(contextUsed, size),
+      size,
+      cost: {
+        amount: roundYuan(active.session.usage.costYuan),
+        currency: "CNY",
+      },
+    });
+  }
+
+  /** Emit a compact per-turn stats line as its own message in the thread. */
+  private async emitTurnStats(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    turn: TurnStats,
+  ): Promise<void> {
+    if (turn.steps === 0) {
+      return;
+    }
+    const text = [
+      `Turn ${active.session.usage.turns} · ${turn.steps} step${turn.steps === 1 ? "" : "s"} · think ${formatMs(turn.thinkingMs)} · answer ${formatMs(turn.answeringMs)} · tools ${formatMs(turn.toolMs)}`,
+      `in ${formatTokens(turn.inputTokens)} · out ${formatTokens(turn.outputTokens)} · cache hit ${cacheHitPercent(turn)} · ¥${formatYuan(turn.costYuan)} (session ¥${formatYuan(active.session.usage.costYuan)})`,
+    ].join("\n");
+    await this.emit(active, cx, {
+      sessionUpdate: "agent_message_chunk",
+      messageId: newMessageId(),
+      content: { type: "text", text },
+    });
+  }
+
+  /**
+   * Experimental ACP PromptResponse.usage: Zed reads this (behind the
+   * AcpBetaFeatureFlag) to track cumulative input/output/thought/cache tokens.
+   */
+  private buildExperimentalUsage(session: StoredSession): acp.Usage | null {
+    const usage = session.usage;
+    if (usage.turns === 0 && usage.inputTokens === 0 && usage.outputTokens === 0) {
+      return null;
+    }
+    return {
+      totalTokens: usage.inputTokens + usage.outputTokens,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      thoughtTokens: usage.reasoningTokens,
+      cachedReadTokens: usage.cacheReadTokens,
+      cachedWriteTokens: null,
+    };
   }
 
   private shellQuote(value: string): string {
@@ -608,6 +813,7 @@ export class ZenAgent {
     await writeFile(commandScriptPath, command, "utf8");
     const scriptCommand = `bash ${this.shellQuote(commandScriptPath)}`;
     const wrappedCommand = `script -q -e -c ${this.shellQuote(scriptCommand)} ${this.shellQuote(logPath)}`;
+    const toolStart = Date.now();
 
     await this.emit(active, cx, {
       sessionUpdate: "tool_call",
@@ -722,10 +928,12 @@ export class ZenAgent {
 
       const cancelled = cancelledBySignal || signal.aborted;
       const status = cancelled || exit.exitCode !== 0 ? "failed" : "completed";
+      const durationMs = Date.now() - toolStart;
       const outputText =
         outputResp.output ||
         (status === "completed" ? "(no output)" : `exit code ${exit.exitCode ?? "unknown"}`);
       const outputForModel = outputText + `\n\n[Full output saved to ${logPath}]`;
+      const displayText = `${outputText}\n\n⏱ ${formatMs(durationMs)}`;
 
       await this.emit(active, cx, {
         sessionUpdate: "tool_call_update",
@@ -735,7 +943,7 @@ export class ZenAgent {
           { type: "terminal", terminalId },
           {
             type: "content",
-            content: { type: "text", text: outputText },
+            content: { type: "text", text: displayText },
           },
         ],
         rawOutput: {
@@ -744,6 +952,7 @@ export class ZenAgent {
           signal: exit.signal,
           truncated: outputResp.truncated,
           cancelled,
+          durationMs,
           fullOutputPath: logPath,
           commandScriptPath,
         },
@@ -757,6 +966,7 @@ export class ZenAgent {
     } catch (error) {
       await releaseTerminal();
       const message = error instanceof Error ? error.message : String(error);
+      const durationMs = Date.now() - toolStart;
       await this.emit(active, cx, {
         sessionUpdate: "tool_call_update",
         toolCallId: call.id,
@@ -764,10 +974,13 @@ export class ZenAgent {
         content: [
           {
             type: "content",
-            content: { type: "text", text: message },
+            content: {
+              type: "text",
+              text: `${message}\n\n⏱ ${formatMs(durationMs)}`,
+            },
           },
         ],
-        rawOutput: { error: message },
+        rawOutput: { error: message, durationMs },
       });
       return {
         toolCallId: call.id,

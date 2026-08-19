@@ -17,6 +17,50 @@ export interface SessionConfig {
   systemPrompt: string;
 }
 
+/**
+ * Cumulative usage/cost statistics for a session. Used to drive the ACP
+ * `usage_update` notification (context window + cost in CNY) and the
+ * per-turn stats line shown to the user.
+ */
+export interface SessionUsage {
+  /** Number of LLM-backed prompt turns completed. */
+  turns: number;
+  /** Total LLM/tool steps across all turns. */
+  steps: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheMissTokens: number;
+  reasoningTokens: number;
+  /** Cumulative cost in CNY. */
+  costYuan: number;
+  /** Cumulative LLM request wall time in ms. */
+  llmMs: number;
+  /** Cumulative thinking (reasoning) time in ms. */
+  thinkingMs: number;
+  /** Cumulative answer-streaming time in ms. */
+  answeringMs: number;
+  /** Cumulative bash tool execution time in ms. */
+  toolMs: number;
+}
+
+export function emptySessionUsage(): SessionUsage {
+  return {
+    turns: 0,
+    steps: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheMissTokens: 0,
+    reasoningTokens: 0,
+    costYuan: 0,
+    llmMs: 0,
+    thinkingMs: 0,
+    answeringMs: 0,
+    toolMs: 0,
+  };
+}
+
 export interface StoredSession {
   sessionId: string;
   cwd: string;
@@ -26,6 +70,7 @@ export interface StoredSession {
   events: SessionUpdate[];
   llmMessages: ModelMessage[];
   config: SessionConfig;
+  usage: SessionUsage;
 }
 
 interface SessionIndex {
@@ -135,6 +180,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: "",
     },
+    usage: emptySessionUsage(),
   };
   await writeSession(session);
   await rememberSession(session);
@@ -177,6 +223,9 @@ export async function readStoredSession(
   }
   if (!parsed.config.systemPrompt) {
     parsed.config.systemPrompt = "";
+  }
+  if (!parsed.usage) {
+    parsed.usage = emptySessionUsage();
   }
   parsed.llmMessages = sanitizeLlmMessages(parsed.llmMessages);
   return parsed;
