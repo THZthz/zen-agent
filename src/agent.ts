@@ -125,7 +125,7 @@ export class ZenAgent {
       session,
       abortController: null,
     });
-    await this.sendAvailableCommands(session.sessionId, cx);
+    this.scheduleAvailableCommands(session.sessionId, cx);
     return {
       sessionId: session.sessionId,
       configOptions: this.getConfigOptions(session),
@@ -149,7 +149,7 @@ export class ZenAgent {
         update,
       });
     }
-    await this.sendAvailableCommands(session.sessionId, cx);
+    this.scheduleAvailableCommands(session.sessionId, cx);
 
     return {
       configOptions: this.getConfigOptions(session),
@@ -166,7 +166,7 @@ export class ZenAgent {
       session,
       abortController: null,
     });
-    await this.sendAvailableCommands(session.sessionId, cx);
+    this.scheduleAvailableCommands(session.sessionId, cx);
     return {
       configOptions: this.getConfigOptions(session),
     };
@@ -679,6 +679,17 @@ export class ZenAgent {
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
     active?.abortController?.abort();
+  }
+
+  private scheduleAvailableCommands(
+    sessionId: string,
+    cx: acp.AgentContext,
+  ): void {
+    setTimeout(() => {
+      void this.sendAvailableCommands(sessionId, cx).catch((error) => {
+        console.error("Failed to send available commands:", error);
+      });
+    }, 0);
   }
 
   private async sendAvailableCommands(
