@@ -59,6 +59,10 @@ export function sessionPath(cwd: string, sessionId: string): string {
   return join(sessionStateDirectory(cwd), `${sessionId}.json`);
 }
 
+export function legacySessionPath(cwd: string, sessionId: string): string {
+  return join(sessionDirectory(cwd), `${sessionId}.json`);
+}
+
 export function sessionLlmLogPath(cwd: string, sessionId: string): string {
   return join(sessionLlmDirectory(cwd), `${sessionId}.jsonl`);
 }
@@ -151,7 +155,12 @@ export async function readStoredSession(
   cwd: string,
   sessionId: string,
 ): Promise<StoredSession> {
-  const raw = await readFile(sessionPath(cwd, sessionId), "utf8");
+  let raw: string;
+  try {
+    raw = await readFile(sessionPath(cwd, sessionId), "utf8");
+  } catch {
+    raw = await readFile(legacySessionPath(cwd, sessionId), "utf8");
+  }
   const parsed = JSON.parse(raw) as StoredSession;
   if (parsed.sessionId !== sessionId) {
     throw new Error(`Session file ${sessionId} has an invalid sessionId`);
@@ -224,27 +233,34 @@ export async function findSessionCwd(sessionId: string): Promise<string | undefi
 
 export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
   if (cwd) {
-    let files: string[];
-    try {
-      files = await readdir(sessionStateDirectory(cwd));
-    } catch {
-      return [];
-    }
-
+    const seen = new Set<string>();
     const sessions: SessionInfo[] = [];
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue;
+
+    const dirs = [sessionStateDirectory(cwd), sessionDirectory(cwd)];
+    for (const dir of dirs) {
+      let files: string[];
       try {
-        const raw = await readFile(join(sessionStateDirectory(cwd), file), "utf8");
-        const parsed = JSON.parse(raw) as StoredSession;
-        sessions.push({
-          sessionId: parsed.sessionId,
-          cwd: parsed.cwd,
-          title: parsed.title,
-          updatedAt: parsed.updatedAt,
-        });
+        files = await readdir(dir);
       } catch {
-        // Ignore malformed session files.
+        continue;
+      }
+      for (const file of files) {
+        if (!file.endsWith(".json")) continue;
+        const sessionId = file.slice(0, -".json".length);
+        if (seen.has(sessionId)) continue;
+        seen.add(sessionId);
+        try {
+          const raw = await readFile(join(dir, file), "utf8");
+          const parsed = JSON.parse(raw) as StoredSession;
+          sessions.push({
+            sessionId: parsed.sessionId,
+            cwd: parsed.cwd,
+            title: parsed.title,
+            updatedAt: parsed.updatedAt,
+          });
+        } catch {
+          // Ignore malformed session files.
+        }
       }
     }
 
@@ -282,5 +298,6 @@ export async function deleteStoredSession(
   sessionId: string,
 ): Promise<void> {
   await rm(sessionPath(cwd, sessionId), { force: true });
+  await rm(legacySessionPath(cwd, sessionId), { force: true });
   await forgetSession(sessionId);
 }

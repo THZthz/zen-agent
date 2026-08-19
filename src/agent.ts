@@ -639,7 +639,13 @@ export class ZenAgent {
         sessionUpdate: "tool_call_update",
         toolCallId: call.id,
         status,
-        content: [{ type: "terminal", terminalId }],
+        content: [
+          { type: "terminal", terminalId },
+          {
+            type: "content",
+            content: { type: "text", text: outputText },
+          },
+        ],
         rawOutput: {
           output: outputResp.output,
           exitCode: exit.exitCode,
@@ -763,32 +769,64 @@ export class ZenAgent {
     const result: acp.SessionUpdate[] = [];
 
     for (const event of events) {
+      const enriched = this.enrichReplayEvent(event);
       const last = result[result.length - 1];
 
       if (
         last &&
-        (event.sessionUpdate === "agent_thought_chunk" ||
-          event.sessionUpdate === "agent_message_chunk") &&
-        last.sessionUpdate === event.sessionUpdate &&
+        (enriched.sessionUpdate === "agent_thought_chunk" ||
+          enriched.sessionUpdate === "agent_message_chunk") &&
+        last.sessionUpdate === enriched.sessionUpdate &&
         "messageId" in last &&
-        "messageId" in event &&
-        last.messageId === event.messageId &&
+        "messageId" in enriched &&
+        last.messageId === enriched.messageId &&
         last.content.type === "text" &&
-        event.content.type === "text"
+        enriched.content.type === "text"
       ) {
         result[result.length - 1] = {
           ...last,
           content: {
             type: "text",
-            text: last.content.text + event.content.text,
+            text: last.content.text + enriched.content.text,
           },
         } as acp.SessionUpdate;
       } else {
-        result.push(event);
+        result.push(enriched);
       }
     }
 
     return result;
+  }
+
+  private enrichReplayEvent(event: acp.SessionUpdate): acp.SessionUpdate {
+    if (event.sessionUpdate !== "tool_call_update") {
+      return event;
+    }
+    const rawOutput = event.rawOutput as { output?: unknown } | undefined;
+    if (!rawOutput || typeof rawOutput.output !== "string") {
+      return event;
+    }
+
+    const hasTextContent = (event.content ?? []).some(
+      (item) =>
+        item.type === "content" &&
+        item.content.type === "text" &&
+        typeof item.content.text === "string",
+    );
+    if (hasTextContent) {
+      return event;
+    }
+
+    return {
+      ...event,
+      content: [
+        ...(event.content ?? []),
+        {
+          type: "content",
+          content: { type: "text", text: rawOutput.output },
+        },
+      ],
+    } as acp.SessionUpdate;
   }
 
   private async logRuntime(
