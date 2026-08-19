@@ -17,7 +17,6 @@ import {
   type StoredSession,
   type ThinkingEffort,
 } from "./storage.js";
-import { executeBash } from "./tools/bash.js";
 import { runLlmStep, type LlmToolCall } from "./llm/deepseek.js";
 
 interface ActiveSession {
@@ -72,10 +71,12 @@ function newSessionIdForPrompt(): string {
 
 export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
+  private clientCapabilities: acp.ClientCapabilities = {};
 
   async initialize(
-    _params: acp.InitializeRequest,
+    params: acp.InitializeRequest,
   ): Promise<acp.InitializeResponse> {
+    this.clientCapabilities = params.clientCapabilities ?? {};
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
       agentCapabilities: {
@@ -429,42 +430,144 @@ export class ZenAgent {
       rawInput: { command },
     });
 
-    await this.emit(active, cx, {
-      sessionUpdate: "tool_call_update",
-      toolCallId: call.id,
-      status: "in_progress",
-    });
+    if (!this.clientCapabilities.terminal) {
+      const message =
+        "Zed terminal support is required for the bash tool, but the client did not advertise terminal: true";
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: call.id,
+        status: "failed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: message },
+          },
+        ],
+        rawOutput: { error: message },
+      });
+      return {
+        toolCallId: call.id,
+        toolName: "bash",
+        output: { type: "text", value: message },
+      };
+    }
 
-    const result = await executeBash(command, active.session.cwd, signal);
-    const status =
-      result.cancelled || result.exitCode !== 0 ? "failed" : "completed";
-    const outputText =
-      result.output ||
-      (status === "completed" ? "(no output)" : `exit code ${result.exitCode}`);
+    let terminalId: string | undefined;
+    let cancelledBySignal = false;
 
-    await this.emit(active, cx, {
-      sessionUpdate: "tool_call_update",
-      toolCallId: call.id,
-      status,
-      content: [
-        {
-          type: "content",
-          content: { type: "text", text: outputText },
-        },
-      ],
-      rawOutput: {
-        output: result.output,
-        exitCode: result.exitCode,
-        cancelled: result.cancelled,
-        truncated: result.truncated,
-      },
-    });
-
-    return {
-      toolCallId: call.id,
-      toolName: "bash",
-      output: { type: "text", value: outputText },
+    const killTerminal = async () => {
+      if (!terminalId) return;
+      try {
+        await cx.request(acp.methods.client.terminal.kill, {
+          sessionId: active.session.sessionId,
+          terminalId,
+        });
+      } catch {
+        // The terminal may already have exited.
+      }
     };
+
+    const releaseTerminal = async () => {
+      if (!terminalId) return;
+      try {
+        await cx.request(acp.methods.client.terminal.release, {
+          sessionId: active.session.sessionId,
+          terminalId,
+        });
+      } catch {
+        // The terminal may already have been released.
+      }
+    };
+
+    const onAbort = () => {
+      cancelledBySignal = true;
+      void killTerminal();
+    };
+
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    try {
+      const createResp = await cx.request(acp.methods.client.terminal.create, {
+        sessionId: active.session.sessionId,
+        command: "/bin/bash",
+        args: ["-lc", command],
+        cwd: active.session.cwd,
+        env: [],
+        outputByteLimit: 1_000_000,
+      });
+      terminalId = createResp.terminalId;
+
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: call.id,
+        status: "in_progress",
+        content: [{ type: "terminal", terminalId }],
+      });
+
+      const exit = await cx.request(acp.methods.client.terminal.waitForExit, {
+        sessionId: active.session.sessionId,
+        terminalId,
+      });
+
+      const outputResp = await cx.request(acp.methods.client.terminal.output, {
+        sessionId: active.session.sessionId,
+        terminalId,
+      });
+
+      await releaseTerminal();
+
+      const cancelled = cancelledBySignal || signal.aborted;
+      const status = cancelled || exit.exitCode !== 0 ? "failed" : "completed";
+      const outputText =
+        outputResp.output ||
+        (status === "completed" ? "(no output)" : `exit code ${exit.exitCode ?? "unknown"}`);
+
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: call.id,
+        status,
+        content: [{ type: "terminal", terminalId }],
+        rawOutput: {
+          output: outputResp.output,
+          exitCode: exit.exitCode,
+          signal: exit.signal,
+          truncated: outputResp.truncated,
+          cancelled,
+        },
+      });
+
+      return {
+        toolCallId: call.id,
+        toolName: "bash",
+        output: { type: "text", value: outputText },
+      };
+    } catch (error) {
+      await releaseTerminal();
+      const message = error instanceof Error ? error.message : String(error);
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: call.id,
+        status: "failed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: message },
+          },
+        ],
+        rawOutput: { error: message },
+      });
+      return {
+        toolCallId: call.id,
+        toolName: "bash",
+        output: { type: "text", value: message },
+      };
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 
   private stopReasonFromFinish(finishReason: string): acp.StopReason {

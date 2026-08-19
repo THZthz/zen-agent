@@ -27,7 +27,7 @@ This document is the implementation specification. It will be updated as decisio
 ## 3. Non-Goals (initial version)
 
 - No MCP server connections (accepted and ignored for compatibility).
-- No client filesystem (`fs/*`) or terminal (`terminal/*`) usage.
+- No client filesystem (`fs/*`) usage. Client terminal (`terminal/*`) is required and used for all bash execution.
 - No session modes, config options, elicitation, slash commands, or plans.
 - No MCP connections; MCP server lists from clients are accepted and ignored.
 - Only one tool: `bash`.
@@ -170,13 +170,16 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
 
 ### 6.2 Execution
 
-- Use `child_process.spawn` with `bash`, `-lc`, and the command string.
-- Set `cwd` to the session working directory.
-- Inherit/merge the current process environment.
-- Capture stdout and stderr combined.
-- Strip ANSI escape sequences and replace binary garbage with safe placeholders (reference: Pi's `sanitizeBinaryOutput`).
-- Limit the returned output to a reasonable size (e.g. 30,000 chars) and indicate truncation in `rawOutput`.
-- On cancellation, kill the entire descendant process tree (`process.kill(-pid)` on Linux/WSL2).
+- Always use Zed's ACP terminal (`terminal/*`) when the client advertises `terminal: true`.
+- Create a terminal with:
+  - `command: "/bin/bash"`
+  - `args: ["-lc", "<command>"]`
+  - `cwd` set to the session working directory
+- Embed the terminal in the tool call via `content: [{ type: "terminal", terminalId }]` so Zed renders collapsible, scrollable, terminal-style output.
+- Wait for exit with `terminal/wait_for_exit`, fetch final output with `terminal/output`, then release with `terminal/release`.
+- On cancellation, call `terminal/kill` and `terminal/release`.
+- If the client does not advertise `terminal: true`, the tool fails with a clear error.
+- No local `child_process` bash execution is used.
 - No permission flow is used.
 
 ## 7. LLM Provider
@@ -227,8 +230,6 @@ zen-agent/
     storage.ts        # session file persistence under <cwd>/sessions/
     llm/
       deepseek.ts     # Deepseek via AI SDK
-    tools/
-      bash.ts         # bash execution with streaming/cancellation
 ```
 
 ## 10. Dependencies
@@ -240,10 +241,8 @@ zen-agent/
 
 ## 11. Testing
 
-- Unit tests for:
-  - Bash execution (output, exit code, truncation, cancellation).
-  - Prompt content conversion.
-- Integration test with the official SDK's in-memory client to drive `initialize` → `session/new` → `session/prompt` with a fake LLM.
+- Integration test with the official SDK's in-memory client to drive `initialize` → `session/new` → `session/prompt` with a fake LLM and mocked terminal methods.
+- Verify terminal calls: `terminal/create`, `terminal/wait_for_exit`, `terminal/output`, `terminal/release`.
 - Manual smoke test from a terminal using `node dist/index.js` and piping JSON-RPC lines.
 - Final validation from Zed with a sample project.
 
@@ -253,3 +252,4 @@ zen-agent/
 2. **ACP SDK**: Use the official `@agentclientprotocol/sdk`.
 3. **Session persistence**: Store sessions in `<cwd>/sessions/` and support `session/load`, `session/list`, `session/resume`, `session/delete`, and `session/close`.
 4. **MCP servers**: Ignore MCP servers; the agent exposes only the `bash` tool.
+5. **Bash execution**: Always use Zed's ACP terminal; local bash execution is removed.

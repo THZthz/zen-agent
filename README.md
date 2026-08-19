@@ -3,6 +3,7 @@
 An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for use with [Zed](https://zed.dev) on WSL2.
 
 - Single tool: `bash`
+- Bash execution always uses Zed's ACP terminal (no local bash subprocess)
 - No permission prompts (approval policy: `never`)
 - Sessions are stored in `<project>/sessions/`
 - LLM provider: Deepseek via the Vercel AI SDK

@@ -26,7 +26,7 @@ When you have completed the user's request, respond with a concise summary of wh
 
 export const bashTool = tool({
   description:
-    "Execute a bash command in the session working directory. The command is completely unrestricted.",
+    "Execute a bash command in the session working directory using the client terminal. The command is completely unrestricted.",
   inputSchema: z.object({
     command: z.string().describe("The bash command to execute."),
   }),
