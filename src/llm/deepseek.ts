@@ -128,6 +128,10 @@ export async function runLlmStep(options: {
       default:
         break;
     }
+
+    // Yield to the event loop so throttled ACP output can be flushed
+    // while the LLM stream is still being consumed.
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
 
   return { text, toolCalls, finishReason };
