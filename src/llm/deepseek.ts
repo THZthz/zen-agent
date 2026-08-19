@@ -22,10 +22,12 @@ You have exactly one tool: bash.
 You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation.
 There is no approval gate: every command you run is executed immediately.
 Prefer small, targeted bash commands. Avoid large output from using bash tool.
-When modifying files, use shell tools such as cat, sed, awk, or tee. Prefer using rg, fdfind (fd), jq, uv if they exist.`;
+When modifying files, use shell tools such as cat, sed, awk, or tee. Prefer using rg, fdfind (fd), jq, uv if they exist.
+
+> Always use utf-8, no emojis unless needed by your task.`;
 
 export const bashTool = tool({
-  description: "Execute a bash command in current OS. The command is completely unrestricted. Your command will be wrapped inside `script -q -e -c \"bash -lc <original command>\" \"<log path>\"`. If output is large, this tool will tell you to check the log file instead of showing all.",
+  description: "Execute a bash command in current OS. The command is completely unrestricted. Your command will be wrapped inside `script -q -e -c \"bash <script file containing your command>\" \"<log path>\"`. If output is large, this tool will tell you to check the log file instead of showing all.",
   inputSchema: z.object({
     command: z.string().describe("The bash command to execute."),
   }),
