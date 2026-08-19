@@ -233,7 +233,10 @@ export class ZenAgent {
       sessionId: session.sessionId,
     });
 
-    for (const update of this.coalesceReplayEvents(session.events)) {
+    const replayEvents = this.coalesceReplayEvents(
+      this.prepareReplayEvents(session.events),
+    );
+    for (const update of replayEvents) {
       await cx.notify(acp.methods.client.session.update, {
         sessionId: session.sessionId,
         update,
@@ -852,6 +855,66 @@ export class ZenAgent {
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
     active?.abortController?.abort();
+  }
+
+  private prepareReplayEvents(events: acp.SessionUpdate[]): acp.SessionUpdate[] {
+    // Only replay tool calls that have BOTH an initial `tool_call` event and a
+    // final (completed/failed) `tool_call_update`. Calls interrupted mid-run
+    // have no result worth showing, and replaying them as "pending" would
+    // leave phantom entries in the thread. Zed also creates a spurious
+    // "Tool call not found" failed entry for updates without an initial event.
+    const initialCallIds = new Set<string>();
+    const finalizedCallIds = new Set<string>();
+    for (const event of events) {
+      if (event.sessionUpdate === "tool_call") {
+        initialCallIds.add(event.toolCallId);
+      } else if (
+        event.sessionUpdate === "tool_call_update" &&
+        (event.status === "completed" || event.status === "failed")
+      ) {
+        finalizedCallIds.add(event.toolCallId);
+      }
+    }
+
+    const replayableCallIds = new Set(
+      [...initialCallIds].filter((id) => finalizedCallIds.has(id)),
+    );
+
+    const result: acp.SessionUpdate[] = [];
+    for (const event of events) {
+      if (event.sessionUpdate === "tool_call") {
+        if (replayableCallIds.has(event.toolCallId)) {
+          result.push(event);
+        }
+        continue;
+      }
+      if (event.sessionUpdate === "tool_call_update") {
+        if (
+          !replayableCallIds.has(event.toolCallId) ||
+          event.status === "in_progress"
+        ) {
+          // Drop transient in-progress updates. The final update carries the
+          // full status and content, so replaying the intermediate one would
+          // only cause extra work (and fail on stale terminal references).
+          continue;
+        }
+        result.push(this.stripTerminalContent(event));
+        continue;
+      }
+      result.push(event);
+    }
+    return result;
+  }
+
+  private stripTerminalContent(event: acp.SessionUpdate): acp.SessionUpdate {
+    if (event.sessionUpdate !== "tool_call_update" || !event.content) {
+      return event;
+    }
+    const content = event.content.filter((item) => item.type !== "terminal");
+    if (content.length === event.content.length) {
+      return event;
+    }
+    return { ...event, content } as acp.SessionUpdate;
   }
 
   private coalesceReplayEvents(events: acp.SessionUpdate[]): acp.SessionUpdate[] {
