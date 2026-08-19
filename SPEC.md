@@ -200,7 +200,7 @@ Zen Agent stores the text after `/prompt` (including newlines) as the session's 
 - Wait for exit with `terminal/wait_for_exit`, fetch final output with `terminal/output`, then release with `terminal/release`.
 - On cancellation, call `terminal/kill` and `terminal/release`.
 - If the client does not advertise `terminal: true`, the tool fails with a clear error.
-- Full terminal output is saved to `<cwd>/.sessions/terminal-<toolCallId>.log` using `tee`, so the model can read specific portions with `sed`/`tail` if needed.
+- Full terminal output is saved to `<cwd>/.sessions/terminal-<toolCallId>.log` using `script -q -e`, preserving TTY behavior, so the model can read specific portions with `sed`/`tail` if needed.
 - No local `child_process` bash execution is used.
 - No permission flow is used.
 

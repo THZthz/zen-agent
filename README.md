@@ -8,7 +8,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Sessions are stored in `<project>/.sessions/`
 - LLM request/response transcripts are stored as `<project>/.sessions/<sessionId>.jsonl`
 - Runtime diagnostics are stored in `<project>/.sessions/zen-agent.log`
-- Full terminal output is saved to `<project>/.sessions/terminal-<callId>.log`; the model receives truncated output plus the log path
+- Full terminal output is saved to `<project>/.sessions/terminal-<callId>.log` via `script`; the model receives truncated output plus the log path
 - LLM provider: Deepseek via the Vercel AI SDK
 - Selectable models:
   - `deepseek-v4-flash`

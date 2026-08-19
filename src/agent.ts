@@ -432,6 +432,10 @@ export class ZenAgent {
     return "max_turn_requests";
   }
 
+  private shellQuote(value: string): string {
+    return `'${value.replace(/'/g, `'\''`)}'`;
+  }
+
   private async executeLlmToolCall(
     active: ActiveSession,
     cx: acp.AgentContext,
@@ -505,7 +509,7 @@ export class ZenAgent {
       sessionDirectory(active.session.cwd),
       `terminal-${call.id}.log`,
     );
-    const wrappedCommand = `set -o pipefail\n{ ${command} ; } 2>&1 | tee "${logPath}"`;
+    const wrappedCommand = `script -q -e -c "bash -lc ${this.shellQuote(command)}" "${logPath}"`;
 
     await this.emit(active, cx, {
       sessionUpdate: "tool_call",
