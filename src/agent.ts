@@ -1,0 +1,483 @@
+import * as acp from "@agentclientprotocol/sdk";
+import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ModelMessage } from "ai";
+import {
+  createStoredSession,
+  deleteStoredSession,
+  findSessionCwd,
+  listStoredSessions,
+  readStoredSession,
+  writeSession,
+  type StoredSession,
+} from "./storage.js";
+import { executeBash } from "./tools/bash.js";
+import { runLlmStep, type LlmToolCall } from "./llm/deepseek.js";
+
+interface ActiveSession {
+  session: StoredSession;
+  abortController: AbortController | null;
+}
+
+const MAX_TURN_STEPS = 25;
+
+function newMessageId(): string {
+  return `msg_${randomBytes(8).toString("hex")}`;
+}
+
+function newSessionIdForPrompt(): string {
+  return newMessageId();
+}
+
+export class ZenAgent {
+  private sessions = new Map<string, ActiveSession>();
+
+  async initialize(
+    _params: acp.InitializeRequest,
+  ): Promise<acp.InitializeResponse> {
+    return {
+      protocolVersion: acp.PROTOCOL_VERSION,
+      agentCapabilities: {
+        loadSession: true,
+        sessionCapabilities: {
+          list: {},
+          delete: {},
+          resume: {},
+          close: {},
+        },
+      },
+      agentInfo: {
+        name: "zen-agent",
+        title: "Zen Agent",
+        version: "0.1.0",
+      },
+      authMethods: [],
+    };
+  }
+
+  async authenticate(
+    _params: acp.AuthenticateRequest,
+  ): Promise<acp.AuthenticateResponse | void> {
+    return {};
+  }
+
+  async newSession(
+    params: acp.NewSessionRequest,
+  ): Promise<acp.NewSessionResponse> {
+    if (!isAbsolute(params.cwd)) {
+      throw new Error("cwd must be an absolute path");
+    }
+    const session = await createStoredSession(params.cwd);
+    this.sessions.set(session.sessionId, {
+      session,
+      abortController: null,
+    });
+    return { sessionId: session.sessionId };
+  }
+
+  async loadSession(
+    params: acp.LoadSessionRequest,
+    cx: acp.AgentContext,
+  ): Promise<acp.LoadSessionResponse> {
+    const session = await readStoredSession(params.cwd, params.sessionId);
+    this.abortActiveSession(params.sessionId);
+    this.sessions.set(params.sessionId, {
+      session,
+      abortController: null,
+    });
+
+    for (const update of session.events) {
+      await cx.notify(acp.methods.client.session.update, {
+        sessionId: session.sessionId,
+        update,
+      });
+    }
+
+    return {};
+  }
+
+  async resumeSession(
+    params: acp.ResumeSessionRequest,
+  ): Promise<acp.ResumeSessionResponse> {
+    const session = await readStoredSession(params.cwd, params.sessionId);
+    this.abortActiveSession(params.sessionId);
+    this.sessions.set(params.sessionId, {
+      session,
+      abortController: null,
+    });
+    return {};
+  }
+
+  async listSessions(
+    params: acp.ListSessionsRequest,
+  ): Promise<acp.ListSessionsResponse> {
+    const sessions = await listStoredSessions(params.cwd ?? undefined);
+    return { sessions };
+  }
+
+  async deleteSession(
+    params: acp.DeleteSessionRequest,
+  ): Promise<acp.DeleteSessionResponse> {
+    const active = this.sessions.get(params.sessionId);
+    const cwd = active?.session.cwd ?? (await findSessionCwd(params.sessionId));
+    if (!cwd) {
+      throw new Error(`Session ${params.sessionId} not found`);
+    }
+    this.abortActiveSession(params.sessionId);
+    this.sessions.delete(params.sessionId);
+    await deleteStoredSession(cwd, params.sessionId);
+    return {};
+  }
+
+  async closeSession(
+    params: acp.CloseSessionRequest,
+  ): Promise<acp.CloseSessionResponse> {
+    this.abortActiveSession(params.sessionId);
+    this.sessions.delete(params.sessionId);
+    return {};
+  }
+
+  cancel(params: acp.CancelNotification): void {
+    this.abortActiveSession(params.sessionId);
+  }
+
+  async prompt(
+    params: acp.PromptRequest,
+    cx: acp.AgentContext,
+  ): Promise<acp.PromptResponse> {
+    const active = this.sessions.get(params.sessionId);
+    if (!active) {
+      throw new Error(`Session ${params.sessionId} not found`);
+    }
+
+    this.abortActiveSession(params.sessionId);
+    const controller = new AbortController();
+    active.abortController = controller;
+
+    try {
+      const userText = await this.promptBlocksToText(params.prompt);
+      const userMessage: ModelMessage = {
+        role: "user",
+        content: userText,
+      };
+      active.session.llmMessages.push(userMessage);
+      active.session.events.push({
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: userText },
+      });
+      await this.save(active);
+
+      const stopReason = await this.runTurn(active, cx, controller.signal);
+      return { stopReason };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return { stopReason: "cancelled" };
+      }
+      throw error;
+    } finally {
+      active.abortController = null;
+      active.session.updatedAt = new Date().toISOString();
+      await this.save(active).catch(() => {});
+    }
+  }
+
+  private async runTurn(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    signal: AbortSignal,
+  ): Promise<acp.StopReason> {
+    for (let step = 0; step < MAX_TURN_STEPS; step++) {
+      const assistantMessageId = newMessageId();
+
+      const llmResult = await runLlmStep({
+        messages: active.session.llmMessages,
+        signal,
+        onTextDelta: async (delta) => {
+          await this.emit(active, cx, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: assistantMessageId,
+            content: { type: "text", text: delta },
+          });
+        },
+      });
+
+      if (llmResult.toolCalls.length === 0) {
+        const content =
+          llmResult.text.length > 0
+            ? [{ type: "text" as const, text: llmResult.text }]
+            : [];
+        active.session.llmMessages.push({
+          role: "assistant",
+          content,
+        });
+        await this.save(active);
+        return this.stopReasonFromFinish(llmResult.finishReason);
+      }
+
+      const assistantParts: Array<{
+        type: "text";
+        text: string;
+      } | {
+        type: "tool-call";
+        toolCallId: string;
+        toolName: string;
+        input: unknown;
+      }> = [];
+      if (llmResult.text.length > 0) {
+        assistantParts.push({ type: "text", text: llmResult.text });
+      }
+      for (const call of llmResult.toolCalls) {
+        assistantParts.push({
+          type: "tool-call",
+          toolCallId: call.id,
+          toolName: call.name,
+          input: call.input,
+        });
+      }
+      active.session.llmMessages.push({
+        role: "assistant",
+        content: assistantParts,
+      });
+
+      const toolResults: Array<{
+        toolCallId: string;
+        toolName: string;
+        output: { type: "text"; value: string };
+      }> = [];
+
+      for (const call of llmResult.toolCalls) {
+        const result = await this.executeLlmToolCall(active, cx, call, signal);
+        toolResults.push(result);
+        if (signal.aborted) {
+          throw new Error("aborted");
+        }
+      }
+
+      active.session.llmMessages.push({
+        role: "tool",
+        content: toolResults.map((result) => ({
+          type: "tool-result",
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          output: result.output,
+        })),
+      });
+      await this.save(active);
+    }
+
+    return "max_turn_requests";
+  }
+
+  private async executeLlmToolCall(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    call: LlmToolCall,
+    signal: AbortSignal,
+  ): Promise<{
+    toolCallId: string;
+    toolName: string;
+    output: { type: "text"; value: string };
+  }> {
+    if (call.name !== "bash") {
+      const message = `Unknown tool: ${call.name}`;
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call",
+        toolCallId: call.id,
+        title: `Unknown tool ${call.name}`,
+        kind: "other",
+        status: "failed",
+        rawInput: call.input,
+      });
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: call.id,
+        status: "failed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: message },
+          },
+        ],
+        rawOutput: { error: message },
+      });
+      return {
+        toolCallId: call.id,
+        toolName: call.name,
+        output: { type: "text", value: message },
+      };
+    }
+
+    const command = (call.input as { command?: unknown }).command;
+    if (typeof command !== "string" || command.trim().length === 0) {
+      const message = "bash tool requires a non-empty string command";
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call",
+        toolCallId: call.id,
+        title: "Invalid bash command",
+        kind: "execute",
+        status: "failed",
+        rawInput: call.input,
+      });
+      await this.emit(active, cx, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: call.id,
+        status: "failed",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: message },
+          },
+        ],
+        rawOutput: { error: message },
+      });
+      return {
+        toolCallId: call.id,
+        toolName: "bash",
+        output: { type: "text", value: message },
+      };
+    }
+
+    await this.emit(active, cx, {
+      sessionUpdate: "tool_call",
+      toolCallId: call.id,
+      title: `$ ${command}`,
+      kind: "execute",
+      status: "pending",
+      rawInput: { command },
+    });
+
+    await this.emit(active, cx, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: call.id,
+      status: "in_progress",
+    });
+
+    const result = await executeBash(command, active.session.cwd, signal);
+    const status =
+      result.cancelled || result.exitCode !== 0 ? "failed" : "completed";
+    const outputText =
+      result.output ||
+      (status === "completed" ? "(no output)" : `exit code ${result.exitCode}`);
+
+    await this.emit(active, cx, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: call.id,
+      status,
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: outputText },
+        },
+      ],
+      rawOutput: {
+        output: result.output,
+        exitCode: result.exitCode,
+        cancelled: result.cancelled,
+        truncated: result.truncated,
+      },
+    });
+
+    return {
+      toolCallId: call.id,
+      toolName: "bash",
+      output: { type: "text", value: outputText },
+    };
+  }
+
+  private stopReasonFromFinish(finishReason: string): acp.StopReason {
+    switch (finishReason) {
+      case "length":
+        return "max_tokens";
+      case "content-filter":
+        return "refusal";
+      case "error":
+        throw new Error(`Language model finished with error: ${finishReason}`);
+      default:
+        return "end_turn";
+    }
+  }
+
+  private async promptBlocksToText(
+    blocks: acp.ContentBlock[],
+  ): Promise<string> {
+    const parts: string[] = [];
+
+    for (const block of blocks) {
+      switch (block.type) {
+        case "text":
+          parts.push(block.text);
+          break;
+        case "resource_link": {
+          const text = await this.readResourceLink(block);
+          parts.push(text);
+          break;
+        }
+        case "resource": {
+          const resource = block.resource;
+          if ("text" in resource && typeof resource.text === "string") {
+            parts.push(resource.text);
+          } else if ("blob" in resource && typeof resource.blob === "string") {
+            parts.push(
+              `[Embedded binary resource ${resource.uri} (base64, ${resource.blob.length} chars)]`,
+            );
+          } else {
+            parts.push(`[Embedded resource ${resource.uri}]`);
+          }
+          break;
+        }
+        case "image":
+        case "audio":
+          throw new Error(
+            `${block.type} content is not supported by zen-agent yet`,
+          );
+        default:
+          throw new Error(`Unsupported content block: ${(block as { type: string }).type}`);
+      }
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private async readResourceLink(block: {
+    type: "resource_link";
+    uri: string;
+    name?: string;
+    mimeType?: string | null;
+  }): Promise<string> {
+    if (!block.uri.startsWith("file://")) {
+      return block.name ?? block.uri;
+    }
+
+    try {
+      const path = fileURLToPath(block.uri);
+      const content = await readFile(path, "utf8");
+      return `File: ${path}\n${content}`;
+    } catch {
+      return block.name ?? block.uri;
+    }
+  }
+
+  private abortActiveSession(sessionId: string): void {
+    const active = this.sessions.get(sessionId);
+    active?.abortController?.abort();
+  }
+
+  private async emit(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    update: acp.SessionUpdate,
+  ): Promise<void> {
+    await cx.notify(acp.methods.client.session.update, {
+      sessionId: active.session.sessionId,
+      update,
+    });
+    active.session.events.push(update);
+  }
+
+  private async save(active: ActiveSession): Promise<void> {
+    active.session.updatedAt = new Date().toISOString();
+    await writeSession(active.session);
+  }
+}

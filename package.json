@@ -1,0 +1,39 @@
+{
+  "name": "zen-agent",
+  "version": "0.1.0",
+  "description": "ACP v1 coding agent for Zed on WSL2 with a single unrestricted bash tool.",
+  "type": "module",
+  "bin": {
+    "zen-agent": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "acp",
+    "agent-client-protocol",
+    "zed",
+    "coding-agent",
+    "wsl2"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.3.0",
+    "@ai-sdk/openai": "^4.0.43",
+    "ai": "^7.0.68",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
