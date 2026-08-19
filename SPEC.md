@@ -27,9 +27,10 @@ This document is the implementation specification. It will be updated as decisio
 ## 3. Non-Goals (initial version)
 
 - No MCP server connections (accepted and ignored for compatibility).
-- No session persistence / `session/load`, `session/list`, `session/delete`, `session/resume`, or `session/close`.
 - No client filesystem (`fs/*`) or terminal (`terminal/*`) usage.
 - No session modes, config options, elicitation, slash commands, or plans.
+- No MCP connections; MCP server lists from clients are accepted and ignored.
+- Only one tool: `bash`.
 - No Windows-native support; this targets WSL2/Linux.
 
 ## 4. Protocol Surface
@@ -47,7 +48,12 @@ This document is the implementation specification. It will be updated as decisio
 | --- | --- |
 | `initialize` | Negotiate protocol version and capabilities. |
 | `authenticate` | No-op; returns `{}`. |
-| `session/new` | Create an in-memory session with a generated ID and the provided `cwd`. |
+| `session/new` | Create a persistent session under `<cwd>/sessions/` with a generated ID and the provided `cwd`. |
+| `session/load` | Load a stored session and replay its conversation history. |
+| `session/list` | List sessions stored under `<cwd>/sessions/`. |
+| `session/resume` | Load a stored session without replaying history. |
+| `session/delete` | Delete a stored session. |
+| `session/close` | Cancel any active work for a session. |
 | `session/prompt` | Run a full agent turn: call the LLM, execute `bash` tool calls, stream updates, return `stopReason`. |
 | `session/cancel` | Abort the active prompt for the given session. |
 
@@ -64,7 +70,13 @@ This document is the implementation specification. It will be updated as decisio
 {
   "protocolVersion": 1,
   "agentCapabilities": {
-    "loadSession": false
+    "loadSession": true,
+    "sessionCapabilities": {
+      "list": {},
+      "delete": {},
+      "resume": {},
+      "close": {}
+    }
   },
   "agentInfo": {
     "name": "zen-agent",
@@ -80,13 +92,16 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
 ### 4.5 `session/new` Behavior
 
 - Validate `cwd` is absolute and exists.
-- Create a session record:
+- Create a persistent session file at `<cwd>/sessions/<sessionId>.json` containing:
   - `sessionId`
   - `cwd`
-  - conversation history (initially empty)
-  - active `AbortController` (initially none)
+  - `createdAt` / `updatedAt`
+  - `title`
+  - `events` (ACP `session/update` payloads for replay)
+  - `llmMessages` (AI SDK message history for continued conversation)
 - Return `{ sessionId }`.
 - `mcpServers` and `additionalDirectories` are accepted but ignored.
+- The `sessions/` directory is created if missing.
 
 ## 5. Agent Turn Lifecycle (`session/prompt`)
 
@@ -165,38 +180,22 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
 
 ## 7. LLM Provider
 
-The agent must call a generative model that supports tool/function calling.
+The agent uses the **Vercel AI SDK** with **Deepseek** through Deepseek's OpenAI-compatible endpoint.
 
-### 7.1 Proposed Provider Interface
-
-```ts
-interface LlmProvider {
-  complete(request: LlmRequest, signal: AbortSignal): AsyncIterable<LlmEvent>;
-}
-
-type LlmRequest = {
-  system: string;
-  messages: LlmMessage[];
-  tools: ToolDefinition[];
-};
-
-type LlmEvent =
-  | { type: "text_delta"; text: string }
-  | { type: "tool_call"; id: string; name: string; args: unknown }
-  | { type: "usage"; inputTokens: number; outputTokens: number };
-```
-
-### 7.2 Environment Configuration (OpenAI-compatible)
-
-Proposed default:
+### 7.1 Provider Configuration
 
 | Variable | Purpose |
 | --- | --- |
-| `ZEN_AGENT_MODEL` | Model name (required). |
-| `ZEN_AGENT_BASE_URL` | OpenAI-compatible base URL (default: `https://api.openai.com/v1`). |
-| `ZEN_AGENT_API_KEY` | API key (fallback to `OPENAI_API_KEY`). |
+| `DEEPSEEK_API_KEY` | Deepseek API key (required). |
+| `DEEPSEEK_BASE_URL` | Deepseek-compatible base URL (default: `https://api.deepseek.com/v1`). |
+| `DEEPSEEK_MODEL` | Model name (default: `deepseek-chat`). |
 
-Support for Anthropic can be added as a second adapter if desired.
+### 7.2 Integration
+
+- Use `createOpenAI` from `@ai-sdk/openai` with the Deepseek base URL and API key.
+- Use AI SDK `streamText` to stream text deltas and collect tool calls.
+- The only registered tool is `bash`.
+- If a Deepseek model does not support streaming tool calls, fall back to `generateText` with the same tool definition.
 
 ## 8. Session History and Context
 
@@ -215,11 +214,9 @@ zen-agent/
   src/
     index.ts          # entry point: stdio stream + agent app
     agent.ts          # ACP handlers and session store
+    storage.ts        # session file persistence under <cwd>/sessions/
     llm/
-      types.ts
-      provider.ts     # provider interface
-      openai.ts       # OpenAI-compatible chat completions adapter
-      anthropic.ts    # optional Anthropic adapter
+      deepseek.ts     # Deepseek via AI SDK
     tools/
       bash.ts         # bash execution with streaming/cancellation
 ```
@@ -227,10 +224,9 @@ zen-agent/
 ## 10. Dependencies
 
 - `@agentclientprotocol/sdk` — official ACP v1 TypeScript SDK for JSON-RPC/stdio plumbing and types.
+- `ai` + `@ai-sdk/openai` — Vercel AI SDK with Deepseek via its OpenAI-compatible endpoint.
 - `typescript`, `tsx`, `@types/node` — development/build tooling.
-- No heavy framework; HTTP calls use Node's built-in `fetch`.
-
-Using the official SDK is the proposed approach. If you prefer a hand-rolled JSON-RPC layer, that is a small change to this spec.
+- No heavy framework; HTTP calls are handled by the AI SDK.
 
 ## 11. Testing
 
@@ -241,9 +237,9 @@ Using the official SDK is the proposed approach. If you prefer a hand-rolled JSO
 - Manual smoke test from a terminal using `node dist/index.js` and piping JSON-RPC lines.
 - Final validation from Zed with a sample project.
 
-## 12. Open Questions
+## 12. Decisions
 
-1. **LLM provider**: Which provider/model should be the default? (OpenAI-compatible, Anthropic, Gemini, local model?)
-2. **SDK vs raw**: Is using the official `@agentclientprotocol/sdk` acceptable, or should the protocol be implemented directly?
-3. **Session persistence**: Should v1 include `session/load` / disk persistence, or is in-memory only sufficient for Zed use?
-4. **MCP servers**: Should we ignore MCP servers entirely, or implement stdio MCP connectivity in a later iteration?
+1. **LLM provider**: Deepseek for now, using the Vercel AI SDK.
+2. **ACP SDK**: Use the official `@agentclientprotocol/sdk`.
+3. **Session persistence**: Store sessions in `<cwd>/sessions/` and support `session/load`, `session/list`, `session/resume`, `session/delete`, and `session/close`.
+4. **MCP servers**: Ignore MCP servers; the agent exposes only the `bash` tool.
