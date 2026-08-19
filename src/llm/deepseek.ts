@@ -56,6 +56,7 @@ export async function runLlmStep(options: {
   onTextDelta?: (delta: string) => void | Promise<void>;
   model?: ModelId;
   thinkingEffort?: ThinkingEffort;
+  system?: string;
 }): Promise<LlmStepResult> {
   const model = createDeepseekModel(options.model);
 
@@ -74,7 +75,7 @@ export async function runLlmStep(options: {
 
   const result = streamText({
     model,
-    system: SYSTEM_PROMPT,
+    system: options.system ?? SYSTEM_PROMPT,
     messages: options.messages,
     tools: {
       bash: bashTool,

@@ -5,7 +5,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Single tool: `bash`
 - Bash execution always uses Zed's ACP terminal (no local bash subprocess)
 - No permission prompts (approval policy: `never`)
-- Sessions are stored in `<project>/sessions/`
+- Sessions are stored in `<project>/.sessions/`
 - LLM provider: Deepseek via the Vercel AI SDK
 - Selectable models:
   - `deepseek-v4-flash`
@@ -54,6 +54,22 @@ Point Zed's ACP agent at the built entrypoint:
 ```
 
 The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
+
+## Slash Command
+
+Zen Agent advertises a slash command in the agent panel:
+
+| Command | Description |
+| --- | --- |
+| `/prompt <text>` | Set a custom system prompt / session instructions before continuing |
+
+Example:
+
+```text
+/prompt Always prefer safe refactors and add tests.
+```
+
+The custom instructions are combined with the default Zen Agent system prompt for the rest of the session.
 
 ## Session Configuration
 

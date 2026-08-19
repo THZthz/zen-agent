@@ -14,6 +14,7 @@ export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "off";
 export interface SessionConfig {
   model: ModelId;
   thinkingEffort: ThinkingEffort;
+  systemPrompt: string;
 }
 
 export interface StoredSession {
@@ -35,7 +36,7 @@ interface SessionIndex {
 }
 
 export function sessionDirectory(cwd: string): string {
-  return join(cwd, "sessions");
+  return join(cwd, ".sessions");
 }
 
 export function sessionPath(cwd: string, sessionId: string): string {
@@ -104,6 +105,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
     config: {
       model: DEFAULT_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
+      systemPrompt: "",
     },
   };
   await writeSession(session);
@@ -137,7 +139,11 @@ export async function readStoredSession(
     parsed.config = {
       model: DEFAULT_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
+      systemPrompt: "",
     };
+  }
+  if (!parsed.config.systemPrompt) {
+    parsed.config.systemPrompt = "";
   }
   return parsed;
 }

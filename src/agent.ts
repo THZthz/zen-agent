@@ -17,7 +17,7 @@ import {
   type StoredSession,
   type ThinkingEffort,
 } from "./storage.js";
-import { runLlmStep, type LlmToolCall } from "./llm/deepseek.js";
+import { runLlmStep, SYSTEM_PROMPT, type LlmToolCall } from "./llm/deepseek.js";
 
 interface ActiveSession {
   session: StoredSession;
@@ -60,6 +60,16 @@ const THINKING_CONFIG_OPTION = {
     { value: "max", name: "Max", description: "Use maximum reasoning effort" },
   ],
 };
+
+const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
+  {
+    name: "prompt",
+    description: "Set a custom system prompt / instructions for this session",
+    input: {
+      hint: "custom system prompt or instructions",
+    },
+  },
+];
 
 function newMessageId(): string {
   return `msg_${randomBytes(8).toString("hex")}`;
@@ -105,6 +115,7 @@ export class ZenAgent {
 
   async newSession(
     params: acp.NewSessionRequest,
+    cx: acp.AgentContext,
   ): Promise<acp.NewSessionResponse> {
     if (!isAbsolute(params.cwd)) {
       throw new Error("cwd must be an absolute path");
@@ -114,6 +125,7 @@ export class ZenAgent {
       session,
       abortController: null,
     });
+    await this.sendAvailableCommands(session.sessionId, cx);
     return {
       sessionId: session.sessionId,
       configOptions: this.getConfigOptions(session),
@@ -137,6 +149,7 @@ export class ZenAgent {
         update,
       });
     }
+    await this.sendAvailableCommands(session.sessionId, cx);
 
     return {
       configOptions: this.getConfigOptions(session),
@@ -145,6 +158,7 @@ export class ZenAgent {
 
   async resumeSession(
     params: acp.ResumeSessionRequest,
+    cx: acp.AgentContext,
   ): Promise<acp.ResumeSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
     this.abortActiveSession(params.sessionId);
@@ -152,6 +166,7 @@ export class ZenAgent {
       session,
       abortController: null,
     });
+    await this.sendAvailableCommands(session.sessionId, cx);
     return {
       configOptions: this.getConfigOptions(session),
     };
@@ -238,6 +253,23 @@ export class ZenAgent {
 
     try {
       const userText = await this.promptBlocksToText(params.prompt);
+      const slashCommand = this.parseSlashCommand(userText);
+
+      if (slashCommand) {
+        active.session.events.push({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: userText },
+        });
+        await this.save(active);
+
+        const stopReason = await this.handleSlashCommand(
+          active,
+          cx,
+          slashCommand,
+        );
+        return { stopReason };
+      }
+
       const userMessage: ModelMessage = {
         role: "user",
         content: userText,
@@ -276,6 +308,7 @@ export class ZenAgent {
         signal,
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
+        system: this.buildSystemPrompt(active.session),
         onTextDelta: async (delta) => {
           await this.emit(active, cx, {
             sessionUpdate: "agent_message_chunk",
@@ -646,6 +679,87 @@ export class ZenAgent {
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
     active?.abortController?.abort();
+  }
+
+  private async sendAvailableCommands(
+    sessionId: string,
+    cx: acp.AgentContext,
+  ): Promise<void> {
+    await cx.notify(acp.methods.client.session.update, {
+      sessionId,
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: AVAILABLE_COMMANDS,
+      },
+    });
+  }
+
+  private parseSlashCommand(text: string): {
+    name: string;
+    argument: string;
+  } | null {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("/")) {
+      return null;
+    }
+    const match = trimmed.match(/^\/(\S+)\s*([\s\S]*)$/);
+    if (!match) {
+      return { name: trimmed.slice(1).trim(), argument: "" };
+    }
+    return {
+      name: match[1].toLowerCase(),
+      argument: match[2].trim(),
+    };
+  }
+
+  private async handleSlashCommand(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    command: { name: string; argument: string },
+  ): Promise<acp.StopReason> {
+    if (command.name !== "prompt") {
+      await this.emit(active, cx, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: `Unknown slash command: /${command.name}`,
+        },
+      });
+      return "end_turn";
+    }
+
+    if (!command.argument) {
+      await this.emit(active, cx, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Usage: /prompt <custom system prompt or instructions>",
+        },
+      });
+      return "end_turn";
+    }
+
+    active.session.config.systemPrompt = command.argument;
+    await this.save(active);
+
+    await this.emit(active, cx, {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: "System prompt updated for this session.",
+      },
+    });
+
+    return "end_turn";
+  }
+
+  private buildSystemPrompt(session: StoredSession): string {
+    if (!session.config.systemPrompt) {
+      return SYSTEM_PROMPT;
+    }
+      return `${SYSTEM_PROMPT}
+
+${session.config.systemPrompt}`;
   }
 
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {

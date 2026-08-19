@@ -48,9 +48,9 @@ This document is the implementation specification. It will be updated as decisio
 | --- | --- |
 | `initialize` | Negotiate protocol version and capabilities. |
 | `authenticate` | No-op; returns `{}`. |
-| `session/new` | Create a persistent session under `<cwd>/sessions/` with a generated ID and the provided `cwd`. |
+| `session/new` | Create a persistent session under `<cwd>/.sessions/` with a generated ID and the provided `cwd`. |
 | `session/load` | Load a stored session and replay its conversation history. |
-| `session/list` | List sessions stored under `<cwd>/sessions/`. |
+| `session/list` | List sessions stored under `<cwd>/.sessions/`. |
 | `session/resume` | Load a stored session without replaying history. |
 | `session/delete` | Delete a stored session. |
 | `session/close` | Cancel any active work for a session. |
@@ -93,7 +93,7 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
 ### 4.5 `session/new` Behavior
 
 - Validate `cwd` is absolute and exists.
-- Create a persistent session file at `<cwd>/sessions/<sessionId>.json` containing:
+- Create a persistent session file at `<cwd>/.sessions/<sessionId>.json` containing:
   - `sessionId`
   - `cwd`
   - `createdAt` / `updatedAt`
@@ -102,7 +102,17 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
   - `llmMessages` (AI SDK message history for continued conversation)
 - Return `{ sessionId }`.
 - `mcpServers` and `additionalDirectories` are accepted but ignored.
-- The `sessions/` directory is created if missing.
+- The `.sessions/` directory is created if missing.
+
+## 4.6 Slash Commands
+
+After `session/new`, `session/load`, or `session/resume`, Zen Agent sends an `available_commands_update` notification advertising:
+
+| Command | Description |
+| --- | --- |
+| `prompt` | Set a custom system prompt / session instructions. |
+
+The user can type `/prompt <text>` as the first message. Zen Agent stores the text as the session's custom system prompt and returns `end_turn` without invoking the model. Subsequent prompts combine the default system prompt with the custom instructions.
 
 ## 5. Agent Turn Lifecycle (`session/prompt`)
 
@@ -227,7 +237,7 @@ zen-agent/
   src/
     index.ts          # entry point: stdio stream + agent app
     agent.ts          # ACP handlers and session store
-    storage.ts        # session file persistence under <cwd>/sessions/
+    storage.ts        # session file persistence under <cwd>/.sessions/
     llm/
       deepseek.ts     # Deepseek via AI SDK
 ```
@@ -250,6 +260,6 @@ zen-agent/
 
 1. **LLM provider**: Deepseek for now, using the Vercel AI SDK.
 2. **ACP SDK**: Use the official `@agentclientprotocol/sdk`.
-3. **Session persistence**: Store sessions in `<cwd>/sessions/` and support `session/load`, `session/list`, `session/resume`, `session/delete`, and `session/close`.
+3. **Session persistence**: Store sessions in `<cwd>/.sessions/` and support `session/load`, `session/list`, `session/resume`, `session/delete`, and `session/close`.
 4. **MCP servers**: Ignore MCP servers; the agent exposes only the `bash` tool.
 5. **Bash execution**: Always use Zed's ACP terminal; local bash execution is removed.
