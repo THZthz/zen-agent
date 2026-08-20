@@ -497,7 +497,7 @@ describe("runLlmStep message wiring", () => {
         {
           role: "user",
           content: "Working directory: /tmp\nGit branch: main",
-          name: "environment",
+          name: "Environment",
         },
         { role: "user", content: "hello", name: "Amias" },
         { role: "user", content: "plain user" },
@@ -510,7 +510,7 @@ describe("runLlmStep message wiring", () => {
       { role: "system", content: "sys prompt" },
       {
         role: "user",
-        name: "environment",
+        name: "Environment",
         content: "Working directory: /tmp\nGit branch: main",
       },
       { role: "user", name: "Amias", content: "hello" },

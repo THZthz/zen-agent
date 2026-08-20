@@ -129,7 +129,7 @@ describe("buildSessionContinuedMessage", () => {
 describe("isEnvironmentMessage", () => {
   it("detects only auto-generated environment user messages", () => {
     expect(
-      isEnvironmentMessage({ role: "user", content: "x", name: "environment" }),
+      isEnvironmentMessage({ role: "user", content: "x", name: "Environment" }),
     ).toBe(true);
     expect(
       isEnvironmentMessage({ role: "user", content: "x", name: "Amias" }),

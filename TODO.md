@@ -4,5 +4,5 @@
 - [x] Check if context windows can be displayed to user — yes: ACP `usage_update` (`used`/`size`) drives Zed's token-usage ring in the agent panel header
 - [x] When user force send a new message, it is inserted after tool call step or after thinking complete (or other proper moment?), not just interrupt agent's work — graceful cancel: `session/cancel` sets a flag; the running LLM step or bash tool call completes before the turn responds `stopReason: "cancelled"`; Zed awaits that response before delivering the follow-up prompt. Escape hatch: `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS`
 - [x] Fix live streaming of thinking/answers — `@ai-sdk/openai`'s `throwIfOpenAIStreamErrorBeforeOutput` read ahead until the first content chunk, buffering DeepSeek's entire `reasoning_content` phase (visible as "thinking block does not stream"). Replaced `streamText` with a direct SSE client in `runLlmStep`; reasoning now streams live. This also fixed cache-hit stats (raw usage fields were stripped by the SDK's zod schema)
-- [ ] Check how to make Zen Agent run inside `bwrap` and restrict its write access to /mnt/
-- [ ] Check how to deceive agent to believe it is running inside a normal linux, not WSL2
+- [x] Check how to make Zen Agent run inside `bwrap` and restrict its write access to /mnt/
+- [x] Check how to deceive agent to believe it is running inside a normal linux, not WSL2

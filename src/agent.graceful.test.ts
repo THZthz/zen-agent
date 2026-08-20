@@ -366,7 +366,7 @@ describe("debug log stats", () => {
         outputTokens: 50,
         cacheReadTokens: 900,
         cacheMissTokens: 100,
-        cacheHitPercent: "90%",
+        cacheHitPercent: "90.00%",
         reasoningTokens: 10,
         finishReason: "stop",
         toolCalls: 0,
@@ -388,7 +388,7 @@ describe("debug log stats", () => {
         outputTokens: 50,
         cacheReadTokens: 900,
         cacheMissTokens: 100,
-        cacheHitPercent: "90%",
+        cacheHitPercent: "90.00%",
         reasoningTokens: 10,
       });
       expect(turn!.llmMs).toBe(500);
