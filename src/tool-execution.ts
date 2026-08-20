@@ -27,6 +27,33 @@ export function shellQuote(value: string): string {
 }
 
 /**
+ * Default bubblewrap sandbox used for bash tool calls when
+ * `ZEN_AGENT_SANDBOX=1`:
+ *   --bind / /           rootfs behaves exactly as on the host
+ *   --ro-bind /mnt /mnt  /mnt becomes read-only (reads OK, writes fail)
+ *   --dev /dev           fresh devtmpfs (host /dev is unusable in a userns)
+ *
+ * The sandboxed process runs as the invoking uid in a new user+mount
+ * namespace, so it cannot remount /mnt read-write. Override the entire
+ * bwrap command with `ZEN_AGENT_SANDBOX_CMD` if a different policy is
+ * needed (e.g. `--ro-bind / /` plus explicit writable binds).
+ */
+const DEFAULT_BASH_SANDBOX =
+  "bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev " +
+  "--bind /dev/pts /dev/pts --tmpfs /dev/shm";
+
+function bashSandboxPrefix(): string {
+  const custom = process.env.ZEN_AGENT_SANDBOX_CMD;
+  if (custom !== undefined && custom.trim() !== "") {
+    return `${custom.trim()} `;
+  }
+  if (process.env.ZEN_AGENT_SANDBOX === "1") {
+    return `${DEFAULT_BASH_SANDBOX} `;
+  }
+  return "";
+}
+
+/**
  * Runs a bash tool call through Zed's ACP terminal API.
  *
  * Zed exposes client-side terminals (`acp::methods.client.terminal.*`) that
@@ -35,6 +62,12 @@ export function shellQuote(value: string): string {
  * terminal card), and wait for exit before collecting output. The abort
  * listener below kills the terminal ONLY on a hard abort — a graceful
  * cancel (user follow-up / Stop) lets the command finish.
+ *
+ * Because these terminals run in Zed (on the host), sandboxing the agent
+ * process with bwrap does NOT constrain the bash tool. When
+ * `ZEN_AGENT_SANDBOX=1`, every bash call is therefore wrapped in its own
+ * bubblewrap invocation (see `bashSandboxPrefix`) that bind-mounts /mnt
+ * read-only: the tool can read /mnt but every write to it fails with EROFS.
  */
 export async function executeLlmToolCall(
   context: ToolExecutorContext,
@@ -108,7 +141,7 @@ export async function executeLlmToolCall(
   const commandScriptPath = join(terminalDir, `terminal-${call.id}.sh`);
   await mkdir(terminalDir, { recursive: true });
   await writeFile(commandScriptPath, command, "utf8");
-  const scriptCommand = `bash ${shellQuote(commandScriptPath)}`;
+  const scriptCommand = `${bashSandboxPrefix()}bash ${shellQuote(commandScriptPath)}`;
   const wrappedCommand = `script -q -e -c ${shellQuote(scriptCommand)} ${shellQuote(logPath)}`;
   const toolStart = Date.now();
 

@@ -40,7 +40,33 @@ DEEPSEEK_API_KEY=... node dist/index.js
 
 ## Zed Configuration
 
-Point Zed's ACP agent at the built entrypoint:
+Point Zed's ACP agent at the built entrypoint. The recommended setup runs
+the agent inside a bubblewrap sandbox (see [Sandboxing](#sandboxing-with-bubblewrap)):
+
+```json
+{
+  "agent_servers": {
+    "Zen Agent": {
+      "default_config_options": {
+        "model": "deepseek-v4-flash",
+        "thinking_effort": "max"
+      },
+      "type": "custom",
+      "command": "/home/amias/zen-agent/bin/zen-agent-bwrap.sh",
+      "args": [],
+      "env": {
+        "DEEPSEEK_API_KEY": "your-deepseek-api-key",
+        "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1",
+        "DEEPSEEK_MODEL": "deepseek-v4-flash",
+        "ZEN_AGENT_MAX_TURN_STEPS": "1000",
+        "ZEN_AGENT_SANDBOX": "1"
+      }
+    }
+  }
+}
+```
+
+Without the sandbox, point the command at `node` directly:
 
 ```json
 {
@@ -58,6 +84,27 @@ Point Zed's ACP agent at the built entrypoint:
 ```
 
 The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
+
+## Sandboxing with Bubblewrap
+
+`bin/zen-agent-bwrap.sh` runs the agent's node process inside `bwrap` with the
+following policy:
+
+- `--bind / /` — the whole root filesystem behaves exactly as on the host
+  (writable where it was writable, read-only where it was read-only).
+- `--ro-bind /mnt /mnt` — `/mnt` (Windows drives `C:`, `D:`, ..., WSL mounts)
+  becomes **read-only**: reads still work, every write fails with `EROFS`.
+- `--dev /dev`, `--bind /dev/pts /dev/pts`, `--tmpfs /dev/shm` — a fresh
+  device filesystem plus host PTYs so terminals and `/dev/null` keep working.
+
+The sandboxed process runs as your normal uid in a new user + mount
+namespace; it cannot remount `/mnt` read-write.
+
+Important: the agent's `bash` tool executes in a PTY owned by Zed on the
+**host**, outside the agent process's sandbox. To sandbox the bash tool too,
+set `ZEN_AGENT_SANDBOX=1` (as in the config above): every bash call is then
+wrapped in its own `bwrap` with the same `/mnt` read-only policy, so the
+agent can never write into `/mnt` even through its bash tool.
 
 ## Slash Command
 
@@ -120,6 +167,8 @@ These are exposed as ACP session config options and can be changed with `session
 | `DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M output tokens (overrides the effective rate for the current period) |
 | `ZEN_AGENT_SHOW_STATS` | `1` | Set to `0` to hide the per-turn stats line in the conversation |
 | `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` | `0` (wait forever) | Hard-abort escape hatch: if a graceful cancel (user follow-up or Stop) is pending longer than this, the in-flight LLM step / bash tool is forcibly aborted. `0` waits indefinitely |
+| `ZEN_AGENT_SANDBOX` | — | Set to `1` to run every bash tool call inside `bwrap` with `/mnt` mounted read-only (see [Sandboxing](#sandboxing-with-bubblewrap)) |
+| `ZEN_AGENT_SANDBOX_CMD` | default bwrap policy | Override the exact bwrap command used for sandboxed bash tool calls |
 
 ## Information Displayed to the User
 
