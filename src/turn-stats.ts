@@ -56,12 +56,15 @@ export function roundYuan(amount: number): number {
   return Math.round(amount * 10_000) / 10_000;
 }
 
-export function cacheHitPercent(turn: TurnStats): string {
-  const total = turn.cacheReadTokens + turn.cacheMissTokens;
+export function cacheHitPercent(stats: {
+  cacheReadTokens: number;
+  cacheMissTokens: number;
+}): string {
+  const total = stats.cacheReadTokens + stats.cacheMissTokens;
   if (total === 0) {
     return "n/a";
   }
-  return `${Math.round((turn.cacheReadTokens / total) * 100)}%`;
+  return `${Math.round((stats.cacheReadTokens / total) * 100)}%`;
 }
 
 export function showTurnStats(): boolean {

@@ -484,6 +484,7 @@ export class ZenAgent {
       stopReason: acp.StopReason,
     ): Promise<acp.PromptResponse> => {
       this.mergeTurnStats(active, turn);
+      this.logTurnStats(active, turn, stopReason);
       await this.reportUsage(active, cx, contextUsed);
       if (showTurnStats()) {
         await this.emitTurnStats(active, cx, turn);
@@ -558,6 +559,13 @@ export class ZenAgent {
         this.accumulateTurnUsage(active, turn, llmResult.usage);
         contextUsed = llmResult.usage.inputTokens;
         await this.reportUsage(active, cx, contextUsed);
+        this.logStepStats(
+          active,
+          step,
+          llmResult.usage,
+          llmResult.finishReason,
+          llmResult.toolCalls.length,
+        );
       }
 
       if (llmResult.toolCalls.length === 0) {
@@ -860,6 +868,69 @@ export class ZenAgent {
     // the LLM stream.
     this.clearGracefulCancel(active);
     active.abortController?.abort();
+  }
+
+  /**
+   * Per-LLM-step stats for the per-startup debug log (log.jsonl): token
+   * usage, cache hit ratio, cost and timing for one model request inside a
+   * turn. Skipped when the provider reported no usage (the numbers would
+   * all be zero/meaningless).
+   */
+  private logStepStats(
+    active: ActiveSession,
+    step: number,
+    usage: LlmUsage,
+    finishReason: string,
+    toolCallCount: number,
+  ): void {
+    void this.logRuntime(active.session.cwd, "info", "llm step stats", {
+      sessionId: active.session.sessionId,
+      step: step + 1,
+      model: active.session.config.model,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheMissTokens: usage.cacheMissTokens,
+      cacheHitPercent: cacheHitPercent(usage),
+      reasoningTokens: usage.reasoningTokens,
+      costYuan: costYuan(usage, getModelPricing(active.session.config.model)),
+      llmMs: usage.llmMs,
+      thinkingMs: usage.thinkingMs,
+      answeringMs: usage.answeringMs,
+      finishReason,
+      toolCalls: toolCallCount,
+    });
+  }
+
+  /**
+   * Per-turn stats for the per-startup debug log (log.jsonl): aggregate of
+   * all LLM steps in the turn plus tool execution time and the stop reason.
+   * Called from finalize() after mergeTurnStats() so `usage.turns` already
+   * points at this turn.
+   */
+  private logTurnStats(
+    active: ActiveSession,
+    turn: TurnStats,
+    stopReason: acp.StopReason,
+  ): void {
+    void this.logRuntime(active.session.cwd, "info", "turn stats", {
+      sessionId: active.session.sessionId,
+      turn: active.session.usage.turns,
+      model: active.session.config.model,
+      stopReason,
+      steps: turn.steps,
+      inputTokens: turn.inputTokens,
+      outputTokens: turn.outputTokens,
+      cacheReadTokens: turn.cacheReadTokens,
+      cacheMissTokens: turn.cacheMissTokens,
+      cacheHitPercent: cacheHitPercent(turn),
+      reasoningTokens: turn.reasoningTokens,
+      costYuan: turn.costYuan,
+      llmMs: turn.llmMs,
+      thinkingMs: turn.thinkingMs,
+      answeringMs: turn.answeringMs,
+      toolMs: turn.toolMs,
+    });
   }
 
   private async logRuntime(

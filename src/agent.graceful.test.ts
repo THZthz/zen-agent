@@ -305,3 +305,96 @@ describe("per-turn stats line", () => {
     }
   });
 });
+
+describe("debug log stats", () => {
+  beforeEach(() => {
+    mockedRunLlmStep.mockReset();
+  });
+
+  it("writes per-step and per-turn stats with cache hit ratio to log.jsonl", async () => {
+    const { readFileSync } = await import("node:fs");
+    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
+    try {
+      const { agent, cx, sessionId } = await setupAgent(cwd);
+      mockedRunLlmStep.mockResolvedValueOnce({
+        text: "the answer",
+        reasoning: "thinking...",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: {
+          inputTokens: 1000,
+          outputTokens: 50,
+          totalTokens: 1050,
+          cacheReadTokens: 900,
+          cacheMissTokens: 100,
+          reasoningTokens: 10,
+          llmMs: 500,
+          thinkingMs: 300,
+          answeringMs: 200,
+        },
+      });
+
+      await agent.prompt(
+        { sessionId, prompt: [{ type: "text", text: "hi" }] },
+        cx,
+      );
+
+      const startupLogKey = (
+        agent as unknown as { startupLogKey: string }
+      ).startupLogKey;
+      const logPath = join(cwd, ".sessions", "client", startupLogKey, "log.jsonl");
+
+      let entries: Array<Record<string, unknown>> = [];
+      // logRuntime is fire-and-forget; wait until the turn entry lands.
+      await vi.waitFor(() => {
+        const raw = readFileSync(logPath, "utf8");
+        entries = raw
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as Record<string, unknown>);
+        expect(entries.some((e) => e.message === "turn stats")).toBe(true);
+      });
+
+      const step = entries.find((e) => e.message === "llm step stats");
+      expect(step).toBeDefined();
+      expect(step).toMatchObject({
+        sessionId,
+        step: 1,
+        model: "deepseek-v4-flash",
+        inputTokens: 1000,
+        outputTokens: 50,
+        cacheReadTokens: 900,
+        cacheMissTokens: 100,
+        cacheHitPercent: "90%",
+        reasoningTokens: 10,
+        finishReason: "stop",
+        toolCalls: 0,
+      });
+      expect(typeof step!.costYuan).toBe("number");
+      expect(step!.llmMs).toBe(500);
+      expect(step!.thinkingMs).toBe(300);
+      expect(step!.answeringMs).toBe(200);
+
+      const turn = entries.find((e) => e.message === "turn stats");
+      expect(turn).toBeDefined();
+      expect(turn).toMatchObject({
+        sessionId,
+        turn: 1,
+        model: "deepseek-v4-flash",
+        stopReason: "end_turn",
+        steps: 1,
+        inputTokens: 1000,
+        outputTokens: 50,
+        cacheReadTokens: 900,
+        cacheMissTokens: 100,
+        cacheHitPercent: "90%",
+        reasoningTokens: 10,
+      });
+      expect(turn!.llmMs).toBe(500);
+      expect(turn!.toolMs).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});

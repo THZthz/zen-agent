@@ -7,7 +7,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - No permission prompts (approval policy: `never`)
 - Session state is stored in `<project>/.sessions/<sessionId>/state.json`
 - LLM request/response transcripts are stored as `<project>/.sessions/<sessionId>/llm.jsonl`
-- Runtime diagnostics are stored in a per-startup log at `<project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl`
+- Runtime diagnostics are stored in a per-startup log at `<project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl`, including per-LLM-step and per-turn stats (tokens, cache hit ratio, cost, timing)
 - Bash command scripts are saved to `<project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh`; full terminal output is saved to `<project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log` via `script`; the model receives truncated output plus the log path
 - LLM provider: Deepseek via its OpenAI-compatible chat completions API, with a direct SSE client (`runLlmStep` in `src/llm/deepseek.ts`)
 - Environment context (working directory, session time, git branch/commit/status) is sent to the model as a `user` message named `environment`, separate from the system prompt. It is frozen into the session at creation and persisted, so the request prefix stays byte-identical and DeepSeek's context cache keeps hitting across steps and session restarts; on every load/resume a fresh continuation notification is appended at the end of the conversation
