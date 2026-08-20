@@ -439,3 +439,78 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
     expect(result.finishReason).toBe("stop");
   });
 });
+
+describe("runLlmStep message wiring", () => {
+  const originalEnv = { ...process.env };
+  let server: import("node:http").Server | undefined;
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    server?.close();
+    server = undefined;
+    vi.restoreAllMocks();
+  });
+
+  it("injects the environment message after system and keeps user names", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer(
+        (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+          const chunks: Buffer[] = [];
+          req.on("data", (c: Buffer) => chunks.push(c));
+          req.on("end", () => {
+            capturedBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            res.write(
+              `data: ${JSON.stringify({
+                id: "1",
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "deepseek",
+                choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }],
+              })}\n\n`,
+            );
+            res.write(
+              `data: ${JSON.stringify({
+                id: "1",
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "deepseek",
+                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+              })}\n\n`,
+            );
+            res.write("data: [DONE]\n\n");
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => resolve((srv.address() as import("node:net").AddressInfo).port));
+    });
+
+    process.env.DEEPSEEK_API_KEY = "test";
+    process.env.DEEPSEEK_MODEL = "deepseek-v4-flash";
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+
+    await runLlmStep({
+      messages: [
+        { role: "user", content: "hello", name: "Amias" },
+        { role: "user", content: "plain user" },
+      ],
+      system: "sys prompt",
+      environment: "Working directory: /tmp\nGit branch: main",
+    });
+
+    const messages = capturedBody?.messages as Array<Record<string, unknown>>;
+    expect(messages).toEqual([
+      { role: "system", content: "sys prompt" },
+      {
+        role: "user",
+        name: "environment",
+        content: "Working directory: /tmp\nGit branch: main",
+      },
+      { role: "user", name: "Amias", content: "hello" },
+      { role: "user", content: "plain user" },
+    ]);
+  });
+});

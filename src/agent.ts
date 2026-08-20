@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ModelMessage } from "ai";
 import {
   createStoredSession,
   DEFAULT_MODEL,
@@ -19,6 +18,7 @@ import {
   terminalDirectory,
   writeSession,
   type ModelId,
+  type NamedUserMessage,
   type StoredSession,
   type ThinkingEffort,
 } from "./storage.js";
@@ -35,7 +35,11 @@ import {
 } from "./llm/deepseek.js";
 import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
-import { buildSystemPrompt } from "./system-prompt.js";
+import {
+  buildEnvironmentMessage,
+  buildSystemPrompt,
+  getUserMessageName,
+} from "./system-prompt.js";
 import {
   cacheHitPercent,
   emptyTurnStats,
@@ -424,9 +428,10 @@ export class ZenAgent {
         return { stopReason };
       }
 
-      const userMessage: ModelMessage = {
+      const userMessage: NamedUserMessage = {
         role: "user",
         content: userText,
+        name: await getUserMessageName(active.session.cwd),
       };
       active.session.llmMessages.push(userMessage);
       active.session.events.push({
@@ -494,12 +499,14 @@ export class ZenAgent {
 
       const assistantMessageId = newMessageId();
 
+      const environment = await buildEnvironmentMessage(active.session);
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
         type: "llm_request",
         timestamp: new Date().toISOString(),
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
         system: buildSystemPrompt(active.session),
+        environment,
         messages: active.session.llmMessages,
       });
 
@@ -525,6 +532,7 @@ export class ZenAgent {
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
         system: buildSystemPrompt(active.session),
+        environment,
         onTextDelta: async (delta) => {
           stream.push("message", delta);
         },
@@ -789,6 +797,7 @@ export class ZenAgent {
       session.llmMessages,
       buildSystemPrompt(session),
       session.config.model,
+      await buildEnvironmentMessage(session),
     );
     if (!rebuilt) {
       return null;

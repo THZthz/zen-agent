@@ -1,6 +1,6 @@
 import type { ModelMessage } from "ai";
-import type { ModelId, ThinkingEffort } from "../storage.js";
-import { SYSTEM_PROMPT } from "../system-prompt.js";
+import type { LlmMessage, ModelId, ThinkingEffort } from "../storage.js";
+import { ENVIRONMENT_MESSAGE_NAME, SYSTEM_PROMPT } from "../system-prompt.js";
 export { SYSTEM_PROMPT } from "../system-prompt.js";
 
 export interface LlmToolCall {
@@ -241,7 +241,7 @@ interface PartialToolCall {
 }
 
 /** Convert our stored AI-SDK ModelMessage history to the OpenAI wire format. */
-function toOpenAiMessages(messages: ModelMessage[]): unknown[] {
+function toOpenAiMessages(messages: LlmMessage[]): unknown[] {
   const out: unknown[] = [];
 
   for (const message of messages) {
@@ -254,7 +254,11 @@ function toOpenAiMessages(messages: ModelMessage[]): unknown[] {
                 .filter((part) => part.type === "text")
                 .map((part) => (part as { text: string }).text)
                 .join("");
-        out.push({ role: "user", content });
+        const userMessage: Record<string, unknown> = { role: "user", content };
+        if ("name" in message && typeof message.name === "string" && message.name.length > 0) {
+          userMessage.name = message.name;
+        }
+        out.push(userMessage);
         break;
       }
       case "assistant": {
@@ -361,13 +365,15 @@ function mapFinishReason(raw: string | null | undefined): string {
  * parseDeepSeekUsage), which the SDK's zod schema strips.
  */
 export async function runLlmStep(options: {
-  messages: ModelMessage[];
+  messages: LlmMessage[];
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void | Promise<void>;
   onReasoningDelta?: (delta: string) => void | Promise<void>;
   model?: ModelId;
   thinkingEffort?: ThinkingEffort;
   system?: string;
+  /** Environment context sent as a user message named `environment`. */
+  environment?: string;
 }): Promise<LlmStepResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -377,14 +383,26 @@ export async function runLlmStep(options: {
   const modelName = options.model ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 
   const wireMessages = toOpenAiMessages(options.messages);
+  const bodyMessages: Array<Record<string, unknown>> = [
+    { role: "system", content: options.system ?? SYSTEM_PROMPT },
+  ];
+  // Environment context goes to the model as its own user message, named
+  // differently from the human so it is not mistaken for a user request.
+  if (options.environment && options.environment.length > 0) {
+    bodyMessages.push({
+      role: "user",
+      name: ENVIRONMENT_MESSAGE_NAME,
+      content: options.environment,
+    });
+  }
+  bodyMessages.push(
+    ...(wireMessages.filter(
+      (message) => (message as { role?: string }).role !== "system",
+    ) as Array<Record<string, unknown>>),
+  );
   const body: Record<string, unknown> = {
     model: modelName,
-    messages: [
-      { role: "system", content: options.system ?? SYSTEM_PROMPT },
-      ...wireMessages.filter(
-        (message) => (message as { role?: string }).role !== "system",
-      ),
-    ],
+    messages: bodyMessages,
     tools: [BASH_TOOL_SCHEMA],
     stream: true,
   };

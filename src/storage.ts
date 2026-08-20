@@ -6,6 +6,21 @@ import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { TurnStats } from "./turn-stats.js";
 
+/**
+ * A user message that may carry a `name` (the OpenAI wire `name` field,
+ * e.g. the git user name for the human's prompts, or "environment" for the
+ * auto-generated environment message). The AI SDK's `UserModelMessage` has
+ * no `name` field, hence this local extension.
+ */
+export interface NamedUserMessage {
+  role: "user";
+  content: string;
+  name?: string;
+}
+
+/** Every message we can persist in a session and send to the LLM. */
+export type LlmMessage = ModelMessage | NamedUserMessage;
+
 export type ModelId = "deepseek-v4-flash" | "deepseek-v4-pro";
 export type ThinkingEffort = "off" | "high" | "max";
 
@@ -84,7 +99,7 @@ export interface StoredSession {
   updatedAt: string;
   title: string | null;
   events: SessionUpdate[];
-  llmMessages: ModelMessage[];
+  llmMessages: LlmMessage[];
   config: SessionConfig;
   usage: SessionUsage;
   /** Per-turn stats, one entry per completed LLM-backed turn. */
@@ -261,9 +276,9 @@ export async function readStoredSession(
  * on load. New sessions store the real streamed reasoning via `runLlmStep`.
  */
 export function ensureReasoningParts(
-  messages: ModelMessage[],
+  messages: LlmMessage[],
   thinkingEffort: ThinkingEffort,
-): ModelMessage[] {
+): LlmMessage[] {
   if (thinkingEffort === "off") {
     return messages;
   }
@@ -285,7 +300,7 @@ export function ensureReasoningParts(
   });
 }
 
-export function sanitizeLlmMessages(messages: ModelMessage[]): ModelMessage[] {
+export function sanitizeLlmMessages(messages: LlmMessage[]): LlmMessage[] {
   const callIds = new Set<string>();
   const resolvedIds = new Set<string>();
 

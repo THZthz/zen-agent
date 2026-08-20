@@ -10,6 +10,8 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Runtime diagnostics are stored in `<project>/.sessions/logs/zen-agent.log`
 - Full terminal output is saved to `<project>/.sessions/terminals/<sessionId>/terminal-<callId>.log` via `script`; the model receives truncated output plus the log path
 - LLM provider: Deepseek via its OpenAI-compatible chat completions API, with a direct SSE client (`runLlmStep` in `src/llm/deepseek.ts`)
+- Environment context (working directory, session time, git branch/commit/status) is sent to the model as a `user` message named `environment`, separate from the system prompt
+- The human's own messages are sent with `name` set to `git config user.name` (defaults to `User`)
 - Selectable models:
   - `deepseek-v4-flash`
   - `deepseek-v4-pro`

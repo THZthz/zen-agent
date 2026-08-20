@@ -10,6 +10,7 @@ import {
 import {
   emptySessionUsage,
   sessionLlmLogPath,
+  type LlmMessage,
   type ModelId,
   type SessionUsage,
 } from "./storage.js";
@@ -52,6 +53,7 @@ export interface RebuiltSessionStats {
 /** Wire-format message as the tokenizer's chat template expects it. */
 interface WireMessage {
   role: string;
+  name?: string;
   content?: string | null;
   reasoning_content?: string | null;
   tool_calls?: Array<{
@@ -74,6 +76,7 @@ interface LogStep {
   usage: LlmUsage | null;
   requestMessages: ModelMessage[];
   system: string;
+  environment: string;
 }
 
 const MAX_CACHEABLE_CHARS = 10 * 1024;
@@ -98,7 +101,7 @@ function cachedBoundedTokens(s: string, cache: Map<string, number>): number {
 }
 
 /** Convert stored AI-SDK messages to the OpenAI wire format (same as runLlmStep). */
-function toWireMessages(messages: ModelMessage[]): WireMessage[] {
+function toWireMessages(messages: LlmMessage[]): WireMessage[] {
   const out: WireMessage[] = [];
   for (const message of messages) {
     switch (message.role) {
@@ -110,7 +113,11 @@ function toWireMessages(messages: ModelMessage[]): WireMessage[] {
                 .filter((part) => part.type === "text")
                 .map((part) => (part as { text: string }).text)
                 .join("");
-        out.push({ role: "user", content });
+        const wireMessage: WireMessage = { role: "user", content };
+        if ("name" in message && typeof message.name === "string" && message.name.length > 0) {
+          wireMessage.name = message.name;
+        }
+        out.push(wireMessage);
         break;
       }
       case "assistant": {
@@ -251,6 +258,7 @@ async function parseLlmLog(
     ts: number;
     messages: ModelMessage[];
     system: string;
+    environment: string;
   } | null = null;
 
   for (const line of raw.split("\n")) {
@@ -278,6 +286,7 @@ async function parseLlmLog(
         ts: requestTs,
         messages: (entry.messages ?? []) as ModelMessage[],
         system: String(entry.system ?? ""),
+        environment: String(entry.environment ?? ""),
       };
       continue;
     }
@@ -298,6 +307,7 @@ async function parseLlmLog(
         usage: (entry.usage ?? null) as LlmUsage | null,
         requestMessages: pending.messages,
         system: pending.system,
+        environment: pending.environment,
       });
       pending = null;
       continue;
@@ -343,7 +353,8 @@ function rebuildFromLog(
       const wire = toWireMessages(step.requestMessages);
       const inputTokens =
         estimateRequestTokens(wire, [BASH_TOOL_SCHEMA]) +
-        cachedBoundedTokens(step.system, cache);
+        cachedBoundedTokens(step.system, cache) +
+        environmentMessageTokens(step.environment, cache);
       const outputTokens =
         cachedBoundedTokens(step.text, cache) +
         cachedBoundedTokens(JSON.stringify(step.toolCalls), cache);
@@ -374,19 +385,22 @@ function rebuildFromLog(
  * `llmMessages` alone (times cannot be recovered, so they stay 0).
  */
 function rebuildFromMessages(
-  messages: ModelMessage[],
+  messages: LlmMessage[],
   system: string,
   model: ModelId,
   cache: Map<string, number>,
+  environment = "",
 ): RebuiltSessionStats {
   const wire = toWireMessages(messages);
   const turnStats: TurnStats[] = [];
   let current = emptyTurnStats();
-  // BOS-ish constant (2) + system prompt + tool schemas, mirroring
-  // estimateRequestTokens + the separate system message DeepSeek receives.
+  // BOS-ish constant (2) + system prompt + environment message + tool
+  // schemas, mirroring estimateRequestTokens + the separate system and
+  // environment messages DeepSeek receives.
   let prefixTokens =
     2 +
     cachedBoundedTokens(system, cache) +
+    environmentMessageTokens(environment, cache) +
     estimateRequestTokens([], [BASH_TOOL_SCHEMA]);
   let lastContextUsed = 0;
 
@@ -427,9 +441,10 @@ function rebuildFromMessages(
 export async function rebuildSessionStats(
   cwd: string,
   sessionId: string,
-  messages: ModelMessage[],
+  messages: LlmMessage[],
   system: string,
   model: ModelId,
+  environment = "",
 ): Promise<RebuiltSessionStats | null> {
   if (messages.length === 0) {
     return null;
@@ -439,7 +454,21 @@ export async function rebuildSessionStats(
   if (steps && steps.length > 0) {
     return rebuildFromLog(steps, model, cache);
   }
-  return rebuildFromMessages(messages, system, model, cache);
+  return rebuildFromMessages(messages, system, model, cache, environment);
+}
+
+/**
+ * Tokens of the injected environment user message: template overhead
+ * (like any other wire message) plus its content.
+ */
+function environmentMessageTokens(
+  environment: string,
+  cache: Map<string, number>,
+): number {
+  if (environment.length === 0) {
+    return 0;
+  }
+  return 6 + cachedBoundedTokens(environment, cache);
 }
 
 /** One-line summary shown after resume when stats were recovered. */
