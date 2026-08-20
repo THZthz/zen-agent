@@ -107,9 +107,6 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
 - Bash command scripts and terminal output logs are stored under
   `<cwd>/.sessions/<sessionId>/terminals/` as
   `input-<timestamp>-<callId>.sh` and `output-<timestamp>-<callId>.log`.
-- Legacy layouts (`.sessions/sessions/<sessionId>.json`,
-  `.sessions/<sessionId>.json`, `.sessions/llm/<sessionId>.jsonl`) are still
-  read for backward compatibility so pre-migration sessions resume.
 - Return `{ sessionId }`.
 - `mcpServers` and `additionalDirectories` are accepted but ignored.
 - The `.sessions/` directory is created if missing.

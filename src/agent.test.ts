@@ -366,120 +366,8 @@ describe("graceful cancel", () => {
   });
 });
 
-describe("session stats recovery on load", () => {
-  it("rebuilds usage/turnStats for legacy sessions and reports them once", async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = await import(
-      "node:fs"
-    );
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const { vi } = await import("vitest");
-
-    const dir = mkdtempSync(join(tmpdir(), "zen-agent-load-"));
-    try {
-      const agent = new ZenAgent() as unknown as TestAgent & {
-        loadSession(
-          params: { cwd: string; sessionId: string },
-          cx: { notify: (method: string, params: { sessionId: string; update: unknown }) => Promise<void> },
-        ): Promise<unknown>;
-      };
-
-      const session = makeSession("sess_legacy");
-      session.cwd = dir;
-      session.llmMessages = [
-        { role: "user", content: "turn one" },
-        {
-          role: "assistant",
-          content: [{ type: "text", text: "the answer" }],
-        },
-      ];
-      session.events = [
-        { sessionUpdate: "user_message_chunk", content: { type: "text", text: "turn one" } },
-        { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "text", text: "the answer" } },
-      ] as never;
-
-      mkdirSync(join(dir, ".sessions", "sessions"), { recursive: true });
-      mkdirSync(join(dir, ".sessions", "llm"), { recursive: true });
-      const legacy = JSON.parse(JSON.stringify(session)) as Record<string, unknown>;
-      delete legacy.usage;
-      delete legacy.turnStats;
-      writeFileSync(
-        join(dir, ".sessions", "sessions", "sess_legacy.json"),
-        JSON.stringify(legacy),
-        "utf8",
-      );
-      writeFileSync(
-        join(dir, ".sessions", "llm", "sess_legacy.jsonl"),
-        [
-          JSON.stringify({
-            type: "llm_request",
-            timestamp: "2026-08-19T10:00:00.000Z",
-            model: "deepseek-v4-flash",
-            system: "sys",
-            messages: session.llmMessages,
-          }),
-          JSON.stringify({
-            type: "llm_response",
-            timestamp: "2026-08-19T10:00:01.000Z",
-            text: "the answer",
-            toolCalls: [],
-            finishReason: "stop",
-          }),
-        ].join("\n") + "\n",
-        "utf8",
-      );
-
-      const notify = vi.fn(async (_method: string, _params: { sessionId: string; update: unknown }) => {});
-      const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
-
-      await agent.loadSession({ cwd: dir, sessionId: "sess_legacy" }, cx);
-
-      const updates = notify.mock.calls.map((call) => (call[1] as { update: unknown }).update) as Array<
-        { sessionUpdate: string; content?: { text?: string }; cost?: { amount?: number } }
-      >;
-      const usageUpdates = updates.filter((u) => u.sessionUpdate === "usage_update");
-      expect(usageUpdates).toHaveLength(1);
-      expect(usageUpdates[0]!.cost!.amount).toBeGreaterThan(0);
-      const summaries = updates.filter(
-        (u) =>
-          u.sessionUpdate === "agent_message_chunk" &&
-          typeof u.content?.text === "string" &&
-          u.content.text.includes("Recovered session stats"),
-      );
-      expect(summaries).toHaveLength(1);
-
-      // Recovery is persisted (new per-session layout): a second load must
-      // NOT re-announce it.
-      const stored = JSON.parse(
-        readFileSync(join(dir, ".sessions", "sess_legacy", "state.json"), "utf8"),
-      ) as { usage: { turns: number; steps: number }; turnStats: unknown[] };
-      expect(stored.usage.turns).toBe(1);
-      expect(stored.usage.steps).toBe(1);
-      expect(stored.turnStats).toHaveLength(1);
-
-      const notify2 = vi.fn(async (_method: string, _params: { sessionId: string; update: unknown }) => {});
-      const cx2 = { notify: notify2 } as unknown as Parameters<typeof agent.loadSession>[1];
-      await agent.loadSession({ cwd: dir, sessionId: "sess_legacy" }, cx2);
-      const updates2 = notify2.mock.calls.map((call) => (call[1] as { update: unknown }).update) as Array<{
-        sessionUpdate: string;
-        content?: { text?: string };
-      }>;
-      expect(
-        updates2.filter(
-          (u) =>
-            u.sessionUpdate === "agent_message_chunk" &&
-            typeof u.content?.text === "string" &&
-            u.content.text.includes("Recovered session stats"),
-        ),
-      ).toHaveLength(0);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
-
 describe("loadSession environment backfill", () => {
-  it("prepends a frozen environment message and appends a continuation notice for legacy empty sessions", async () => {
+  it("prepends a frozen environment message and appends a continuation notice for empty sessions", async () => {
     const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -498,10 +386,9 @@ describe("loadSession environment backfill", () => {
 
       const session = makeSession("sess_empty");
       session.cwd = dir;
-      mkdirSync(join(dir, ".sessions", "sessions"), { recursive: true });
-      mkdirSync(join(dir, ".sessions", "llm"), { recursive: true });
+      mkdirSync(join(dir, ".sessions", "sess_empty"), { recursive: true });
       writeFileSync(
-        join(dir, ".sessions", "sessions", "sess_empty.json"),
+        join(dir, ".sessions", "sess_empty", "state.json"),
         JSON.stringify(session),
         "utf8",
       );

@@ -185,30 +185,12 @@ Zen Agent reports what it can through ACP, and Zed renders it natively in the ag
 
 The stats line is display-only: it is never added to the LLM message history, so it does not consume context tokens. Cumulative input/output/thought/cache token counts are also returned in the experimental `usage` field of the `session/prompt` response, which Zed reads when its ACP beta flag is enabled.
 
-### Stats survive resume (and legacy sessions are recovered)
+### Stats survive resume
 
 Cumulative stats (`usage`) and per-turn stats (`turnStats`) are persisted in
 `<project>/.sessions/<sessionId>/state.json`, so a resumed session keeps its
 turns, steps, thinking/answering/tool time, cache hit ratio, tokens and CNY
 cost across Zed restarts.
-
-Sessions created **before** usage tracking existed (no `usage` field) are
-recovered automatically on load/resume:
-
-- turns/steps come from the user/assistant message boundaries in the LLM
-  transcript (`<sessionId>/llm.jsonl` and `llmMessages`);
-- input/output tokens are estimated with the bundled DeepSeek V4 tokenizer
-  (`src/tokenizer.ts`, from the Reasonix v1 reference) over the exact request
-  payloads — measured within ~4% of the API's `prompt_tokens`;
-- LLM time and bash tool time are taken from request/response timestamps in
-  the JSONL transcript (match recorded `llmMs` exactly);
-- CNY cost is computed with the current rate card.
-
-Unrecoverable fields (cache hit split, reasoning tokens, thinking/answering
-split on legacy transcripts) stay `0`, so the cache ratio shows `n/a` instead
-of a fabricated number. The recovered totals are shown once in the thread as a
-`Recovered session stats (estimated): …` message plus a `usage_update` so
-Zed's token ring and cost tooltip are correct immediately.
 
 
 ## Cancellation & Force-Send
@@ -257,12 +239,6 @@ Inside each project's `.sessions/` directory:
 | `<sessionId>/terminals/input-<timestamp>-<callId>.sh` | Saved bash command script for a tool call |
 | `<sessionId>/terminals/output-<timestamp>-<callId>.log` | Full terminal output for a bash tool call |
 | `client/<startupTimestamp>-<uuid>/log.jsonl` | Per-startup runtime diagnostic log |
-
-Sessions created before this layout still load: `state.json` falls back to the
-legacy `.sessions/sessions/<sessionId>.json` (and the even older
-`.sessions/<sessionId>.json`), and `llm.jsonl` falls back to
-`.sessions/llm/<sessionId>.jsonl`. New writes always use the per-session
-layout.
 
 ## Development
 

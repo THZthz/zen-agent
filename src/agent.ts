@@ -8,7 +8,6 @@ import {
   DEFAULT_MODEL,
   DEFAULT_THINKING_EFFORT,
   deleteStoredSession,
-  emptySessionUsage,
   findSessionCwd,
   listStoredSessions,
   readStoredSession,
@@ -52,11 +51,6 @@ import {
   showTurnStats,
   type TurnStats,
 } from "./turn-stats.js";
-import {
-  formatRecoveredSummary,
-  needsSessionStatsRecovery,
-  rebuildSessionStats,
-} from "./session-stats.js";
 
 interface ActiveSession {
   session: StoredSession;
@@ -257,8 +251,6 @@ export class ZenAgent {
       sessionId: session.sessionId,
     });
 
-    const recovered = await this.recoverSessionStats(session);
-
     const replayEvents = coalesceReplayEvents(
       prepareReplayEvents(session.events),
     );
@@ -267,9 +259,6 @@ export class ZenAgent {
         sessionId: session.sessionId,
         update,
       });
-    }
-    if (recovered) {
-      await this.emitRecoveredStats(session, cx, recovered);
     }
     this.scheduleAvailableCommands(session.sessionId, cx);
 
@@ -286,14 +275,9 @@ export class ZenAgent {
     this.abortActiveSession(params.sessionId);
     await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
-    const recovered = await this.recoverSessionStats(session);
     void this.logRuntime(params.cwd, "info", "session resumed", {
       sessionId: session.sessionId,
-      recoveredStats: recovered !== null,
     });
-    if (recovered) {
-      await this.emitRecoveredStats(session, cx, recovered);
-    }
     this.scheduleAvailableCommands(session.sessionId, cx);
     return {
       configOptions: this.getConfigOptions(session),
@@ -826,79 +810,6 @@ export class ZenAgent {
       content: await buildSessionContinuedMessage(session),
     });
     await writeSession(session);
-  }
-
-  /**
-   * Sessions whose files predate usage tracking have an empty `usage` even
-   * though the thread contains many turns. Rebuild turns/steps/tokens/cost
-   * (and timing where the llm log allows) from the persistent history, then
-   * persist so the next resume is instant.
-   */
-  private async recoverSessionStats(
-    session: StoredSession,
-  ): Promise<{ lastContextUsed: number; summary: string } | null> {
-    if (!needsSessionStatsRecovery(session)) {
-      return null;
-    }
-    const rebuilt = await rebuildSessionStats(
-      session.cwd,
-      session.sessionId,
-      session.llmMessages,
-      buildSystemPrompt(session),
-      session.config.model,
-    );
-    if (!rebuilt) {
-      return null;
-    }
-    session.usage = rebuilt.usage;
-    session.turnStats = rebuilt.turnStats;
-    await writeSession(session);
-    void this.logRuntime(session.cwd, "info", "recovered session stats", {
-      sessionId: session.sessionId,
-      turns: rebuilt.usage.turns,
-      steps: rebuilt.usage.steps,
-      inputTokens: rebuilt.usage.inputTokens,
-      estimated: rebuilt.estimated,
-    });
-    return {
-      lastContextUsed: rebuilt.lastContextUsed,
-      summary: formatRecoveredSummary(rebuilt),
-    };
-  }
-
-  /**
-   * Transiently report recovered stats to the client: a usage_update so the
-   * token-usage ring/cost in the agent panel header is correct immediately,
-   * and a display-only message summarizing the recovered history. These are
-   * NOT pushed into `events` (via emit) — they are informational and would
-   * otherwise duplicate on every reload.
-   */
-  private async emitRecoveredStats(
-    session: StoredSession,
-    cx: acp.AgentContext,
-    recovered: { lastContextUsed: number; summary: string },
-  ): Promise<void> {
-    const size = getContextWindowTokens();
-    await cx.notify(acp.methods.client.session.update, {
-      sessionId: session.sessionId,
-      update: {
-        sessionUpdate: "usage_update",
-        used: Math.min(recovered.lastContextUsed, size),
-        size,
-        cost: {
-          amount: roundYuan(session.usage.costYuan),
-          currency: "CNY",
-        },
-      },
-    });
-    await cx.notify(acp.methods.client.session.update, {
-      sessionId: session.sessionId,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        messageId: newMessageId(),
-        content: { type: "text", text: recovered.summary },
-      },
-    });
   }
 
   private async executeLlmToolCall(

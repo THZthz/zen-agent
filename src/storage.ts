@@ -59,9 +59,9 @@ export interface SessionUsage {
   /** Cumulative bash tool execution time in ms. */
   toolMs: number;
   /**
-   * True when this usage rollup was RECONSTRUCTED from the session history
-   * (tokenizer estimates + llm log wall clocks) because the session file
-   * predates usage tracking. Tokens/cost are estimates; timing is partial.
+   * True when this usage rollup is an estimate rather than exact API usage.
+   * Not currently produced; kept for forward compatibility of the persisted
+   * shape.
    */
   estimated?: boolean;
 }
@@ -114,19 +114,13 @@ interface SessionIndex {
 }
 
 /**
- * New session storage layout (one directory per session):
+ * Session storage layout (one directory per session):
  *
  *   <project>/.sessions/<sessionId>/state.json
  *   <project>/.sessions/<sessionId>/llm.jsonl
  *   <project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh
  *   <project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log
  *   <project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl
- *
- * The older flat/subfolder layouts (.sessions/<id>.json,
- * .sessions/sessions/<id>.json, .sessions/llm/<id>.jsonl,
- * .sessions/terminals/<id>/, .sessions/logs/zen-agent.log) are still READ
- * for backward compatibility so pre-migration sessions resume, but all
- * new writes go to the per-session layout above.
  */
 export function sessionDirectory(cwd: string): string {
   return join(cwd, ".sessions");
@@ -160,52 +154,6 @@ export function sessionLlmLogPath(cwd: string, sessionId: string): string {
  */
 export function clientLogPath(cwd: string, startupKey: string): string {
   return join(sessionDirectory(cwd), "client", startupKey, "log.jsonl");
-}
-
-/** Legacy: <project>/.sessions/sessions/<sessionId>.json */
-export function legacySessionStateDirectory(cwd: string): string {
-  return join(sessionDirectory(cwd), "sessions");
-}
-
-export function legacySessionStatePath(cwd: string, sessionId: string): string {
-  return join(legacySessionStateDirectory(cwd), `${sessionId}.json`);
-}
-
-/** Older legacy: <project>/.sessions/<sessionId>.json */
-export function legacySessionPath(cwd: string, sessionId: string): string {
-  return join(sessionDirectory(cwd), `${sessionId}.json`);
-}
-
-/** Legacy: <project>/.sessions/llm/<sessionId>.jsonl */
-export function legacySessionLlmLogPath(cwd: string, sessionId: string): string {
-  return join(sessionDirectory(cwd), "llm", `${sessionId}.jsonl`);
-}
-
-/** Legacy: <project>/.sessions/terminals/<sessionId>/ */
-export function legacyTerminalDirectory(cwd: string, sessionId: string): string {
-  return join(sessionDirectory(cwd), "terminals", sessionId);
-}
-
-/**
- * Read a session's LLM transcript from the current per-session layout, or
- * from the legacy .sessions/llm/ location for pre-migration sessions.
- * Returns null when no transcript exists anywhere.
- */
-export async function readSessionLlmLog(
-  cwd: string,
-  sessionId: string,
-): Promise<string | null> {
-  for (const path of [
-    sessionLlmLogPath(cwd, sessionId),
-    legacySessionLlmLogPath(cwd, sessionId),
-  ]) {
-    try {
-      return await readFile(path, "utf8");
-    } catch {
-      // Try the next (older) layout.
-    }
-  }
-  return null;
 }
 
 function generateSessionId(): string {
@@ -294,21 +242,10 @@ export async function readStoredSession(
   cwd: string,
   sessionId: string,
 ): Promise<StoredSession> {
-  let raw: string | undefined;
-  for (const candidate of [
-    // Current per-session layout, then the two legacy layouts.
-    sessionPath(cwd, sessionId),
-    legacySessionStatePath(cwd, sessionId),
-    legacySessionPath(cwd, sessionId),
-  ]) {
-    try {
-      raw = await readFile(candidate, "utf8");
-      break;
-    } catch {
-      // Try the next older location.
-    }
-  }
-  if (raw === undefined) {
+  let raw: string;
+  try {
+    raw = await readFile(sessionPath(cwd, sessionId), "utf8");
+  } catch {
     throw new Error(`Session file not found for ${sessionId}`);
   }
   const parsed = JSON.parse(raw) as StoredSession;
@@ -318,100 +255,7 @@ export async function readStoredSession(
   if (parsed.cwd !== cwd) {
     throw new Error(`Session ${sessionId} belongs to ${parsed.cwd}, not ${cwd}`);
   }
-  if (!parsed.config) {
-    parsed.config = {
-      model: DEFAULT_MODEL,
-      thinkingEffort: DEFAULT_THINKING_EFFORT,
-      systemPrompt: "",
-    };
-  }
-  if (!parsed.config.systemPrompt) {
-    parsed.config.systemPrompt = "";
-  }
-  if (!parsed.usage) {
-    parsed.usage = emptySessionUsage();
-  }
-  if (!Array.isArray(parsed.turnStats)) {
-    parsed.turnStats = [];
-  }
-  parsed.llmMessages = sanitizeLlmMessages(parsed.llmMessages);
-  parsed.llmMessages = ensureReasoningParts(parsed.llmMessages, parsed.config.thinkingEffort);
   return parsed;
-}
-
-/**
- * DeepSeek's thinking mode requires `reasoning_content` to be passed back on
- * every subsequent request when tools are present. Sessions created before
- * reasoning was persisted do not have it, so backfill an empty reasoning part
- * on load. New sessions store the real streamed reasoning via `runLlmStep`.
- */
-export function ensureReasoningParts(
-  messages: LlmMessage[],
-  thinkingEffort: ThinkingEffort,
-): LlmMessage[] {
-  if (thinkingEffort === "off") {
-    return messages;
-  }
-  return messages.map((message) => {
-    if (message.role !== "assistant" || !Array.isArray(message.content)) {
-      return message;
-    }
-    if (message.content.some((part) => part.type === "reasoning")) {
-      return message;
-    }
-    // Only tool-call assistant turns need reasoning_content passed back.
-    if (!message.content.some((part) => part.type === "tool-call")) {
-      return message;
-    }
-    return {
-      ...message,
-      content: [{ type: "reasoning", text: "" }, ...message.content],
-    };
-  });
-}
-
-export function sanitizeLlmMessages(messages: LlmMessage[]): LlmMessage[] {
-  const callIds = new Set<string>();
-  const resolvedIds = new Set<string>();
-
-  for (const message of messages) {
-    if (message.role === "assistant" && Array.isArray(message.content)) {
-      for (const part of message.content as Array<{ type?: string; toolCallId?: string }>) {
-        if (part.type === "tool-call" && part.toolCallId) {
-          callIds.add(part.toolCallId);
-        }
-      }
-    } else if (message.role === "tool" && Array.isArray(message.content)) {
-      for (const part of message.content as Array<{ type?: string; toolCallId?: string }>) {
-        if (part.type === "tool-result" && part.toolCallId) {
-          resolvedIds.add(part.toolCallId);
-        }
-      }
-    }
-  }
-
-  const unresolved = new Set(
-    [...callIds].filter((id) => !resolvedIds.has(id)),
-  );
-  if (unresolved.size === 0) {
-    return messages;
-  }
-
-  return messages.filter((message) => {
-    if (message.role === "assistant" && Array.isArray(message.content)) {
-      const parts = message.content as Array<{ type?: string; toolCallId?: string }>;
-      if (parts.some((p) => p.type === "tool-call" && p.toolCallId && unresolved.has(p.toolCallId))) {
-        return false;
-      }
-    }
-    if (message.role === "tool" && Array.isArray(message.content)) {
-      const parts = message.content as Array<{ type?: string; toolCallId?: string }>;
-      if (parts.some((p) => p.type === "tool-result" && p.toolCallId && unresolved.has(p.toolCallId))) {
-        return false;
-      }
-    }
-    return true;
-  });
 }
 
 export async function findSessionCwd(sessionId: string): Promise<string | undefined> {
@@ -457,38 +301,6 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
       }
     }
 
-    // Legacy layouts: .sessions/sessions/<id>.json and .sessions/<id>.json
-    const dirs = [
-      legacySessionStateDirectory(cwd),
-      sessionDirectory(cwd),
-    ];
-    for (const dir of dirs) {
-      let files: string[];
-      try {
-        files = await readdir(dir);
-      } catch {
-        continue;
-      }
-      for (const file of files) {
-        if (!file.endsWith(".json")) continue;
-        const sessionId = file.slice(0, -".json".length);
-        if (seen.has(sessionId)) continue;
-        seen.add(sessionId);
-        try {
-          const raw = await readFile(join(dir, file), "utf8");
-          const parsed = JSON.parse(raw) as StoredSession;
-          sessions.push({
-            sessionId: parsed.sessionId,
-            cwd: parsed.cwd,
-            title: parsed.title,
-            updatedAt: parsed.updatedAt,
-          });
-        } catch {
-          // Ignore malformed session files.
-        }
-      }
-    }
-
     sessions.sort(byUpdatedAtDesc);
     return sessions;
   }
@@ -523,7 +335,5 @@ export async function deleteStoredSession(
   sessionId: string,
 ): Promise<void> {
   await rm(sessionPath(cwd, sessionId), { force: true });
-  await rm(legacySessionStatePath(cwd, sessionId), { force: true });
-  await rm(legacySessionPath(cwd, sessionId), { force: true });
   await forgetSession(sessionId);
 }
