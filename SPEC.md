@@ -93,16 +93,23 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
 ### 4.5 `session/new` Behavior
 
 - Validate `cwd` is absolute and exists.
-- Create a persistent session file at `<cwd>/.sessions/sessions/<sessionId>.json` containing:
+- Create a persistent session file at `<cwd>/.sessions/<sessionId>/state.json` containing:
   - `sessionId`
   - `cwd`
   - `createdAt` / `updatedAt`
   - `title`
   - `events` (ACP `session/update` payloads for replay)
   - `llmMessages` (AI SDK message history for continued conversation)
-- LLM request/response transcripts are appended to `<cwd>/.sessions/llm/<sessionId>.jsonl`.
-- Runtime diagnostics are appended to `<cwd>/.sessions/logs/zen-agent.log`.
-- Terminal output logs and command scripts are stored under `<cwd>/.sessions/terminals/<sessionId>/`.
+- LLM request/response transcripts are appended to `<cwd>/.sessions/<sessionId>/llm.jsonl`.
+- Runtime diagnostics are appended to a per-startup log at
+  `<cwd>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl` (one directory
+  per agent process).
+- Bash command scripts and terminal output logs are stored under
+  `<cwd>/.sessions/<sessionId>/terminals/` as
+  `input-<timestamp>-<callId>.sh` and `output-<timestamp>-<callId>.log`.
+- Legacy layouts (`.sessions/sessions/<sessionId>.json`,
+  `.sessions/<sessionId>.json`, `.sessions/llm/<sessionId>.jsonl`) are still
+  read for backward compatibility so pre-migration sessions resume.
 - Return `{ sessionId }`.
 - `mcpServers` and `additionalDirectories` are accepted but ignored.
 - The `.sessions/` directory is created if missing.
@@ -201,7 +208,7 @@ Zen Agent stores the text after `/prompt` (including newlines) as the session's 
 - Wait for exit with `terminal/wait_for_exit`, fetch final output with `terminal/output`, then release with `terminal/release`.
 - On cancellation, call `terminal/kill` and `terminal/release`.
 - If the client does not advertise `terminal: true`, the tool fails with a clear error.
-- Full terminal output is saved to `<cwd>/.sessions/terminals/<sessionId>/terminal-<toolCallId>.log` using `script -q -e`, preserving TTY behavior, so the model can read specific portions with `sed`/`tail` if needed.
+- The bash command script is saved to `<cwd>/.sessions/<sessionId>/terminals/input-<timestamp>-<toolCallId>.sh`; full terminal output is saved to `<cwd>/.sessions/<sessionId>/terminals/output-<timestamp>-<toolCallId>.log` using `script -q -e`, preserving TTY behavior, so the model can read specific portions with `sed`/`tail` if needed.
 - No local `child_process` bash execution is used.
 - No permission flow is used.
 

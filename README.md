@@ -5,10 +5,10 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Single tool: `bash`
 - Bash execution always uses Zed's ACP terminal (no local bash subprocess)
 - No permission prompts (approval policy: `never`)
-- Session state is stored in `<project>/.sessions/sessions/<sessionId>.json`
-- LLM request/response transcripts are stored as `<project>/.sessions/llm/<sessionId>.jsonl`
-- Runtime diagnostics are stored in `<project>/.sessions/logs/zen-agent.log`
-- Full terminal output is saved to `<project>/.sessions/terminals/<sessionId>/terminal-<callId>.log` via `script`; the model receives truncated output plus the log path
+- Session state is stored in `<project>/.sessions/<sessionId>/state.json`
+- LLM request/response transcripts are stored as `<project>/.sessions/<sessionId>/llm.jsonl`
+- Runtime diagnostics are stored in a per-startup log at `<project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl`
+- Bash command scripts are saved to `<project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh`; full terminal output is saved to `<project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log` via `script`; the model receives truncated output plus the log path
 - LLM provider: Deepseek via its OpenAI-compatible chat completions API, with a direct SSE client (`runLlmStep` in `src/llm/deepseek.ts`)
 - Environment context (working directory, session time, git branch/commit/status) is sent to the model as a `user` message named `environment`, separate from the system prompt. It is frozen into the session at creation and persisted, so the request prefix stays byte-identical and DeepSeek's context cache keeps hitting across steps and session restarts; on every load/resume a fresh continuation notification is appended at the end of the conversation
 - The human's own messages are sent with `name` set to `git config user.name` (defaults to `User`)
@@ -188,7 +188,7 @@ The stats line is display-only: it is never added to the LLM message history, so
 ### Stats survive resume (and legacy sessions are recovered)
 
 Cumulative stats (`usage`) and per-turn stats (`turnStats`) are persisted in
-`<project>/.sessions/sessions/<sessionId>.json`, so a resumed session keeps its
+`<project>/.sessions/<sessionId>/state.json`, so a resumed session keeps its
 turns, steps, thinking/answering/tool time, cache hit ratio, tokens and CNY
 cost across Zed restarts.
 
@@ -196,7 +196,7 @@ Sessions created **before** usage tracking existed (no `usage` field) are
 recovered automatically on load/resume:
 
 - turns/steps come from the user/assistant message boundaries in the LLM
-  transcript (`llm/<sessionId>.jsonl` and `llmMessages`);
+  transcript (`<sessionId>/llm.jsonl` and `llmMessages`);
 - input/output tokens are estimated with the bundled DeepSeek V4 tokenizer
   (`src/tokenizer.ts`, from the Reasonix v1 reference) over the exact request
   payloads — measured within ~4% of the API's `prompt_tokens`;
@@ -252,11 +252,17 @@ Inside each project's `.sessions/` directory:
 
 | Path | Purpose |
 | --- | --- |
-| `sessions/<sessionId>.json` | Session state for resume/load |
-| `llm/<sessionId>.jsonl` | LLM request/response transcript |
-| `logs/zen-agent.log` | Runtime diagnostic log |
-| `terminals/<sessionId>/terminal-<callId>.log` | Full terminal output for a bash tool call |
-| `terminals/<sessionId>/terminal-<callId>.sh` | Saved bash command script for a tool call |
+| `<sessionId>/state.json` | Session state for resume/load |
+| `<sessionId>/llm.jsonl` | LLM request/response transcript |
+| `<sessionId>/terminals/input-<timestamp>-<callId>.sh` | Saved bash command script for a tool call |
+| `<sessionId>/terminals/output-<timestamp>-<callId>.log` | Full terminal output for a bash tool call |
+| `client/<startupTimestamp>-<uuid>/log.jsonl` | Per-startup runtime diagnostic log |
+
+Sessions created before this layout still load: `state.json` falls back to the
+legacy `.sessions/sessions/<sessionId>.json` (and the even older
+`.sessions/<sessionId>.json`), and `llm.jsonl` falls back to
+`.sessions/llm/<sessionId>.jsonl`. New writes always use the per-session
+layout.
 
 ## Development
 

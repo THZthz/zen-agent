@@ -137,8 +137,11 @@ export async function executeLlmToolCall(
   }
 
   const terminalDir = terminalDirectory(session.cwd, session.sessionId);
-  const logPath = join(terminalDir, `terminal-${call.id}.log`);
-  const commandScriptPath = join(terminalDir, `terminal-${call.id}.sh`);
+  // The same timestamp pairs an input script with its output log, and keeps
+  // multiple runs of the same tool call id distinct on disk.
+  const timestamp = Date.now();
+  const logPath = join(terminalDir, `output-${timestamp}-${call.id}.log`);
+  const commandScriptPath = join(terminalDir, `input-${timestamp}-${call.id}.sh`);
   await mkdir(terminalDir, { recursive: true });
   await writeFile(commandScriptPath, command, "utf8");
   const scriptCommand = `${bashSandboxPrefix()}bash ${shellQuote(commandScriptPath)}`;

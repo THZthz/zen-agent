@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import { ZenAgent } from "./agent.js";
 import { prepareReplayEvents } from "./replay.js";
@@ -185,14 +184,76 @@ describe("prepareReplayEvents", () => {
   });
 });
 
-describe("replay preparation on real session data", () => {
+describe("replay preparation on a session with terminal content", () => {
   it("produces a replay stream with no terminal content and no orphan/in-progress updates", () => {
-    const raw = readFileSync(
-      ".sessions/sessions/sess_3eacc6f080853c52110c1791.json",
-      "utf8",
-    );
-    const session = JSON.parse(raw) as { events: ReplayEvent[] };
-    const out = prepare(session.events);
+    // Representative event stream as persisted by the agent: tool calls with
+    // terminal cards, an in-progress update, an orphan update and a failed
+    // call with a text result.
+    const events: ReplayEvent[] = [
+      { sessionUpdate: "user_message_chunk", content: { type: "text", text: "hello" } },
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "c1",
+        title: "$ ls",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "ls" },
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        status: "in_progress",
+        content: [{ type: "terminal", terminalId: "t1" }],
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        status: "completed",
+        content: [
+          { type: "terminal", terminalId: "t1" },
+          { type: "content", content: { type: "text", text: "a.txt" } },
+        ],
+        rawOutput: { output: "a.txt" },
+      },
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "c2",
+        title: "$ git status",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "git status" },
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c2",
+        status: "in_progress",
+        content: [{ type: "terminal", terminalId: "t2" }],
+      },
+      // Orphan update: no matching tool_call, must be dropped.
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "orphan",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "x" } }],
+      },
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "c3",
+        title: "$ nope",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "nope" },
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c3",
+        status: "failed",
+        content: [{ type: "content", content: { type: "text", text: "boom" } }],
+        rawOutput: { output: "boom", exitCode: 127 },
+      },
+      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "done" } },
+    ];
+    const out = prepare(events);
 
     const toolCalls = out.filter((e) => e.sessionUpdate === "tool_call");
     const updates = out.filter((e) => e.sessionUpdate === "tool_call_update");
@@ -203,12 +264,14 @@ describe("replay preparation on real session data", () => {
 
     expect(inProgress).toHaveLength(0);
     expect(toolCalls).toHaveLength(finalUpdates.length);
+    // c1 (completed) and c3 (failed) survive; c2 has no final update and
+    // the orphan update is dropped.
+    expect(toolCalls).toHaveLength(2);
     for (const u of updates) {
       expect(u.content ?? []).not.toContainEqual(
         expect.objectContaining({ type: "terminal" }),
       );
     }
-    expect(toolCalls.length).toBeGreaterThan(0);
     // All kept updates must have a matching kept tool_call.
     const ids = new Set(toolCalls.map((e) => e.toolCallId));
     for (const u of updates) {
@@ -385,9 +448,10 @@ describe("session stats recovery on load", () => {
       );
       expect(summaries).toHaveLength(1);
 
-      // Recovery is persisted: a second load must NOT re-announce it.
+      // Recovery is persisted (new per-session layout): a second load must
+      // NOT re-announce it.
       const stored = JSON.parse(
-        readFileSync(join(dir, ".sessions", "sessions", "sess_legacy.json"), "utf8"),
+        readFileSync(join(dir, ".sessions", "sess_legacy", "state.json"), "utf8"),
       ) as { usage: { turns: number; steps: number }; turnStats: unknown[] };
       expect(stored.usage.turns).toBe(1);
       expect(stored.usage.steps).toBe(1);

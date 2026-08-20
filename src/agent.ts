@@ -1,5 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,8 +12,7 @@ import {
   findSessionCwd,
   listStoredSessions,
   readStoredSession,
-  runtimeLogPath,
-  sessionDirectory,
+  clientLogPath,
   sessionLlmLogPath,
   terminalDirectory,
   writeSession,
@@ -161,6 +160,12 @@ function newSessionIdForPrompt(): string {
 export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
+  /**
+   * Per-startup debug log identity: "<startup timestamp>-<uuid>". Created
+   * once per agent process; all runtime diagnostics for this run are
+   * appended to <project>/.sessions/client/<startupKey>/log.jsonl.
+   */
+  private readonly startupLogKey = `${Date.now()}-${randomUUID()}`;
 
   private makeActiveSession(session: StoredSession): ActiveSession {
     return {
@@ -954,7 +959,7 @@ export class ZenAgent {
   ): Promise<void> {
     try {
       await appendJsonLine(
-        runtimeLogPath(cwd),
+        clientLogPath(cwd, this.startupLogKey),
         makeLogEntry(level, message, details),
       );
     } catch {

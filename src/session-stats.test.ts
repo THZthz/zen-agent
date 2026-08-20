@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -64,9 +64,10 @@ function legacyMessages(): ModelMessage[] {
 
 function writeLog(lines: Array<Record<string, unknown>>): string {
   const dir = mkdtempSync(join(tmpdir(), "zen-agent-stats-"));
-  mkdirSync(join(dir, ".sessions", "llm"), { recursive: true });
+  // Current per-session layout: <project>/.sessions/<sessionId>/llm.jsonl
+  mkdirSync(join(dir, ".sessions", SESSION_ID), { recursive: true });
   writeFileSync(
-    join(dir, ".sessions", "llm", `${SESSION_ID}.jsonl`),
+    join(dir, ".sessions", SESSION_ID, "llm.jsonl"),
     lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
     "utf8",
   );
@@ -291,7 +292,7 @@ describe("rebuildSessionStats without llm log", () => {
 });
 
 describe("storage round-trip", () => {
-  it("creates sessions with empty turnStats and backfills legacy files", async () => {
+  it("writes state to <sessionId>/state.json and backfills legacy files on read", async () => {
     const dir = mkdtempSync(join(tmpdir(), "zen-agent-stats-"));
     dirs.push(dir);
 
@@ -299,10 +300,19 @@ describe("storage round-trip", () => {
     expect(created.turnStats).toEqual([]);
     expect(created.usage.turns).toBe(0);
 
-    // Simulate a legacy session file (no usage, no turnStats).
+    // New per-session layout: <project>/.sessions/<sessionId>/state.json
+    const statePath = join(dir, ".sessions", created.sessionId, "state.json");
+    expect(existsSync(statePath)).toBe(true);
+
+    // Simulate a legacy session at the OLD path (no usage, no turnStats).
     const legacy = JSON.parse(JSON.stringify(created));
     delete legacy.usage;
     delete legacy.turnStats;
+    rmSync(join(dir, ".sessions", created.sessionId), {
+      recursive: true,
+      force: true,
+    });
+    mkdirSync(join(dir, ".sessions", "sessions"), { recursive: true });
     writeFileSync(
       join(dir, ".sessions", "sessions", `${created.sessionId}.json`),
       JSON.stringify(legacy),
@@ -312,6 +322,44 @@ describe("storage round-trip", () => {
     const loaded = await readStoredSession(dir, created.sessionId);
     expect(loaded.turnStats).toEqual([]);
     expect(loaded.usage.turns).toBe(0);
+  });
+});
+
+describe("rebuildSessionStats from legacy llm log location", () => {
+  it("reads <project>/.sessions/llm/<sessionId>.jsonl for pre-migration sessions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zen-agent-stats-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, ".sessions", "llm"), { recursive: true });
+    writeFileSync(
+      join(dir, ".sessions", "llm", `${SESSION_ID}.jsonl`),
+      [
+        JSON.stringify({
+          type: "llm_request",
+          timestamp: "2026-08-19T10:00:00.000Z",
+          model: MODEL,
+          system: SYSTEM,
+          messages: [user("turn one"), assistant("answer one")],
+        }),
+        JSON.stringify({
+          type: "llm_response",
+          timestamp: "2026-08-19T10:00:01.000Z",
+          text: "answer one",
+          toolCalls: [],
+          finishReason: "stop",
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const rebuilt = await rebuildSessionStats(
+      dir,
+      SESSION_ID,
+      [user("turn one"), assistant("answer one")],
+      SYSTEM,
+      MODEL,
+    );
+    expect(rebuilt).not.toBeNull();
+    expect(rebuilt!.usage.turns).toBe(1);
   });
 });
 

@@ -113,40 +113,99 @@ interface SessionIndex {
   };
 }
 
+/**
+ * New session storage layout (one directory per session):
+ *
+ *   <project>/.sessions/<sessionId>/state.json
+ *   <project>/.sessions/<sessionId>/llm.jsonl
+ *   <project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh
+ *   <project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log
+ *   <project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl
+ *
+ * The older flat/subfolder layouts (.sessions/<id>.json,
+ * .sessions/sessions/<id>.json, .sessions/llm/<id>.jsonl,
+ * .sessions/terminals/<id>/, .sessions/logs/zen-agent.log) are still READ
+ * for backward compatibility so pre-migration sessions resume, but all
+ * new writes go to the per-session layout above.
+ */
 export function sessionDirectory(cwd: string): string {
   return join(cwd, ".sessions");
 }
 
-export function sessionStateDirectory(cwd: string): string {
+/** Per-session root: <project>/.sessions/<sessionId>/ */
+export function sessionRootDirectory(cwd: string, sessionId: string): string {
+  return join(sessionDirectory(cwd), sessionId);
+}
+
+/** Terminal artifacts for a session: <project>/.sessions/<sessionId>/terminals/ */
+export function terminalDirectory(cwd: string, sessionId: string): string {
+  return join(sessionRootDirectory(cwd, sessionId), "terminals");
+}
+
+/** Session state: <project>/.sessions/<sessionId>/state.json */
+export function sessionPath(cwd: string, sessionId: string): string {
+  return join(sessionRootDirectory(cwd, sessionId), "state.json");
+}
+
+/** LLM request/response transcript: <project>/.sessions/<sessionId>/llm.jsonl */
+export function sessionLlmLogPath(cwd: string, sessionId: string): string {
+  return join(sessionRootDirectory(cwd, sessionId), "llm.jsonl");
+}
+
+/**
+ * Zen Agent's own per-startup debug log:
+ * <project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl
+ * `startupKey` is created once per agent process ("startup timestamp plus
+ * UUID") so every run of the agent gets its own log directory.
+ */
+export function clientLogPath(cwd: string, startupKey: string): string {
+  return join(sessionDirectory(cwd), "client", startupKey, "log.jsonl");
+}
+
+/** Legacy: <project>/.sessions/sessions/<sessionId>.json */
+export function legacySessionStateDirectory(cwd: string): string {
   return join(sessionDirectory(cwd), "sessions");
 }
 
-export function sessionLlmDirectory(cwd: string): string {
-  return join(sessionDirectory(cwd), "llm");
+export function legacySessionStatePath(cwd: string, sessionId: string): string {
+  return join(legacySessionStateDirectory(cwd), `${sessionId}.json`);
 }
 
-export function runtimeLogDirectory(cwd: string): string {
-  return join(sessionDirectory(cwd), "logs");
-}
-
-export function terminalDirectory(cwd: string, sessionId: string): string {
-  return join(sessionDirectory(cwd), "terminals", sessionId);
-}
-
-export function sessionPath(cwd: string, sessionId: string): string {
-  return join(sessionStateDirectory(cwd), `${sessionId}.json`);
-}
-
+/** Older legacy: <project>/.sessions/<sessionId>.json */
 export function legacySessionPath(cwd: string, sessionId: string): string {
   return join(sessionDirectory(cwd), `${sessionId}.json`);
 }
 
-export function sessionLlmLogPath(cwd: string, sessionId: string): string {
-  return join(sessionLlmDirectory(cwd), `${sessionId}.jsonl`);
+/** Legacy: <project>/.sessions/llm/<sessionId>.jsonl */
+export function legacySessionLlmLogPath(cwd: string, sessionId: string): string {
+  return join(sessionDirectory(cwd), "llm", `${sessionId}.jsonl`);
 }
 
-export function runtimeLogPath(cwd: string): string {
-  return join(runtimeLogDirectory(cwd), "zen-agent.log");
+/** Legacy: <project>/.sessions/terminals/<sessionId>/ */
+export function legacyTerminalDirectory(cwd: string, sessionId: string): string {
+  return join(sessionDirectory(cwd), "terminals", sessionId);
+}
+
+/**
+ * Read a session's LLM transcript from the current per-session layout, or
+ * from the legacy .sessions/llm/ location for pre-migration sessions.
+ * Returns null when no transcript exists anywhere.
+ */
+export async function readSessionLlmLog(
+  cwd: string,
+  sessionId: string,
+): Promise<string | null> {
+  for (const path of [
+    sessionLlmLogPath(cwd, sessionId),
+    legacySessionLlmLogPath(cwd, sessionId),
+  ]) {
+    try {
+      return await readFile(path, "utf8");
+    } catch {
+      // Try the next (older) layout.
+    }
+  }
+  return null;
 }
 
 function generateSessionId(): string {
@@ -222,7 +281,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
 }
 
 export async function writeSession(session: StoredSession): Promise<void> {
-  await ensureDirectory(sessionStateDirectory(session.cwd));
+  await ensureDirectory(sessionRootDirectory(session.cwd, session.sessionId));
   await writeFile(
     sessionPath(session.cwd, session.sessionId),
     `${JSON.stringify(session, null, 2)}\n`,
@@ -235,11 +294,22 @@ export async function readStoredSession(
   cwd: string,
   sessionId: string,
 ): Promise<StoredSession> {
-  let raw: string;
-  try {
-    raw = await readFile(sessionPath(cwd, sessionId), "utf8");
-  } catch {
-    raw = await readFile(legacySessionPath(cwd, sessionId), "utf8");
+  let raw: string | undefined;
+  for (const candidate of [
+    // Current per-session layout, then the two legacy layouts.
+    sessionPath(cwd, sessionId),
+    legacySessionStatePath(cwd, sessionId),
+    legacySessionPath(cwd, sessionId),
+  ]) {
+    try {
+      raw = await readFile(candidate, "utf8");
+      break;
+    } catch {
+      // Try the next older location.
+    }
+  }
+  if (raw === undefined) {
+    throw new Error(`Session file not found for ${sessionId}`);
   }
   const parsed = JSON.parse(raw) as StoredSession;
   if (parsed.sessionId !== sessionId) {
@@ -354,7 +424,44 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
     const seen = new Set<string>();
     const sessions: SessionInfo[] = [];
 
-    const dirs = [sessionStateDirectory(cwd), sessionDirectory(cwd)];
+    // Current layout: <project>/.sessions/<sessionId>/state.json
+    let entries: string[];
+    try {
+      entries = await readdir(sessionDirectory(cwd));
+    } catch {
+      entries = [];
+    }
+    for (const entry of entries) {
+      if (seen.has(entry)) continue;
+      let raw: string;
+      try {
+        raw = await readFile(
+          join(sessionDirectory(cwd), entry, "state.json"),
+          "utf8",
+        );
+      } catch {
+        // Not a per-session directory (client/, llm/, logs/, ...).
+        continue;
+      }
+      seen.add(entry);
+      try {
+        const parsed = JSON.parse(raw) as StoredSession;
+        sessions.push({
+          sessionId: parsed.sessionId,
+          cwd: parsed.cwd,
+          title: parsed.title,
+          updatedAt: parsed.updatedAt,
+        });
+      } catch {
+        // Ignore malformed session files.
+      }
+    }
+
+    // Legacy layouts: .sessions/sessions/<id>.json and .sessions/<id>.json
+    const dirs = [
+      legacySessionStateDirectory(cwd),
+      sessionDirectory(cwd),
+    ];
     for (const dir of dirs) {
       let files: string[];
       try {
@@ -416,6 +523,7 @@ export async function deleteStoredSession(
   sessionId: string,
 ): Promise<void> {
   await rm(sessionPath(cwd, sessionId), { force: true });
+  await rm(legacySessionStatePath(cwd, sessionId), { force: true });
   await rm(legacySessionPath(cwd, sessionId), { force: true });
   await forgetSession(sessionId);
 }

@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import type { ModelMessage } from "ai";
 import {
   BASH_TOOL_SCHEMA,
@@ -9,7 +8,7 @@ import {
 } from "./llm/deepseek.js";
 import {
   emptySessionUsage,
-  sessionLlmLogPath,
+  readSessionLlmLog,
   type LlmMessage,
   type ModelId,
   type SessionUsage,
@@ -251,10 +250,8 @@ async function parseLlmLog(
   cwd: string,
   sessionId: string,
 ): Promise<LogStep[] | null> {
-  let raw: string;
-  try {
-    raw = await readFile(sessionLlmLogPath(cwd, sessionId), "utf8");
-  } catch {
+  const raw = await readSessionLlmLog(cwd, sessionId);
+  if (raw === null) {
     return null;
   }
 
