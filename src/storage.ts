@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
+import type { TurnStats } from "./turn-stats.js";
 
 export type ModelId = "deepseek-v4-flash" | "deepseek-v4-pro";
 export type ThinkingEffort = "off" | "high" | "max";
@@ -42,6 +43,12 @@ export interface SessionUsage {
   answeringMs: number;
   /** Cumulative bash tool execution time in ms. */
   toolMs: number;
+  /**
+   * True when this usage rollup was RECONSTRUCTED from the session history
+   * (tokenizer estimates + llm log wall clocks) because the session file
+   * predates usage tracking. Tokens/cost are estimates; timing is partial.
+   */
+  estimated?: boolean;
 }
 
 export function emptySessionUsage(): SessionUsage {
@@ -80,6 +87,8 @@ export interface StoredSession {
   llmMessages: ModelMessage[];
   config: SessionConfig;
   usage: SessionUsage;
+  /** Per-turn stats, one entry per completed LLM-backed turn. */
+  turnStats: TurnStats[];
 }
 
 interface SessionIndex {
@@ -190,6 +199,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
       systemPrompt: "",
     },
     usage: emptySessionUsage(),
+    turnStats: [],
   };
   await writeSession(session);
   await rememberSession(session);
@@ -235,6 +245,9 @@ export async function readStoredSession(
   }
   if (!parsed.usage) {
     parsed.usage = emptySessionUsage();
+  }
+  if (!Array.isArray(parsed.turnStats)) {
+    parsed.turnStats = [];
   }
   parsed.llmMessages = sanitizeLlmMessages(parsed.llmMessages);
   return parsed;

@@ -39,7 +39,7 @@ export interface LlmStepResult {
  * and schema must stay byte-identical to what the AI SDK previously sent so
  * the model's behavior does not change.
  */
-const BASH_TOOL_SCHEMA = {
+export const BASH_TOOL_SCHEMA = {
   type: "function",
   function: {
     name: "bash",
