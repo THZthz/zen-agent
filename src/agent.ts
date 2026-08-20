@@ -252,7 +252,7 @@ export class ZenAgent {
     });
 
     const replayEvents = coalesceReplayEvents(
-      prepareReplayEvents(session.events),
+      prepareReplayEvents(session.events, session.cwd),
     );
     for (const update of replayEvents) {
       await cx.notify(acp.methods.client.session.update, {

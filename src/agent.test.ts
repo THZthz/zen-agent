@@ -12,8 +12,8 @@ type ReplayEvent = {
   [k: string]: unknown;
 };
 
-function prepare(events: ReplayEvent[]): SessionUpdate[] {
-  return prepareReplayEvents(events as unknown as SessionUpdate[]);
+function prepare(events: ReplayEvent[], cwd?: string): SessionUpdate[] {
+  return prepareReplayEvents(events as unknown as SessionUpdate[], cwd);
 }
 
 function makeSession(sessionId = "s1"): StoredSession {
@@ -48,7 +48,7 @@ type TestAgent = {
 };
 
 describe("prepareReplayEvents", () => {
-  it("keeps final tool call pairs, strips terminal content, drops in-progress and orphan updates", () => {
+  it("synthesizes a display-only terminal for legacy bash calls so output stays visible", () => {
     const events: ReplayEvent[] = [
       {
         sessionUpdate: "tool_call",
@@ -99,7 +99,7 @@ describe("prepareReplayEvents", () => {
       { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
     ];
 
-    expect(prepare(events)).toEqual([
+    expect(prepare(events, "/tmp")).toEqual([
       {
         sessionUpdate: "tool_call",
         toolCallId: "c1",
@@ -107,19 +107,32 @@ describe("prepareReplayEvents", () => {
         kind: "execute",
         status: "pending",
         rawInput: { command: "ls" },
+        // Synthesized so Zed re-registers a display-only terminal on load.
+        _meta: {
+          terminal_info: { terminal_id: "zen-c1", cwd: "/tmp" },
+        },
       },
       {
         sessionUpdate: "tool_call_update",
         toolCallId: "c1",
         status: "completed",
-        content: [{ type: "content", content: { type: "text", text: "out" } }],
+        content: [
+          { type: "terminal", terminalId: "zen-c1" },
+          { type: "content", content: { type: "text", text: "out" } },
+        ],
         rawOutput: { output: "out" },
+        // Synthesized from the persisted raw output so Zed streams the
+        // output into the display-only terminal on load.
+        _meta: {
+          terminal_output: { terminal_id: "zen-c1", data: "out" },
+          terminal_exit: { terminal_id: "zen-c1", exit_code: null, signal: null },
+        },
       },
       { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
     ]);
   });
 
-  it("keeps failed tool calls with text results", () => {
+  it("keeps failed bash calls with a synthesized display terminal and exit code", () => {
     const events: ReplayEvent[] = [
       {
         sessionUpdate: "tool_call",
@@ -148,18 +161,28 @@ describe("prepareReplayEvents", () => {
         kind: "execute",
         status: "pending",
         rawInput: { command: "nope" },
+        _meta: {
+          terminal_info: { terminal_id: "zen-f1" },
+        },
       },
       {
         sessionUpdate: "tool_call_update",
         toolCallId: "f1",
         status: "failed",
-        content: [{ type: "content", content: { type: "text", text: "boom" } }],
+        content: [
+          { type: "terminal", terminalId: "zen-f1" },
+          { type: "content", content: { type: "text", text: "boom" } },
+        ],
         rawOutput: { output: "boom", exitCode: 127 },
+        _meta: {
+          terminal_output: { terminal_id: "zen-f1", data: "boom" },
+          terminal_exit: { terminal_id: "zen-f1", exit_code: 127, signal: null },
+        },
       },
     ]);
   });
 
-  it("keeps tool calls that completed during a graceful cancel (both events present)", () => {
+  it("leaves text-only tool calls (no terminal card) untouched", () => {
     const events: ReplayEvent[] = [
       {
         sessionUpdate: "tool_call",
@@ -267,11 +290,25 @@ describe("replay preparation on a session with terminal content", () => {
     // c1 (completed) and c3 (failed) survive; c2 has no final update and
     // the orphan update is dropped.
     expect(toolCalls).toHaveLength(2);
-    for (const u of updates) {
-      expect(u.content ?? []).not.toContainEqual(
-        expect.objectContaining({ type: "terminal" }),
-      );
-    }
+    // c1 had a terminal card: it replays with a synthesized display-only
+    // terminal (zen-c1) plus its text output, so Zed can re-render the card
+    // expanded with the output visible.
+    const c1Call = toolCalls.find((e) => e.toolCallId === "c1")!;
+    expect((c1Call as unknown as { _meta?: { terminal_info?: unknown } })._meta?.terminal_info)
+      .toEqual({ terminal_id: "zen-c1" });
+    const c1Update = updates.find((u) => u.toolCallId === "c1")!;
+    expect(c1Update.content ?? []).toContainEqual(
+      expect.objectContaining({ type: "terminal", terminalId: "zen-c1" }),
+    );
+    expect(
+      (c1Update as unknown as { _meta?: { terminal_output?: { data?: unknown } } })._meta
+        ?.terminal_output?.data,
+    ).toBe("a.txt");
+    // c3 failed before a terminal card existed: text-only, no terminal.
+    const c3Update = updates.find((u) => u.toolCallId === "c3")!;
+    expect(c3Update.content ?? []).not.toContainEqual(
+      expect.objectContaining({ type: "terminal" }),
+    );
     // All kept updates must have a matching kept tool_call.
     const ids = new Set(toolCalls.map((e) => e.toolCallId));
     for (const u of updates) {
@@ -409,5 +446,114 @@ describe("loadSession environment backfill", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("prepareReplayEvents with display-only terminal info", () => {
+  it("rewrites terminal content to the display-only id so it resolves after restart", () => {
+    const events: ReplayEvent[] = [
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "d1",
+        title: "$ ls",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "ls" },
+        _meta: {
+          terminal_info: { terminal_id: "zen-d1", cwd: "/tmp" },
+        },
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "d1",
+        status: "in_progress",
+        content: [{ type: "terminal", terminalId: "real-uuid-1" }],
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "d1",
+        status: "completed",
+        content: [
+          { type: "terminal", terminalId: "real-uuid-1" },
+          { type: "content", content: { type: "text", text: "out" } },
+        ],
+        _meta: {
+          terminal_output: { terminal_id: "zen-d1", data: "out" },
+          terminal_exit: { terminal_id: "zen-d1", exit_code: 0 },
+        },
+        rawOutput: { output: "out" },
+      },
+    ];
+
+    expect(prepare(events)).toEqual([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "d1",
+        title: "$ ls",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "ls" },
+        _meta: {
+          terminal_info: { terminal_id: "zen-d1", cwd: "/tmp" },
+        },
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "d1",
+        status: "completed",
+        content: [
+          { type: "terminal", terminalId: "zen-d1" },
+          { type: "content", content: { type: "text", text: "out" } },
+        ],
+        _meta: {
+          terminal_output: { terminal_id: "zen-d1", data: "out" },
+          terminal_exit: { terminal_id: "zen-d1", exit_code: 0 },
+        },
+        rawOutput: { output: "out" },
+      },
+    ]);
+  });
+
+  it("uses the existing terminal_info id (new sessions) instead of synthesizing", () => {
+    const events: ReplayEvent[] = [
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "n1",
+        title: "$ ls",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "ls" },
+        _meta: {
+          terminal_info: { terminal_id: "zen-n1", cwd: "/work" },
+        },
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "n1",
+        status: "completed",
+        content: [
+          { type: "terminal", terminalId: "real-uuid-9" },
+          { type: "content", content: { type: "text", text: "n out" } },
+        ],
+        _meta: {
+          terminal_output: { terminal_id: "zen-n1", data: "n out" },
+          terminal_exit: { terminal_id: "zen-n1", exit_code: 0 },
+        },
+        rawOutput: { output: "n out", exitCode: 0 },
+      },
+    ];
+    const out = prepare(events, "/tmp");
+    expect(out[0]).toEqual(events[0]);
+    const update = out[1] as ReplayEvent;
+    expect(update.content).toContainEqual(
+      expect.objectContaining({ type: "terminal", terminalId: "zen-n1" }),
+    );
+    expect((update as unknown as { _meta?: { terminal_output?: { data?: unknown } } })._meta
+      ?.terminal_output?.data).toBe("n out");
+    // cwd passed to prepare() must not override the persisted one.
+    expect(
+      (out[0] as unknown as { _meta?: { terminal_info?: { cwd?: unknown } } })._meta
+        ?.terminal_info?.cwd,
+    ).toBe("/work");
   });
 });

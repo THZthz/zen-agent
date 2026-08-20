@@ -148,6 +148,28 @@ export async function executeLlmToolCall(
   const wrappedCommand = `script -q -e -c ${shellQuote(scriptCommand)} ${shellQuote(logPath)}`;
   const toolStart = Date.now();
 
+  // Zed-specific display-only terminal id (see `_meta.terminal_info` below).
+  //
+  // Why this exists: after a Zed restart, the REAL terminal id returned by
+  // `terminal/create` no longer exists, so replaying a `tool_call_update`
+  // that references it makes Zed fail with "Terminal with id not found" and
+  // drop the whole update. And Zed only renders execute-kind cards with an
+  // expand/unfold toggle when they contain a `terminal` content item, so a
+  // text-only replay card is not even expandable. Zed therefore supports
+  // "display-only" terminals (Codex uses them too): if the `tool_call`
+  // carries `_meta.terminal_info`, Zed re-creates that terminal on every
+  // notification — including replay during `session/load` — and we stream
+  // the output into it via `_meta.terminal_output`/`_meta.terminal_exit` on
+  // the final update. The replayed card then resolves, auto-expands and
+  // shows the output.
+  //
+  // The id is deterministic (`zen-<toolCallId>`) so replay can rewrite the
+  // stale real terminal id to it (see `prepareReplayEvents` in replay.ts).
+  // The REAL terminal (id returned by terminal/create) is only an execution
+  // vehicle: it runs the command, we wait for exit and fetch its output,
+  // then release it. It is never embedded in tool-call content.
+  const displayTerminalId = `zen-${call.id}`;
+
   await emit({
     sessionUpdate: "tool_call",
     toolCallId: call.id,
@@ -155,6 +177,17 @@ export async function executeLlmToolCall(
     kind: "execute",
     status: "pending",
     rawInput: { command },
+    // Zed pre-registers a display-only terminal for this id on every
+    // session/update notification, including the replayed ones during
+    // session/load. Without it, a replayed `terminal` content item would
+    // fail with "Terminal with id not found" and the whole update would be
+    // dropped, leaving the tool call with no visible result after a restart.
+    _meta: {
+      terminal_info: {
+        terminal_id: displayTerminalId,
+        cwd: session.cwd,
+      },
+    },
   });
 
   if (!clientCapabilities.terminal) {
@@ -288,6 +321,21 @@ export async function executeLlmToolCall(
         durationMs,
         fullOutputPath: logPath,
         commandScriptPath,
+      },
+      // Stream the recorded output into the display-only terminal so that
+      // after a Zed restart the replayed tool call shows the output inside
+      // the terminal card (replay re-registers the terminal from the
+      // `tool_call` event's terminal_info above).
+      _meta: {
+        terminal_output: {
+          terminal_id: displayTerminalId,
+          data: outputText,
+        },
+        terminal_exit: {
+          terminal_id: displayTerminalId,
+          exit_code: exit.exitCode ?? null,
+          signal: exit.signal ?? null,
+        },
       },
     });
 
