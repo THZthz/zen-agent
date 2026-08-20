@@ -375,9 +375,15 @@ export async function runLlmStep(options: {
   const baseURL = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, "");
   const modelName = options.model ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 
+  const wireMessages = toOpenAiMessages(options.messages);
   const body: Record<string, unknown> = {
     model: modelName,
-    messages: toOpenAiMessages(options.messages),
+    messages: [
+      { role: "system", content: options.system ?? SYSTEM_PROMPT },
+      ...wireMessages.filter(
+        (message) => (message as { role?: string }).role !== "system",
+      ),
+    ],
     tools: [BASH_TOOL_SCHEMA],
     stream: true,
   };

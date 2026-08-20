@@ -328,12 +328,17 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
       ],
       model: "deepseek-v4-flash",
       thinkingEffort: "off",
+      system: "custom system",
     });
 
     expect(result.text).toBe("ok");
     const messages = requestBody?.messages as Array<Record<string, unknown>>;
-    expect(messages).toHaveLength(3);
-    expect(messages[1]).toMatchObject({
+    expect(messages).toHaveLength(4);
+    expect(messages[0]).toEqual({
+      role: "system",
+      content: "custom system",
+    });
+    expect(messages[2]).toMatchObject({
       role: "assistant",
       content: "running",
       tool_calls: [
@@ -344,7 +349,7 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
         },
       ],
     });
-    expect(messages[2]).toEqual({
+    expect(messages[3]).toEqual({
       role: "tool",
       tool_call_id: "c1",
       content: "file.txt",

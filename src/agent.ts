@@ -1494,7 +1494,7 @@ export class ZenAgent {
   private buildSystemPrompt(session: StoredSession): string {
     const environmentInfo = [
       `Working directory: ${session.cwd}`,
-      `Current date/time: ${new Date().toISOString()}`,
+      `Current date/time: ${session.createdAt}`,
     ].join("\n");
     const base = session.config.systemPrompt || SYSTEM_PROMPT;
     return `${base}\n---\n${environmentInfo}`;
