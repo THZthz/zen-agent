@@ -1,4 +1,4 @@
-- [ ] Check how Zed render **very very long** sessions
+- [x] Check how Zed render **very very long** sessions
 - [x] Check cache hit ratio for LLM API — DeepSeek reports `prompt_cache_hit_tokens`/`prompt_cache_miss_tokens`; read from the raw SSE usage chunk (the AI SDK's zod schema strips them) in `runLlmStep` and shown per turn as `cache hit %`
 - [x] Check if we can display some information to user, e.g., turns, steps, LLM thinking/answering time, tool calling time, cache hit ratio, input token, output token, consumption (in China yuan) — context window + CNY cost via ACP `usage_update` (rendered by Zed); the rest via a per-turn stats line (`ZEN_AGENT_SHOW_STATS`) plus `⏱` on tool cards; cumulative tokens also in experimental `session/prompt` `usage` field
 - [x] Check if context windows can be displayed to user — yes: ACP `usage_update` (`used`/`size`) drives Zed's token-usage ring in the agent panel header

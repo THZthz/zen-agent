@@ -1,5 +1,7 @@
 import type { ModelMessage } from "ai";
 import type { ModelId, ThinkingEffort } from "../storage.js";
+import { SYSTEM_PROMPT } from "../system-prompt.js";
+export { SYSTEM_PROMPT } from "../system-prompt.js";
 
 export interface LlmToolCall {
   id: string;
@@ -29,16 +31,6 @@ export interface LlmStepResult {
   /** Token usage and timing for this LLM step, if reported by the provider. */
   usage: LlmUsage | null;
 }
-
-export const SYSTEM_PROMPT = `You are an experiened software engineer.
-
-You have exactly one tool: bash.
-You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation.
-There is no approval gate: every command you run is executed immediately.
-Prefer small, targeted bash commands. Avoid large output from using bash tool.
-When modifying files, use shell tools such as cat, sed, awk, or tee. Prefer using trash (npm install --global trash-cli), rg, fdfind (fd), jq, uv if they exist.
-
-> Always use utf-8, no emojis unless needed by your task.`;
 
 /**
  * The bash tool exposed to the model, in OpenAI function-calling wire format.

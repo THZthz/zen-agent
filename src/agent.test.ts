@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import { ZenAgent } from "./agent.js";
+import { prepareReplayEvents } from "./replay.js";
 import { emptySessionUsage, type StoredSession } from "./storage.js";
 
 type ReplayEvent = {
@@ -11,11 +13,8 @@ type ReplayEvent = {
   [k: string]: unknown;
 };
 
-function prepare(events: ReplayEvent[]): ReplayEvent[] {
-  const agent = new ZenAgent() as unknown as {
-    prepareReplayEvents(events: ReplayEvent[]): ReplayEvent[];
-  };
-  return agent.prepareReplayEvents(events);
+function prepare(events: ReplayEvent[]): SessionUpdate[] {
+  return prepareReplayEvents(events as unknown as SessionUpdate[]);
 }
 
 function makeSession(sessionId = "s1"): StoredSession {

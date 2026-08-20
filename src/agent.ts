@@ -23,15 +23,29 @@ import {
   type ThinkingEffort,
 } from "./storage.js";
 import { appendJsonLine, makeLogEntry } from "./logger.js";
+import { promptBlocksToText } from "./prompt-content.js";
+import { executeLlmToolCall } from "./tool-execution.js";
 import {
   costYuan,
   getContextWindowTokens,
   getModelPricing,
   runLlmStep,
-  SYSTEM_PROMPT,
   type LlmToolCall,
   type LlmUsage,
 } from "./llm/deepseek.js";
+import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
+import { StreamThrottle } from "./stream-throttle.js";
+import { buildSystemPrompt } from "./system-prompt.js";
+import {
+  cacheHitPercent,
+  emptyTurnStats,
+  formatMs,
+  formatTokens,
+  formatYuan,
+  roundYuan,
+  showTurnStats,
+  type TurnStats,
+} from "./turn-stats.js";
 
 interface ActiveSession {
   session: StoredSession;
@@ -132,156 +146,6 @@ function newSessionIdForPrompt(): string {
   return newMessageId();
 }
 
-type StreamKind = "thought" | "message";
-
-/**
- * Batches streamed LLM deltas into small, throttled chunks.
- *
- * Zed renders each `agent_message_chunk`/`agent_thought_chunk` update
- * incrementally (`agent_ui/.../thread_view.rs`), and flooding it with
- * per-token updates across a slow JSON-RPC pipe makes the UI janky and drops
- * chunks. Throttling to ~24 chars per 16ms tick keeps the output visibly
- * streaming while staying well within Zed's per-update handling budget.
- */
-class StreamThrottle {
-  private queue: Array<{ kind: StreamKind; text: string }> = [];
-  private timer: NodeJS.Timeout | null = null;
-  private running = false;
-
-  constructor(
-    private emit: (kind: StreamKind, text: string) => Promise<void>,
-    private intervalMs = 16,
-    private maxCharsPerTick = 24,
-  ) {}
-
-  push(kind: StreamKind, text: string): void {
-    if (!text) {
-      return;
-    }
-    this.queue.push({ kind, text });
-    this.schedule();
-  }
-
-  async drain(): Promise<void> {
-    while (this.queue.length > 0) {
-      await new Promise((resolve) => setTimeout(resolve, this.intervalMs));
-    }
-  }
-
-  private schedule(): void {
-    if (this.running || this.timer) {
-      return;
-    }
-    this.timer = setTimeout(() => {
-      void this.tick();
-    }, this.intervalMs);
-  }
-
-  private async tick(): Promise<void> {
-    this.timer = null;
-    if (this.queue.length === 0) {
-      this.running = false;
-      return;
-    }
-
-    this.running = true;
-    let remaining = this.maxCharsPerTick;
-
-    while (remaining > 0 && this.queue.length > 0) {
-      const item = this.queue[0];
-      if (item.text.length <= remaining) {
-        this.queue.shift();
-        await this.emit(item.kind, item.text);
-        remaining -= item.text.length;
-      } else {
-        const chunk = item.text.slice(0, remaining);
-        item.text = item.text.slice(remaining);
-        await this.emit(item.kind, chunk);
-        remaining = 0;
-      }
-    }
-
-    this.running = false;
-    if (this.queue.length > 0) {
-      this.schedule();
-    }
-  }
-}
-
-interface TurnStats {
-  steps: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheMissTokens: number;
-  reasoningTokens: number;
-  costYuan: number;
-  llmMs: number;
-  thinkingMs: number;
-  answeringMs: number;
-  toolMs: number;
-}
-
-function emptyTurnStats(): TurnStats {
-  return {
-    steps: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheMissTokens: 0,
-    reasoningTokens: 0,
-    costYuan: 0,
-    llmMs: 0,
-    thinkingMs: 0,
-    answeringMs: 0,
-    toolMs: 0,
-  };
-}
-
-function formatMs(ms: number): string {
-  if (ms < 1000) {
-    return `${Math.round(ms)}ms`;
-  }
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function formatTokens(count: number): string {
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return String(count);
-}
-
-function formatYuan(amount: number): string {
-  if (amount > 0 && amount < 0.01) {
-    return amount.toFixed(4);
-  }
-  return amount.toFixed(3);
-}
-
-function roundYuan(amount: number): number {
-  return Math.round(amount * 10_000) / 10_000;
-}
-
-function cacheHitPercent(turn: TurnStats): string {
-  const total = turn.cacheReadTokens + turn.cacheMissTokens;
-  if (total === 0) {
-    return "n/a";
-  }
-  return `${Math.round((turn.cacheReadTokens / total) * 100)}%`;
-}
-
-function showTurnStats(): boolean {
-  const raw = process.env.ZEN_AGENT_SHOW_STATS;
-  if (raw === undefined) {
-    return true;
-  }
-  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
-}
-
 export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
@@ -364,8 +228,8 @@ export class ZenAgent {
       sessionId: session.sessionId,
     });
 
-    const replayEvents = this.coalesceReplayEvents(
-      this.prepareReplayEvents(session.events),
+    const replayEvents = coalesceReplayEvents(
+      prepareReplayEvents(session.events),
     );
     for (const update of replayEvents) {
       await cx.notify(acp.methods.client.session.update, {
@@ -523,7 +387,7 @@ export class ZenAgent {
     active.abortController = controller;
 
     try {
-      const userText = await this.promptBlocksToText(params.prompt);
+      const userText = await promptBlocksToText(params.prompt);
       void this.logRuntime(active.session.cwd, "info", "prompt received", {
         sessionId: params.sessionId,
         text: userText,
@@ -620,7 +484,7 @@ export class ZenAgent {
         timestamp: new Date().toISOString(),
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
-        system: this.buildSystemPrompt(active.session),
+        system: buildSystemPrompt(active.session),
         messages: active.session.llmMessages,
       });
 
@@ -645,7 +509,7 @@ export class ZenAgent {
         signal,
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
-        system: this.buildSystemPrompt(active.session),
+        system: buildSystemPrompt(active.session),
         onTextDelta: async (delta) => {
           stream.push("message", delta);
         },
@@ -884,20 +748,6 @@ export class ZenAgent {
     };
   }
 
-  private shellQuote(value: string): string {
-    return `'${value.replace(/'/g, `'\\''`)}'`;
-  }
-
-  /**
-   * Runs a bash tool call through Zed's ACP terminal API.
-   *
-   * Zed exposes client-side terminals (`acp::methods.client.terminal.*`) that
-   * run in Zed's own PTY on the host; we create one per call, stream its
-   * output to Zed as a `tool_call_update` (which Zed renders as a live
-   * terminal card), and wait for exit before collecting output. The abort
-   * listener below kills the terminal ONLY on a hard abort — a graceful
-   * cancel (user follow-up / Stop) lets the command finish.
-   */
   private async executeLlmToolCall(
     active: ActiveSession,
     cx: acp.AgentContext,
@@ -908,252 +758,18 @@ export class ZenAgent {
     toolName: string;
     output: { type: "text"; value: string };
   }> {
-    if (call.name !== "bash") {
-      const message = `Unknown tool: ${call.name}`;
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call",
-        toolCallId: call.id,
-        title: `Unknown tool ${call.name}`,
-        kind: "other",
-        status: "failed",
-        rawInput: call.input,
-      });
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: call.id,
-        status: "failed",
-        content: [
-          {
-            type: "content",
-            content: { type: "text", text: message },
-          },
-        ],
-        rawOutput: { error: message },
-      });
-      return {
-        toolCallId: call.id,
-        toolName: call.name,
-        output: { type: "text", value: message },
-      };
-    }
-
-    const command = (call.input as { command?: unknown }).command;
-    if (typeof command !== "string" || command.trim().length === 0) {
-      const message = "bash tool requires a non-empty string command";
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call",
-        toolCallId: call.id,
-        title: "Invalid bash command",
-        kind: "execute",
-        status: "failed",
-        rawInput: call.input,
-      });
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: call.id,
-        status: "failed",
-        content: [
-          {
-            type: "content",
-            content: { type: "text", text: message },
-          },
-        ],
-        rawOutput: { error: message },
-      });
-      return {
-        toolCallId: call.id,
-        toolName: "bash",
-        output: { type: "text", value: message },
-      };
-    }
-
-    const terminalDir = terminalDirectory(
-      active.session.cwd,
-      active.session.sessionId,
+    return executeLlmToolCall(
+      {
+        session: active.session,
+        clientCapabilities: this.clientCapabilities,
+        emit: (update) => this.emit(active, cx, update),
+        logRuntime: (level, message, details) =>
+          this.logRuntime(active.session.cwd, level, message, details),
+      },
+      cx,
+      call,
+      signal,
     );
-    const logPath = join(terminalDir, `terminal-${call.id}.log`);
-    const commandScriptPath = join(terminalDir, `terminal-${call.id}.sh`);
-    await mkdir(terminalDir, { recursive: true });
-    await writeFile(commandScriptPath, command, "utf8");
-    const scriptCommand = `bash ${this.shellQuote(commandScriptPath)}`;
-    const wrappedCommand = `script -q -e -c ${this.shellQuote(scriptCommand)} ${this.shellQuote(logPath)}`;
-    const toolStart = Date.now();
-
-    await this.emit(active, cx, {
-      sessionUpdate: "tool_call",
-      toolCallId: call.id,
-      title: `$ ${command}`,
-      kind: "execute",
-      status: "pending",
-      rawInput: { command },
-    });
-
-    if (!this.clientCapabilities.terminal) {
-      const message =
-        "Zed terminal support is required for the bash tool, but the client did not advertise terminal: true";
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: call.id,
-        status: "failed",
-        content: [
-          {
-            type: "content",
-            content: { type: "text", text: message },
-          },
-        ],
-        rawOutput: { error: message },
-      });
-      return {
-        toolCallId: call.id,
-        toolName: "bash",
-        output: { type: "text", value: message },
-      };
-    }
-
-    let terminalId: string | undefined;
-    let cancelledBySignal = false;
-
-    const killTerminal = async () => {
-      if (!terminalId) return;
-      try {
-        await cx.request(acp.methods.client.terminal.kill, {
-          sessionId: active.session.sessionId,
-          terminalId,
-        });
-      } catch {
-        // The terminal may already have exited.
-      }
-    };
-
-    const releaseTerminal = async () => {
-      if (!terminalId) return;
-      try {
-        await cx.request(acp.methods.client.terminal.release, {
-          sessionId: active.session.sessionId,
-          terminalId,
-        });
-      } catch {
-        // The terminal may already have been released.
-      }
-    };
-
-    const onAbort = () => {
-      cancelledBySignal = true;
-      void killTerminal();
-    };
-
-    if (signal.aborted) {
-      onAbort();
-    } else {
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    try {
-      const createResp = await cx.request(acp.methods.client.terminal.create, {
-        sessionId: active.session.sessionId,
-        command: "/bin/bash",
-        args: ["-lc", wrappedCommand],
-        cwd: active.session.cwd,
-        env: [],
-        outputByteLimit: 1_000_000,
-      });
-      terminalId = createResp.terminalId;
-      void this.logRuntime(active.session.cwd, "info", "terminal created", {
-        sessionId: active.session.sessionId,
-        terminalId,
-        command,
-      });
-
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: call.id,
-        status: "in_progress",
-        content: [{ type: "terminal", terminalId }],
-      });
-
-      const exit = await cx.request(acp.methods.client.terminal.waitForExit, {
-        sessionId: active.session.sessionId,
-        terminalId,
-      });
-
-      const outputResp = await cx.request(acp.methods.client.terminal.output, {
-        sessionId: active.session.sessionId,
-        terminalId,
-      });
-
-      await releaseTerminal();
-      void this.logRuntime(active.session.cwd, "info", "terminal finished", {
-        sessionId: active.session.sessionId,
-        terminalId,
-        command,
-        exitCode: exit.exitCode,
-        signal: exit.signal,
-      });
-
-      const cancelled = cancelledBySignal || signal.aborted;
-      const status = cancelled || exit.exitCode !== 0 ? "failed" : "completed";
-      const durationMs = Date.now() - toolStart;
-      const outputText =
-        outputResp.output ||
-        (status === "completed" ? "(no output)" : `exit code ${exit.exitCode ?? "unknown"}`);
-      const outputForModel = outputText + `\n\n[Full output saved to ${logPath}]`;
-      const displayText = `${outputText}\n\n⏱ ${formatMs(durationMs)}`;
-
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: call.id,
-        status,
-        content: [
-          { type: "terminal", terminalId },
-          {
-            type: "content",
-            content: { type: "text", text: displayText },
-          },
-        ],
-        rawOutput: {
-          output: outputResp.output,
-          exitCode: exit.exitCode,
-          signal: exit.signal,
-          truncated: outputResp.truncated,
-          cancelled,
-          durationMs,
-          fullOutputPath: logPath,
-          commandScriptPath,
-        },
-      });
-
-      return {
-        toolCallId: call.id,
-        toolName: "bash",
-        output: { type: "text", value: outputForModel },
-      };
-    } catch (error) {
-      await releaseTerminal();
-      const message = error instanceof Error ? error.message : String(error);
-      const durationMs = Date.now() - toolStart;
-      await this.emit(active, cx, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: call.id,
-        status: "failed",
-        content: [
-          {
-            type: "content",
-            content: {
-              type: "text",
-              text: `${message}\n\n⏱ ${formatMs(durationMs)}`,
-            },
-          },
-        ],
-        rawOutput: { error: message, durationMs },
-      });
-      return {
-        toolCallId: call.id,
-        toolName: "bash",
-        output: { type: "text", value: message },
-      };
-    } finally {
-      signal.removeEventListener("abort", onAbort);
-    }
   }
 
   private stopReasonFromFinish(finishReason: string): acp.StopReason {
@@ -1169,66 +785,6 @@ export class ZenAgent {
     }
   }
 
-  private async promptBlocksToText(
-    blocks: acp.ContentBlock[],
-  ): Promise<string> {
-    const parts: string[] = [];
-
-    for (const block of blocks) {
-      switch (block.type) {
-        case "text":
-          parts.push(block.text);
-          break;
-        case "resource_link": {
-          const text = await this.readResourceLink(block);
-          parts.push(text);
-          break;
-        }
-        case "resource": {
-          const resource = block.resource;
-          if ("text" in resource && typeof resource.text === "string") {
-            parts.push(resource.text);
-          } else if ("blob" in resource && typeof resource.blob === "string") {
-            parts.push(
-              `[Embedded binary resource ${resource.uri} (base64, ${resource.blob.length} chars)]`,
-            );
-          } else {
-            parts.push(`[Embedded resource ${resource.uri}]`);
-          }
-          break;
-        }
-        case "image":
-        case "audio":
-          throw new Error(
-            `${block.type} content is not supported by zen-agent yet`,
-          );
-        default:
-          throw new Error(`Unsupported content block: ${(block as { type: string }).type}`);
-      }
-    }
-
-    return parts.join("\n\n");
-  }
-
-  private async readResourceLink(block: {
-    type: "resource_link";
-    uri: string;
-    name?: string;
-    mimeType?: string | null;
-  }): Promise<string> {
-    if (!block.uri.startsWith("file://")) {
-      return block.name ?? block.uri;
-    }
-
-    try {
-      const path = fileURLToPath(block.uri);
-      const content = await readFile(path, "utf8");
-      return `File: ${path}\n${content}`;
-    } catch {
-      return block.name ?? block.uri;
-    }
-  }
-
   private abortActiveSession(sessionId: string): void {
     const active = this.sessions.get(sessionId);
     if (!active) {
@@ -1240,138 +796,6 @@ export class ZenAgent {
     // the LLM stream.
     this.clearGracefulCancel(active);
     active.abortController?.abort();
-  }
-
-  private prepareReplayEvents(events: acp.SessionUpdate[]): acp.SessionUpdate[] {
-    // Only replay tool calls that have BOTH an initial `tool_call` event and a
-    // final (completed/failed) `tool_call_update`. Calls interrupted mid-run
-    // (e.g. hard-aborted) have no result worth showing, and replaying them as
-    // "pending" would leave phantom entries in the thread. Zed also creates a
-    // spurious "Tool call not found" failed entry for any update without a
-    // matching initial event (`acp_thread.rs::update_tool_call`), which is
-    // exactly what we want to avoid on reload.
-    //
-    // Note: a tool call that finished during a GRACEFUL cancel has both its
-    // initial event and a final completed update, so it replays normally.
-    const initialCallIds = new Set<string>();
-    const finalizedCallIds = new Set<string>();
-    for (const event of events) {
-      if (event.sessionUpdate === "tool_call") {
-        initialCallIds.add(event.toolCallId);
-      } else if (
-        event.sessionUpdate === "tool_call_update" &&
-        (event.status === "completed" || event.status === "failed")
-      ) {
-        finalizedCallIds.add(event.toolCallId);
-      }
-    }
-
-    const replayableCallIds = new Set(
-      [...initialCallIds].filter((id) => finalizedCallIds.has(id)),
-    );
-
-    const result: acp.SessionUpdate[] = [];
-    for (const event of events) {
-      if (event.sessionUpdate === "tool_call") {
-        if (replayableCallIds.has(event.toolCallId)) {
-          result.push(event);
-        }
-        continue;
-      }
-      if (event.sessionUpdate === "tool_call_update") {
-        if (
-          !replayableCallIds.has(event.toolCallId) ||
-          event.status === "in_progress"
-        ) {
-          // Drop transient in-progress updates. The final update carries the
-          // full status and content, so replaying the intermediate one would
-          // only cause extra work (and fail on stale terminal references).
-          continue;
-        }
-        result.push(this.stripTerminalContent(event));
-        continue;
-      }
-      result.push(event);
-    }
-    return result;
-  }
-
-  private stripTerminalContent(event: acp.SessionUpdate): acp.SessionUpdate {
-    // Zed binds terminal cards to live terminals by ID; a stale terminalId
-    // from a previous Zed run cannot be re-attached, so replay the text
-    // output instead of the terminal reference.
-    if (event.sessionUpdate !== "tool_call_update" || !event.content) {
-      return event;
-    }
-    const content = event.content.filter((item) => item.type !== "terminal");
-    if (content.length === event.content.length) {
-      return event;
-    }
-    return { ...event, content } as acp.SessionUpdate;
-  }
-
-  private coalesceReplayEvents(events: acp.SessionUpdate[]): acp.SessionUpdate[] {
-    const result: acp.SessionUpdate[] = [];
-
-    for (const event of events) {
-      const enriched = this.enrichReplayEvent(event);
-      const last = result[result.length - 1];
-
-      if (
-        last &&
-        (enriched.sessionUpdate === "agent_thought_chunk" ||
-          enriched.sessionUpdate === "agent_message_chunk") &&
-        last.sessionUpdate === enriched.sessionUpdate &&
-        "messageId" in last &&
-        "messageId" in enriched &&
-        last.messageId === enriched.messageId &&
-        last.content.type === "text" &&
-        enriched.content.type === "text"
-      ) {
-        result[result.length - 1] = {
-          ...last,
-          content: {
-            type: "text",
-            text: last.content.text + enriched.content.text,
-          },
-        } as acp.SessionUpdate;
-      } else {
-        result.push(enriched);
-      }
-    }
-
-    return result;
-  }
-
-  private enrichReplayEvent(event: acp.SessionUpdate): acp.SessionUpdate {
-    if (event.sessionUpdate !== "tool_call_update") {
-      return event;
-    }
-    const rawOutput = event.rawOutput as { output?: unknown } | undefined;
-    if (!rawOutput || typeof rawOutput.output !== "string") {
-      return event;
-    }
-
-    const hasTextContent = (event.content ?? []).some(
-      (item) =>
-        item.type === "content" &&
-        item.content.type === "text" &&
-        typeof item.content.text === "string",
-    );
-    if (hasTextContent) {
-      return event;
-    }
-
-    return {
-      ...event,
-      content: [
-        ...(event.content ?? []),
-        {
-          type: "content",
-          content: { type: "text", text: rawOutput.output },
-        },
-      ],
-    } as acp.SessionUpdate;
   }
 
   private async logRuntime(
@@ -1468,7 +892,7 @@ export class ZenAgent {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: this.buildSystemPrompt(active.session),
+          text: buildSystemPrompt(active.session),
         },
       });
       return "end_turn";
@@ -1489,15 +913,6 @@ export class ZenAgent {
     });
 
     return "end_turn";
-  }
-
-  private buildSystemPrompt(session: StoredSession): string {
-    const environmentInfo = [
-      `Working directory: ${session.cwd}`,
-      `Current date/time: ${session.createdAt}`,
-    ].join("\n");
-    const base = session.config.systemPrompt || SYSTEM_PROMPT;
-    return `${base}\n---\n${environmentInfo}`;
   }
 
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
