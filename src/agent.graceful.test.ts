@@ -233,3 +233,75 @@ describe("graceful cancel in runTurn", () => {
     }
   });
 });
+
+describe("per-turn stats line", () => {
+  beforeEach(() => {
+    mockedRunLlmStep.mockReset();
+  });
+
+  it("is shown to the user and persisted in events, but never sent to the LLM", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
+    try {
+      const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+      mockedRunLlmStep.mockResolvedValueOnce({
+        text: "the answer",
+        reasoning: "thinking...",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: {
+          inputTokens: 1000,
+          outputTokens: 50,
+          totalTokens: 1050,
+          cacheReadTokens: 900,
+          cacheMissTokens: 100,
+          reasoningTokens: 10,
+          llmMs: 500,
+          thinkingMs: 300,
+          answeringMs: 200,
+        },
+      });
+
+      await agent.prompt(
+        { sessionId, prompt: [{ type: "text", text: "hi" }] },
+        cx,
+      );
+
+
+      const statsRegex = /Turn \d+ · \d+ step/;
+      const isStatsBubble = (u: acp.SessionUpdate) =>
+        u.sessionUpdate === "agent_message_chunk" &&
+        "content" in u &&
+        (u as { content: { type: string; text?: string } }).content?.type === "text" &&
+        statsRegex.test(
+          String((u as { content: { text?: string } }).content.text ?? ""),
+        );
+
+      // Shown to the user live.
+      expect(
+        notifications.filter((n) => isStatsBubble(n.update)),
+      ).not.toHaveLength(0);
+
+      const session = (
+        agent as unknown as {
+          sessions: Map<string, { session: import("./storage.js").StoredSession }>;
+        }
+      ).sessions.get(sessionId)!.session;
+
+      // Persisted in events so the bubble survives reload.
+      expect(session.events.some((e) => isStatsBubble(e))).toBe(true);
+
+      // NEVER sent to the LLM: stats text must not appear in llmMessages.
+      const llmText = JSON.stringify(session.llmMessages);
+      expect(llmText).not.toMatch(statsRegex);
+      expect(llmText).not.toContain("(session ¥");
+      // The assistant message carries only the real answer.
+      expect(
+        session.llmMessages.some(
+          (m) => m.role === "assistant" && JSON.stringify(m.content).includes("the answer"),
+        ),
+      ).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
