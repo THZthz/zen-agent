@@ -53,6 +53,7 @@ export interface RebuiltSessionStats {
 interface WireMessage {
   role: string;
   content?: string | null;
+  reasoning_content?: string | null;
   tool_calls?: Array<{
     id: string;
     type: string;
@@ -118,6 +119,10 @@ function toWireMessages(messages: ModelMessage[]): WireMessage[] {
           .filter((part) => part.type === "text")
           .map((part) => (part as { text: string }).text)
           .join("");
+        const reasoning = parts
+          .filter((part) => part.type === "reasoning")
+          .map((part) => (part as { text: string }).text)
+          .join("");
         const toolCalls = parts
           .filter((part) => part.type === "tool-call")
           .map((part) => ({
@@ -132,6 +137,9 @@ function toWireMessages(messages: ModelMessage[]): WireMessage[] {
           role: "assistant",
           content: text || null,
         };
+        if (toolCalls.length > 0 && parts.some((part) => part.type === "reasoning")) {
+          assistantMessage.reasoning_content = reasoning;
+        }
         if (toolCalls.length > 0) {
           assistantMessage.tool_calls = toolCalls;
         }

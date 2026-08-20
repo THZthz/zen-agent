@@ -366,7 +366,7 @@ describe("session stats recovery on load", () => {
         "utf8",
       );
 
-      const notify = vi.fn(async () => {});
+      const notify = vi.fn(async (_method: string, _params: { sessionId: string; update: unknown }) => {});
       const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
 
       await agent.loadSession({ cwd: dir, sessionId: "sess_legacy" }, cx);
@@ -393,7 +393,7 @@ describe("session stats recovery on load", () => {
       expect(stored.usage.steps).toBe(1);
       expect(stored.turnStats).toHaveLength(1);
 
-      const notify2 = vi.fn(async () => {});
+      const notify2 = vi.fn(async (_method: string, _params: { sessionId: string; update: unknown }) => {});
       const cx2 = { notify: notify2 } as unknown as Parameters<typeof agent.loadSession>[1];
       await agent.loadSession({ cwd: dir, sessionId: "sess_legacy" }, cx2);
       const updates2 = notify2.mock.calls.map((call) => (call[1] as { update: unknown }).update) as Array<{

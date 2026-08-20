@@ -250,7 +250,39 @@ export async function readStoredSession(
     parsed.turnStats = [];
   }
   parsed.llmMessages = sanitizeLlmMessages(parsed.llmMessages);
+  parsed.llmMessages = ensureReasoningParts(parsed.llmMessages, parsed.config.thinkingEffort);
   return parsed;
+}
+
+/**
+ * DeepSeek's thinking mode requires `reasoning_content` to be passed back on
+ * every subsequent request when tools are present. Sessions created before
+ * reasoning was persisted do not have it, so backfill an empty reasoning part
+ * on load. New sessions store the real streamed reasoning via `runLlmStep`.
+ */
+export function ensureReasoningParts(
+  messages: ModelMessage[],
+  thinkingEffort: ThinkingEffort,
+): ModelMessage[] {
+  if (thinkingEffort === "off") {
+    return messages;
+  }
+  return messages.map((message) => {
+    if (message.role !== "assistant" || !Array.isArray(message.content)) {
+      return message;
+    }
+    if (message.content.some((part) => part.type === "reasoning")) {
+      return message;
+    }
+    // Only tool-call assistant turns need reasoning_content passed back.
+    if (!message.content.some((part) => part.type === "tool-call")) {
+      return message;
+    }
+    return {
+      ...message,
+      content: [{ type: "reasoning", text: "" }, ...message.content],
+    };
+  });
 }
 
 export function sanitizeLlmMessages(messages: ModelMessage[]): ModelMessage[] {

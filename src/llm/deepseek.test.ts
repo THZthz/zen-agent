@@ -232,6 +232,7 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
     });
 
     expect(result.text).toBe("The answer.");
+    expect(result.reasoning).toBe("Let me think. Second thought.");
     expect(result.finishReason).toBe("stop");
     // Reasoning arrived BEFORE the answer started (450ms) — the AI SDK
     // buffered everything to ~600ms; our direct client must not.
@@ -315,6 +316,7 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
         {
           role: "assistant",
           content: [
+            { type: "reasoning", text: "think hard" },
             { type: "text", text: "running" },
             { type: "tool-call", toolCallId: "c1", toolName: "bash", input: { command: "ls" } },
           ],
@@ -341,6 +343,7 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
     expect(messages[2]).toMatchObject({
       role: "assistant",
       content: "running",
+      reasoning_content: "think hard",
       tool_calls: [
         {
           id: "c1",
@@ -431,6 +434,7 @@ describe("runLlmStep (live SSE, no AI SDK)", () => {
     });
 
     expect(reasoning).toEqual(["think"]);
+    expect(result.reasoning).toBe("think");
     expect(result.text).toBe("done");
     expect(result.finishReason).toBe("stop");
   });

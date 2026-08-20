@@ -581,11 +581,17 @@ export class ZenAgent {
         type: "text";
         text: string;
       } | {
+        type: "reasoning";
+        text: string;
+      } | {
         type: "tool-call";
         toolCallId: string;
         toolName: string;
         input: unknown;
       }> = [];
+      if (llmResult.reasoning.length > 0 || active.session.config.thinkingEffort !== "off") {
+        assistantParts.push({ type: "reasoning", text: llmResult.reasoning });
+      }
       if (llmResult.text.length > 0) {
         assistantParts.push({ type: "text", text: llmResult.text });
       }

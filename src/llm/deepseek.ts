@@ -26,6 +26,8 @@ export interface LlmUsage {
 
 export interface LlmStepResult {
   text: string;
+  /** Full reasoning_content emitted by DeepSeek during this step. */
+  reasoning: string;
   toolCalls: LlmToolCall[];
   finishReason: string;
   /** Token usage and timing for this LLM step, if reported by the provider. */
@@ -261,6 +263,10 @@ function toOpenAiMessages(messages: ModelMessage[]): unknown[] {
           .filter((part) => part.type === "text")
           .map((part) => (part as { text: string }).text)
           .join("");
+        const reasoning = parts
+          .filter((part) => part.type === "reasoning")
+          .map((part) => (part as { text: string }).text)
+          .join("");
         const toolCalls = parts
           .filter((part) => part.type === "tool-call")
           .map((part) => ({
@@ -275,6 +281,9 @@ function toOpenAiMessages(messages: ModelMessage[]): unknown[] {
           role: "assistant",
           content: text || null,
         };
+        if (toolCalls.length > 0 && parts.some((part) => part.type === "reasoning")) {
+          assistantMessage.reasoning_content = reasoning;
+        }
         if (toolCalls.length > 0) {
           assistantMessage.tool_calls = toolCalls;
         }
@@ -395,6 +404,7 @@ export async function runLlmStep(options: {
   let lastReasoningAt: number | null = null;
 
   let text = "";
+  let reasoning = "";
   let finishReason = "unknown";
   let sawFinishReason = false;
   let sawOutput = false;
@@ -498,6 +508,7 @@ export async function runLlmStep(options: {
     // Reasoning content (DeepSeek thinking mode) — forwarded LIVE, which is
     // the whole point of bypassing the AI SDK here.
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
+      reasoning += delta.reasoning_content;
       lastReasoningAt = Date.now();
       sawOutput = true;
       await options.onReasoningDelta?.(delta.reasoning_content);
@@ -591,6 +602,7 @@ export async function runLlmStep(options: {
 
   return {
     text,
+    reasoning,
     toolCalls,
     finishReason: finishReason === "unknown" && toolCalls.length > 0 ? "tool-calls" : finishReason,
     usage: parseDeepSeekUsage(rawUsage, { llmMs, thinkingMs, answeringMs }),

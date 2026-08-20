@@ -62,6 +62,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
 function bashStep(overrides: Partial<LlmStepResult> = {}): LlmStepResult {
   return {
     text: "",
+    reasoning: "",
     toolCalls: [{ id: "c1", name: "bash", input: { command: "echo hi" } }],
     finishReason: "tool-calls",
     usage: null,
@@ -216,7 +217,7 @@ describe("graceful cancel in runTurn", () => {
 
       await vi.waitFor(() => expect(mockedRunLlmStep).toHaveBeenCalled());
       agent.cancel({ sessionId });
-      step.resolve({ text: "the answer", toolCalls: [], finishReason: "stop", usage: null });
+      step.resolve({ text: "the answer", reasoning: "", toolCalls: [], finishReason: "stop", usage: null });
 
       const response = await promptPromise;
 
