@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { StoredSession } from "./storage.js";
+import type { LlmMessage, StoredSession } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,6 +22,15 @@ When modifying files, use shell tools such as cat, sed, awk, or tee. Prefer usin
  * model can tell the two apart.
  */
 export const ENVIRONMENT_MESSAGE_NAME = "environment";
+
+/** True for the auto-generated environment/continuation user messages. */
+export function isEnvironmentMessage(message: LlmMessage): boolean {
+  return (
+    message.role === "user" &&
+    "name" in message &&
+    message.name === ENVIRONMENT_MESSAGE_NAME
+  );
+}
 
 /**
  * The system prompt contains only the agent's instructions; environment
@@ -45,6 +54,29 @@ export async function buildEnvironmentMessage(
   const lines = [
     `Working directory: ${session.cwd}`,
     `Current date/time: ${session.createdAt}`,
+  ];
+  const git = await readSimpleGitInfo(session.cwd);
+  if (git) {
+    lines.push(...git);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Environment notification appended when a session is loaded/resumed after a
+ * restart. Appended at the END of the conversation (after all history), so
+ * it never touches the cached prefix: the frozen environment message plus
+ * the persisted history stay byte-identical, keeping DeepSeek's context
+ * cache hit ratio intact across restarts. The model sees a fresh snapshot of
+ * the environment (now, git state) and knows the session was continued.
+ */
+export async function buildSessionContinuedMessage(
+  session: StoredSession,
+): Promise<string> {
+  const lines = [
+    "Session continued/resumed.",
+    `Working directory: ${session.cwd}`,
+    `Current date/time: ${new Date().toISOString()}`,
   ];
   const git = await readSimpleGitInfo(session.cwd);
   if (git) {

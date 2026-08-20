@@ -494,11 +494,15 @@ describe("runLlmStep message wiring", () => {
 
     await runLlmStep({
       messages: [
+        {
+          role: "user",
+          content: "Working directory: /tmp\nGit branch: main",
+          name: "environment",
+        },
         { role: "user", content: "hello", name: "Amias" },
         { role: "user", content: "plain user" },
       ],
       system: "sys prompt",
-      environment: "Working directory: /tmp\nGit branch: main",
     });
 
     const messages = capturedBody?.messages as Array<Record<string, unknown>>;

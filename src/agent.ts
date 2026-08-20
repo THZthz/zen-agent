@@ -37,8 +37,11 @@ import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
 import {
   buildEnvironmentMessage,
+  buildSessionContinuedMessage,
   buildSystemPrompt,
+  ENVIRONMENT_MESSAGE_NAME,
   getUserMessageName,
+  isEnvironmentMessage,
 } from "./system-prompt.js";
 import {
   cacheHitPercent,
@@ -215,6 +218,17 @@ export class ZenAgent {
       throw new Error("cwd must be an absolute path");
     }
     const session = await createStoredSession(params.cwd);
+    // Freeze the environment snapshot into the persisted conversation at
+    // session creation. It sits right after the system prompt, so it must
+    // stay byte-identical for DeepSeek's prefix cache to keep hitting
+    // across steps and restarts (a per-request regenerated message — e.g.
+    // with a changing git status — would break the whole cached prefix).
+    session.llmMessages.push({
+      role: "user",
+      name: ENVIRONMENT_MESSAGE_NAME,
+      content: await buildEnvironmentMessage(session),
+    });
+    await writeSession(session);
     this.sessions.set(session.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session created", {
       sessionId: session.sessionId,
@@ -232,6 +246,7 @@ export class ZenAgent {
   ): Promise<acp.LoadSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
     this.abortActiveSession(params.sessionId);
+    await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session loaded", {
       sessionId: session.sessionId,
@@ -264,6 +279,7 @@ export class ZenAgent {
   ): Promise<acp.ResumeSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
     this.abortActiveSession(params.sessionId);
+    await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
     const recovered = await this.recoverSessionStats(session);
     void this.logRuntime(params.cwd, "info", "session resumed", {
@@ -499,14 +515,12 @@ export class ZenAgent {
 
       const assistantMessageId = newMessageId();
 
-      const environment = await buildEnvironmentMessage(active.session);
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
         type: "llm_request",
         timestamp: new Date().toISOString(),
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
         system: buildSystemPrompt(active.session),
-        environment,
         messages: active.session.llmMessages,
       });
 
@@ -532,7 +546,6 @@ export class ZenAgent {
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
         system: buildSystemPrompt(active.session),
-        environment,
         onTextDelta: async (delta) => {
           stream.push("message", delta);
         },
@@ -780,6 +793,37 @@ export class ZenAgent {
   }
 
   /**
+   * Prepare a stored session for continuation after a restart.
+   *
+   * 1. Backfill: sessions created before environment messages existed have
+   *    none in their history; prepend a frozen snapshot so the cache prefix
+   *    is stable (system + environment + history).
+   * 2. Notify: append a fresh environment notification at the END of the
+   *    conversation so the model knows the session was continued. Being
+   *    appended after all history, it does not disturb the cached prefix —
+   *    the system prompt, frozen environment message and persisted history
+   *    stay byte-identical, so DeepSeek's context cache keeps hitting.
+   */
+  private async prepareResumedSession(session: StoredSession): Promise<void> {
+    if (
+      session.llmMessages.length === 0 ||
+      !isEnvironmentMessage(session.llmMessages[0]!)
+    ) {
+      session.llmMessages.unshift({
+        role: "user",
+        name: ENVIRONMENT_MESSAGE_NAME,
+        content: await buildEnvironmentMessage(session),
+      });
+    }
+    session.llmMessages.push({
+      role: "user",
+      name: ENVIRONMENT_MESSAGE_NAME,
+      content: await buildSessionContinuedMessage(session),
+    });
+    await writeSession(session);
+  }
+
+  /**
    * Sessions whose files predate usage tracking have an empty `usage` even
    * though the thread contains many turns. Rebuild turns/steps/tokens/cost
    * (and timing where the llm log allows) from the persistent history, then
@@ -797,7 +841,6 @@ export class ZenAgent {
       session.llmMessages,
       buildSystemPrompt(session),
       session.config.model,
-      await buildEnvironmentMessage(session),
     );
     if (!rebuilt) {
       return null;

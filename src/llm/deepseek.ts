@@ -1,6 +1,6 @@
 import type { ModelMessage } from "ai";
 import type { LlmMessage, ModelId, ThinkingEffort } from "../storage.js";
-import { ENVIRONMENT_MESSAGE_NAME, SYSTEM_PROMPT } from "../system-prompt.js";
+import { SYSTEM_PROMPT } from "../system-prompt.js";
 export { SYSTEM_PROMPT } from "../system-prompt.js";
 
 export interface LlmToolCall {
@@ -372,8 +372,6 @@ export async function runLlmStep(options: {
   model?: ModelId;
   thinkingEffort?: ThinkingEffort;
   system?: string;
-  /** Environment context sent as a user message named `environment`. */
-  environment?: string;
 }): Promise<LlmStepResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -382,27 +380,18 @@ export async function runLlmStep(options: {
   const baseURL = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, "");
   const modelName = options.model ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 
+  // The environment message (name "environment") lives in `llmMessages`,
+  // persisted at session creation so the prefix is byte-stable and DeepSeek's
+  // context cache keeps hitting across steps and session restarts.
   const wireMessages = toOpenAiMessages(options.messages);
-  const bodyMessages: Array<Record<string, unknown>> = [
-    { role: "system", content: options.system ?? SYSTEM_PROMPT },
-  ];
-  // Environment context goes to the model as its own user message, named
-  // differently from the human so it is not mistaken for a user request.
-  if (options.environment && options.environment.length > 0) {
-    bodyMessages.push({
-      role: "user",
-      name: ENVIRONMENT_MESSAGE_NAME,
-      content: options.environment,
-    });
-  }
-  bodyMessages.push(
-    ...(wireMessages.filter(
-      (message) => (message as { role?: string }).role !== "system",
-    ) as Array<Record<string, unknown>>),
-  );
   const body: Record<string, unknown> = {
     model: modelName,
-    messages: bodyMessages,
+    messages: [
+      { role: "system", content: options.system ?? SYSTEM_PROMPT },
+      ...(wireMessages.filter(
+        (message) => (message as { role?: string }).role !== "system",
+      ) as Array<Record<string, unknown>>),
+    ],
     tools: [BASH_TOOL_SCHEMA],
     stream: true,
   };

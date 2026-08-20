@@ -413,3 +413,50 @@ describe("session stats recovery on load", () => {
     }
   });
 });
+
+describe("loadSession environment backfill", () => {
+  it("prepends a frozen environment message and appends a continuation notice for legacy empty sessions", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { vi } = await import("vitest");
+
+    const dir = mkdtempSync(join(tmpdir(), "zen-agent-load-empty-"));
+    try {
+      const agent = new ZenAgent() as unknown as TestAgent & {
+        loadSession(
+          params: { cwd: string; sessionId: string },
+          cx: {
+            notify: (method: string, params: { sessionId: string; update: unknown }) => Promise<void>;
+          },
+        ): Promise<unknown>;
+      };
+
+      const session = makeSession("sess_empty");
+      session.cwd = dir;
+      mkdirSync(join(dir, ".sessions", "sessions"), { recursive: true });
+      mkdirSync(join(dir, ".sessions", "llm"), { recursive: true });
+      writeFileSync(
+        join(dir, ".sessions", "sessions", "sess_empty.json"),
+        JSON.stringify(session),
+        "utf8",
+      );
+
+      const notify = vi.fn(async () => {});
+      const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
+
+      await agent.loadSession({ cwd: dir, sessionId: "sess_empty" }, cx);
+
+      const loaded = agent.sessions.get("sess_empty")!.session;
+      expect(loaded.llmMessages).toHaveLength(2);
+      expect(loaded.llmMessages[0]).toMatchObject({ role: "user", name: "environment" });
+      expect(String(loaded.llmMessages[0]!.content)).toContain("Working directory:");
+      expect(loaded.llmMessages[1]).toMatchObject({ role: "user", name: "environment" });
+      expect(String(loaded.llmMessages[1]!.content)).toContain(
+        "Session continued/resumed.",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

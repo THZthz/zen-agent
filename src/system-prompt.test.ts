@@ -3,7 +3,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildEnvironmentMessage, getUserMessageName } from "./system-prompt.js";
+import {
+  buildEnvironmentMessage,
+  buildSessionContinuedMessage,
+  getUserMessageName,
+  isEnvironmentMessage,
+} from "./system-prompt.js";
 import { emptySessionUsage, type StoredSession } from "./storage.js";
 
 let dir: string;
@@ -100,5 +105,36 @@ describe("buildEnvironmentMessage", () => {
 
     const text = await buildEnvironmentMessage(makeSession(dir));
     expect(text).toContain("Git status: 2 changed files");
+  });
+});
+
+describe("buildSessionContinuedMessage", () => {
+  it("marks the continuation and includes fresh git state", async () => {
+    git(["init", "-b", "main"]);
+    git(["config", "user.name", "Tester"]);
+    git(["config", "user.email", "tester@example.com"]);
+    writeFileSync(join(dir, "a.txt"), "hello\n");
+    git(["add", "a.txt"]);
+    git(["commit", "-m", "init"]);
+    writeFileSync(join(dir, "a.txt"), "changed\n");
+
+    const text = await buildSessionContinuedMessage(makeSession(dir));
+    expect(text).toContain("Session continued/resumed.");
+    expect(text).toContain(`Working directory: ${dir}`);
+    expect(text).toContain("Git branch: main");
+    expect(text).toContain("Git status: 1 changed file");
+  });
+});
+
+describe("isEnvironmentMessage", () => {
+  it("detects only auto-generated environment user messages", () => {
+    expect(
+      isEnvironmentMessage({ role: "user", content: "x", name: "environment" }),
+    ).toBe(true);
+    expect(
+      isEnvironmentMessage({ role: "user", content: "x", name: "Amias" }),
+    ).toBe(false);
+    expect(isEnvironmentMessage({ role: "user", content: "x" })).toBe(false);
+    expect(isEnvironmentMessage({ role: "assistant", content: [] })).toBe(false);
   });
 });

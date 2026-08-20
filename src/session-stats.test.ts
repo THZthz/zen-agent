@@ -80,6 +80,10 @@ afterEach(() => {
   }
 });
 
+function environmentMessage(content: string): ModelMessage & { name: string } {
+  return { role: "user", content, name: "environment" };
+}
+
 describe("needsSessionStatsRecovery", () => {
   it("is false when usage is populated", () => {
     const usage = emptySessionUsage();
@@ -95,6 +99,15 @@ describe("needsSessionStatsRecovery", () => {
     expect(
       needsSessionStatsRecovery({ usage: emptySessionUsage(), llmMessages: legacyMessages() }),
     ).toBe(true);
+  });
+
+  it("is false when only environment messages exist (no real conversation)", () => {
+    expect(
+      needsSessionStatsRecovery({
+        usage: emptySessionUsage(),
+        llmMessages: [environmentMessage("Working directory: /tmp")],
+      }),
+    ).toBe(false);
   });
 });
 
@@ -299,5 +312,45 @@ describe("storage round-trip", () => {
     const loaded = await readStoredSession(dir, created.sessionId);
     expect(loaded.turnStats).toEqual([]);
     expect(loaded.usage.turns).toBe(0);
+  });
+});
+
+describe("rebuildSessionStats turn counting with environment messages", () => {
+  it("ignores environment messages when counting user turns", async () => {
+    const env = environmentMessage("Working directory: /tmp\nGit branch: main");
+    const cont = environmentMessage("Session continued/resumed.\nWorking directory: /tmp");
+    const dir = writeLog([
+      {
+        type: "llm_request",
+        timestamp: "2026-08-19T10:00:00.000Z",
+        system: SYSTEM,
+        messages: [env, user("turn one"), assistant("thinking...", true), toolResult("out")],
+      },
+      {
+        type: "llm_response",
+        timestamp: "2026-08-19T10:00:01.000Z",
+        text: "answer one",
+        toolCalls: [],
+        finishReason: "stop",
+      },
+      {
+        type: "llm_request",
+        timestamp: "2026-08-19T10:00:02.000Z",
+        system: SYSTEM,
+        messages: [env, user("turn one"), assistant("thinking...", true), toolResult("out"), cont, user("turn two")],
+      },
+      {
+        type: "llm_response",
+        timestamp: "2026-08-19T10:00:03.000Z",
+        text: "answer two",
+        toolCalls: [],
+        finishReason: "stop",
+      },
+    ]);
+    dirs.push(dir);
+
+    const rebuilt = await rebuildSessionStats(dir, SESSION_ID, legacyMessages(), SYSTEM, MODEL);
+    expect(rebuilt).not.toBeNull();
+    expect(rebuilt!.usage.turns).toBe(2);
   });
 });

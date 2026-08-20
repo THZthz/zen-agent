@@ -23,6 +23,7 @@ import {
   formatYuan,
   type TurnStats,
 } from "./turn-stats.js";
+import { ENVIRONMENT_MESSAGE_NAME, isEnvironmentMessage } from "./system-prompt.js";
 
 /**
  * Recovery of usage statistics for sessions whose files predate usage
@@ -76,7 +77,6 @@ interface LogStep {
   usage: LlmUsage | null;
   requestMessages: ModelMessage[];
   system: string;
-  environment: string;
 }
 
 const MAX_CACHEABLE_CHARS = 10 * 1024;
@@ -217,9 +217,14 @@ function isUsageEmpty(usage: SessionUsage): boolean {
 
 export function needsSessionStatsRecovery(session: {
   usage: SessionUsage;
-  llmMessages: ModelMessage[];
+  llmMessages: LlmMessage[];
 }): boolean {
-  return isUsageEmpty(session.usage) && session.llmMessages.length > 0;
+  // A session whose only messages are auto-generated environment messages
+  // has no real conversation to recover stats for.
+  return (
+    isUsageEmpty(session.usage) &&
+    session.llmMessages.some((m) => !isEnvironmentMessage(m))
+  );
 }
 
 function rollup(turnStats: TurnStats[]): SessionUsage {
@@ -258,7 +263,6 @@ async function parseLlmLog(
     ts: number;
     messages: ModelMessage[];
     system: string;
-    environment: string;
   } | null = null;
 
   for (const line of raw.split("\n")) {
@@ -286,15 +290,16 @@ async function parseLlmLog(
         ts: requestTs,
         messages: (entry.messages ?? []) as ModelMessage[],
         system: String(entry.system ?? ""),
-        environment: String(entry.environment ?? ""),
       };
       continue;
     }
 
     if (entry.type === "llm_response" && pending) {
       const responseTs = Date.parse(String(entry.timestamp ?? ""));
+      // Environment messages (name "environment") are auto-generated, not
+      // user turns; exclude them so turn numbers stay 1-based user turns.
       const turn = (pending.messages ?? []).filter(
-        (m) => m.role === "user",
+        (m) => m.role === "user" && !isEnvironmentMessage(m as LlmMessage),
       ).length;
       steps.push({
         turn,
@@ -307,7 +312,6 @@ async function parseLlmLog(
         usage: (entry.usage ?? null) as LlmUsage | null,
         requestMessages: pending.messages,
         system: pending.system,
-        environment: pending.environment,
       });
       pending = null;
       continue;
@@ -353,8 +357,7 @@ function rebuildFromLog(
       const wire = toWireMessages(step.requestMessages);
       const inputTokens =
         estimateRequestTokens(wire, [BASH_TOOL_SCHEMA]) +
-        cachedBoundedTokens(step.system, cache) +
-        environmentMessageTokens(step.environment, cache);
+        cachedBoundedTokens(step.system, cache);
       const outputTokens =
         cachedBoundedTokens(step.text, cache) +
         cachedBoundedTokens(JSON.stringify(step.toolCalls), cache);
@@ -389,18 +392,17 @@ function rebuildFromMessages(
   system: string,
   model: ModelId,
   cache: Map<string, number>,
-  environment = "",
 ): RebuiltSessionStats {
   const wire = toWireMessages(messages);
   const turnStats: TurnStats[] = [];
   let current = emptyTurnStats();
-  // BOS-ish constant (2) + system prompt + environment message + tool
-  // schemas, mirroring estimateRequestTokens + the separate system and
-  // environment messages DeepSeek receives.
+  // BOS-ish constant (2) + system prompt + tool schemas, mirroring
+  // estimateRequestTokens + the separate system message DeepSeek receives.
+  // The environment message is part of `wire` and its tokens accumulate into
+  // prefixTokens below like any other message.
   let prefixTokens =
     2 +
     cachedBoundedTokens(system, cache) +
-    environmentMessageTokens(environment, cache) +
     estimateRequestTokens([], [BASH_TOOL_SCHEMA]);
   let lastContextUsed = 0;
 
@@ -411,7 +413,11 @@ function rebuildFromMessages(
       current.inputTokens += prefixTokens;
       current.outputTokens += tokens;
       lastContextUsed = prefixTokens;
-    } else if (m.role === "user" && current.steps > 0) {
+    } else if (
+      m.role === "user" &&
+      m.name !== ENVIRONMENT_MESSAGE_NAME &&
+      current.steps > 0
+    ) {
       turnStats.push(current);
       current = emptyTurnStats();
     }
@@ -444,7 +450,6 @@ export async function rebuildSessionStats(
   messages: LlmMessage[],
   system: string,
   model: ModelId,
-  environment = "",
 ): Promise<RebuiltSessionStats | null> {
   if (messages.length === 0) {
     return null;
@@ -454,21 +459,7 @@ export async function rebuildSessionStats(
   if (steps && steps.length > 0) {
     return rebuildFromLog(steps, model, cache);
   }
-  return rebuildFromMessages(messages, system, model, cache, environment);
-}
-
-/**
- * Tokens of the injected environment user message: template overhead
- * (like any other wire message) plus its content.
- */
-function environmentMessageTokens(
-  environment: string,
-  cache: Map<string, number>,
-): number {
-  if (environment.length === 0) {
-    return 0;
-  }
-  return 6 + cachedBoundedTokens(environment, cache);
+  return rebuildFromMessages(messages, system, model, cache);
 }
 
 /** One-line summary shown after resume when stats were recovered. */
