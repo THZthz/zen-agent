@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { TurnStats } from "./turn-stats.js";
@@ -98,6 +98,12 @@ export interface StoredSession {
   createdAt: string;
   updatedAt: string;
   title: string | null;
+  /**
+   * Per-session runtime diagnostic log key: "<timestamp>-<uuid>". Created
+   * once per session (not per agent process) and persisted so resumed
+   * sessions keep appending to the same log directory.
+   */
+  clientLogKey: string;
   events: SessionUpdate[];
   llmMessages: LlmMessage[];
   config: SessionConfig;
@@ -147,13 +153,14 @@ export function sessionLlmLogPath(cwd: string, sessionId: string): string {
 }
 
 /**
- * Zen Agent's own per-startup debug log:
+ * Zen Agent's own per-session debug log:
  * <project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl
- * `startupKey` is created once per agent process ("startup timestamp plus
- * UUID") so every run of the agent gets its own log directory.
+ * `clientLogKey` is created once per session ("timestamp plus UUID") so
+ * every session gets its own log directory, which is removed again when the
+ * session is deleted.
  */
-export function clientLogPath(cwd: string, startupKey: string): string {
-  return join(sessionDirectory(cwd), "client", startupKey, "log.jsonl");
+export function clientLogPath(cwd: string, clientLogKey: string): string {
+  return join(sessionDirectory(cwd), "client", clientLogKey, "log.jsonl");
 }
 
 function generateSessionId(): string {
@@ -213,6 +220,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
     createdAt: now,
     updatedAt: now,
     title: null,
+    clientLogKey: `${Date.now()}-${randomUUID()}`,
     events: [],
     llmMessages: [],
     config: {
@@ -334,6 +342,21 @@ export async function deleteStoredSession(
   cwd: string,
   sessionId: string,
 ): Promise<void> {
+  // Remove the per-session runtime diagnostic log along with the session.
+  try {
+    const parsed = JSON.parse(
+      await readFile(sessionPath(cwd, sessionId), "utf8"),
+    ) as StoredSession;
+    if (parsed.clientLogKey) {
+      // Remove the whole per-session log directory (not just log.jsonl).
+      await rm(dirname(clientLogPath(cwd, parsed.clientLogKey)), {
+        recursive: true,
+        force: true,
+      });
+    }
+  } catch {
+    // Session file missing or malformed; nothing extra to clean up.
+  }
   await rm(sessionPath(cwd, sessionId), { force: true });
   await forgetSession(sessionId);
 }

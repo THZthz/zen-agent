@@ -23,6 +23,7 @@ function makeSession(sessionId = "s1"): StoredSession {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     title: null,
+    clientLogKey: "1750000000000-test",
     events: [],
     llmMessages: [],
     config: { model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "" },

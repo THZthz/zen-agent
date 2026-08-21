@@ -7,7 +7,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - No permission prompts (approval policy: `never`)
 - Session state is stored in `<project>/.sessions/<sessionId>/state.json`
 - LLM request/response transcripts are stored as `<project>/.sessions/<sessionId>/llm.jsonl`
-- Runtime diagnostics are stored in a per-startup log at `<project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl`, including per-LLM-step and per-turn stats (tokens, cache hit ratio, cost, timing)
+- Runtime diagnostics are stored in a per-session log at `<project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl`, including per-LLM-step and per-turn stats (tokens, cache hit ratio, cost, timing); each session gets its own log directory, kept across restarts and removed on session delete
 - Bash command scripts are saved to `<project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh`; full terminal output is saved to `<project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log` via `script`; the model receives truncated output plus the log path
 - Bash tool call cards survive Zed restarts: each call registers a display-only terminal (`_meta.terminal_info`) and streams its output into it (`_meta.terminal_output`/`terminal_exit`), so a resumed session re-renders the terminal card with its output instead of dropping it. On `session/load` the replay layer synthesizes the same display-terminal metadata for sessions created before this mechanism existed, so old bash cards render with an expand toggle and visible output too
 - LLM provider: Deepseek via its OpenAI-compatible chat completions API, with a direct SSE client (`runLlmStep` in `src/llm/deepseek.ts`)
@@ -239,7 +239,7 @@ Inside each project's `.sessions/` directory:
 | `<sessionId>/llm.jsonl` | LLM request/response transcript |
 | `<sessionId>/terminals/input-<timestamp>-<callId>.sh` | Saved bash command script for a tool call |
 | `<sessionId>/terminals/output-<timestamp>-<callId>.log` | Full terminal output for a bash tool call |
-| `client/<startupTimestamp>-<uuid>/log.jsonl` | Per-startup runtime diagnostic log |
+| `client/<startupTimestamp>-<uuid>/log.jsonl` | Per-session runtime diagnostic log |
 
 ## Development
 
