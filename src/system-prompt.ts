@@ -42,20 +42,33 @@ export function buildSystemPrompt(session: StoredSession): string {
 /**
  * Environment context sent to the model as a user message named
  * `environment` (not as part of the system prompt): working directory,
- * session creation time, and simple git state (branch, commit, dirty files).
- * The git part is best-effort: when `cwd` is not a git repository (or git is
- * unavailable), the git lines are omitted.
+ * session creation time, and simple git state (branch, dirty files), plus
+ * git workflow guidance (Conventional Commits, focused incremental commits,
+ * submodule handling). The git part is best-effort: when `cwd` is not a git
+ * repository (or git is unavailable), the git lines are omitted.
  */
 export async function buildEnvironmentMessage(
   session: StoredSession,
 ): Promise<string> {
   const lines = [
-    `Working directory: ${session.cwd}`,
-    `Current date/time: ${session.createdAt}`,
+    `Working directory: ${session.cwd}.`,
+    `Current date/time: ${session.createdAt}.`,
   ];
   const git = await readSimpleGitInfo(session.cwd);
   if (git) {
     lines.push(...git);
+    lines.push("");
+    lines.push(
+      "> Follow Conventional Commits; keep the commit message body concise.",
+      "> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.",
+    );
+    const submodules = await readSubmodulePaths(session.cwd);
+    if (submodules.length > 0) {
+      lines.push(
+        `> This project contains git submodules: ${submodules.join(", ")}. ` +
+          "Do not bump submodule pointers in the main repo unless requested by user.",
+      );
+    }
   }
   return lines.join("\n");
 }
@@ -73,8 +86,7 @@ export async function buildSessionContinuedMessage(
 ): Promise<string> {
   const lines = [
     "Session continued/resumed.",
-    `Working directory: ${session.cwd}`,
-    `Current date/time: ${new Date().toISOString()}`,
+    `Current date/time: ${new Date().toISOString()}.`,
   ];
   const git = await readSimpleGitInfo(session.cwd);
   if (git) {
@@ -109,7 +121,6 @@ export async function getUserMessageName(cwd: string): Promise<string> {
 async function readSimpleGitInfo(cwd: string): Promise<string[] | null> {
   try {
     const branch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
-    const commit = await runGit(["rev-parse", "--short", "HEAD"], cwd);
     const status = await runGit(["status", "--porcelain"], cwd);
     const changed = status.length > 0 ? status.split("\n").length : 0;
     const state =
@@ -117,12 +128,31 @@ async function readSimpleGitInfo(cwd: string): Promise<string[] | null> {
         ? "clean"
         : `${changed} changed file${changed === 1 ? "" : "s"}`;
     return [
-      `Git branch: ${branch}`,
-      `Git commit: ${commit}`,
-      `Git status: ${state}`,
+      `(Git) branch: ${branch} | status: ${state}`,
     ];
   } catch {
     return null;
+  }
+}
+
+/**
+ * Best-effort list of submodule paths via `git submodule status` (one line
+ * per submodule, path is the second column). Returns [] when the repo has
+ * no submodules or git is unavailable.
+ */
+async function readSubmodulePaths(cwd: string): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["submodule", "status"],
+      { cwd, timeout: GIT_TIMEOUT_MS, encoding: "utf8" },
+    );
+    return stdout
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/)[1])
+      .filter((path): path is string => Boolean(path));
+  } catch {
+    return [];
   }
 }
 
