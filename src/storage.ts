@@ -120,7 +120,7 @@ interface SessionIndex {
  *   <project>/.sessions/<sessionId>/llm.jsonl
  *   <project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh
  *   <project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log
- *   <project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl
+ *   <project>/.sessions/client/<startupTimestamp>_<uuid>/log.jsonl
  */
 export function sessionDirectory(cwd: string): string {
   return join(cwd, ".sessions");
@@ -148,9 +148,10 @@ export function sessionLlmLogPath(cwd: string, sessionId: string): string {
 
 /**
  * Zen Agent's own per-startup debug log:
- * <project>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl
- * `startupKey` is created once per agent process ("startup timestamp plus
- * UUID") so every run of the agent gets its own log directory.
+ * <project>/.sessions/client/<startupTimestamp>_<uuid>/log.jsonl
+ * `startupKey` is created once per agent process (local-time timestamp
+ * "YYYY-MM-DD-HH-mm-ss" plus UUID) so every run of the agent gets its own
+ * log directory, e.g. 2026-08-21-23-06-04_<uuid>.
  */
 export function clientLogPath(cwd: string, startupKey: string): string {
   return join(sessionDirectory(cwd), "client", startupKey, "log.jsonl");

@@ -102,7 +102,7 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
   - `llmMessages` (AI SDK message history for continued conversation)
 - LLM request/response transcripts are appended to `<cwd>/.sessions/<sessionId>/llm.jsonl`.
 - Runtime diagnostics are appended to a per-startup log at
-  `<cwd>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl` (one directory
+  `<cwd>/.sessions/client/<startupTimestamp>_<uuid>/log.jsonl` (one directory
   per agent process). Besides lifecycle events (session created/loaded,
   prompt received, terminal created/finished, ...), each LLM-backed step
   appends an `"llm step stats"` entry and each completed turn appends a

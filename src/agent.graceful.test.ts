@@ -342,6 +342,10 @@ describe("debug log stats", () => {
       const startupLogKey = (
         agent as unknown as { startupLogKey: string }
       ).startupLogKey;
+      // Local-time startup timestamp + uuid: 2026-08-21-23-06-04_<uuid>.
+      expect(startupLogKey).toMatch(
+        /^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}_[0-9a-f-]{36}$/,
+      );
       const logPath = join(cwd, ".sessions", "client", startupLogKey, "log.jsonl");
 
       let entries: Array<Record<string, unknown>> = [];

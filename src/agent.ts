@@ -151,15 +151,33 @@ function newSessionIdForPrompt(): string {
   return newMessageId();
 }
 
+/**
+ * Local-time startup timestamp in the same shape Zed's terminal artifacts
+ * use, e.g. 2026-08-21-23-06-04, so client debug logs sort chronologically
+ * and are human-readable next to terminal logs.
+ */
+function formatStartupTimestamp(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("-");
+}
+
 export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
   /**
-   * Per-startup debug log identity: "<startup timestamp>-<uuid>". Created
-   * once per agent process; all runtime diagnostics for this run are
-   * appended to <project>/.sessions/client/<startupKey>/log.jsonl.
+   * Per-startup debug log identity: "YYYY-MM-DD-HH-mm-ss_<uuid>", e.g.
+   * 2026-08-21-23-06-04_<uuid>. Created once per agent process; all runtime
+   * diagnostics for this run are appended to
+   * <project>/.sessions/client/<startupKey>/log.jsonl.
    */
-  private readonly startupLogKey = `${Date.now()}-${randomUUID()}`;
+  private readonly startupLogKey = `${formatStartupTimestamp(new Date())}_${randomUUID()}`;
 
   private makeActiveSession(session: StoredSession): ActiveSession {
     return {
