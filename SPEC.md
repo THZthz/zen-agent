@@ -101,13 +101,12 @@ We do not advertise `promptCapabilities.image`, `audio`, or `embeddedContext` in
   - `events` (ACP `session/update` payloads for replay)
   - `llmMessages` (AI SDK message history for continued conversation)
 - LLM request/response transcripts are appended to `<cwd>/.sessions/<sessionId>/llm.jsonl`.
-- Runtime diagnostics are appended to a per-session log at
+- Runtime diagnostics are appended to a per-startup log at
   `<cwd>/.sessions/client/<startupTimestamp>-<uuid>/log.jsonl` (one directory
-  per session, kept across restarts and removed on session delete). Besides
-  lifecycle events (session created/loaded, prompt received, terminal
-  created/finished, ...), each LLM-backed step appends an `"llm step stats"`
-  entry and each completed turn appends a `"turn stats"` entry with token
-  usage, cache hit ratio, cost and timing.
+  per agent process). Besides lifecycle events (session created/loaded,
+  prompt received, terminal created/finished, ...), each LLM-backed step
+  appends an `"llm step stats"` entry and each completed turn appends a
+  `"turn stats"` entry with token usage, cache hit ratio, cost and timing.
 - Bash command scripts and terminal output logs are stored under
   `<cwd>/.sessions/<sessionId>/terminals/` as
   `input-<timestamp>-<callId>.sh` and `output-<timestamp>-<callId>.log`.

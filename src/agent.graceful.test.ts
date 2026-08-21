@@ -339,18 +339,10 @@ describe("debug log stats", () => {
         cx,
       );
 
-      const session = (
-        agent as unknown as {
-          sessions: Map<string, { session: import("./storage.js").StoredSession }>;
-        }
-      ).sessions.get(sessionId)!.session;
-      const logPath = join(
-        cwd,
-        ".sessions",
-        "client",
-        session.clientLogKey,
-        "log.jsonl",
-      );
+      const startupLogKey = (
+        agent as unknown as { startupLogKey: string }
+      ).startupLogKey;
+      const logPath = join(cwd, ".sessions", "client", startupLogKey, "log.jsonl");
 
       let entries: Array<Record<string, unknown>> = [];
       // logRuntime is fire-and-forget; wait until the turn entry lands.
@@ -401,119 +393,6 @@ describe("debug log stats", () => {
       });
       expect(turn!.llmMs).toBe(500);
       expect(turn!.toolMs).toBe(0);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("per-session client debug log", () => {
-  it("gives each session its own log directory and removes it on delete", async () => {
-    const { existsSync, readFileSync } = await import("node:fs");
-    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
-    try {
-      const agent = new ZenAgent();
-      await agent.initialize({
-        protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { terminal: true },
-      } as acp.InitializeRequest);
-      const { cx } = makeAgentContext({});
-      const first = await agent.newSession(
-        { cwd, mcpServers: [] } as acp.NewSessionRequest,
-        cx,
-      );
-      const second = await agent.newSession(
-        { cwd, mcpServers: [] } as acp.NewSessionRequest,
-        cx,
-      );
-
-      const sessions = (
-        agent as unknown as {
-          sessions: Map<string, { session: import("./storage.js").StoredSession }>;
-        }
-      ).sessions;
-      const keyA = sessions.get(first.sessionId)!.session.clientLogKey;
-      const keyB = sessions.get(second.sessionId)!.session.clientLogKey;
-
-      // Each session gets its own "<timestamp>-<uuid>" log identity.
-      expect(keyA).toMatch(/^\d+-[0-9a-f-]+$/);
-      expect(keyB).toMatch(/^\d+-[0-9a-f-]+$/);
-      expect(keyB).not.toBe(keyA);
-
-      const logA = join(cwd, ".sessions", "client", keyA, "log.jsonl");
-      const logB = join(cwd, ".sessions", "client", keyB, "log.jsonl");
-
-      // Lifecycle entries land in the owning session's log only.
-      await vi.waitFor(() => {
-        expect(readFileSync(logA, "utf8")).toContain(
-          `"sessionId":"${first.sessionId}"`,
-        );
-      });
-      await vi.waitFor(() => {
-        expect(readFileSync(logB, "utf8")).toContain(
-          `"sessionId":"${second.sessionId}"`,
-        );
-      });
-      expect(readFileSync(logA, "utf8")).not.toContain(
-        `"sessionId":"${second.sessionId}"`,
-      );
-
-      // Deleting a session removes its log directory but not other sessions'.
-      await agent.deleteSession({ sessionId: first.sessionId });
-      expect(existsSync(join(cwd, ".sessions", "client", keyA))).toBe(false);
-      expect(existsSync(logB)).toBe(true);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  it("backfills a client log key for sessions created before the field existed", async () => {
-    const { mkdirSync, readFileSync, writeFileSync } = await import("node:fs");
-    const { emptySessionUsage } = await import("./storage.js");
-    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
-    const sessionId = "sess_legacy";
-    try {
-      // A legacy state.json without clientLogKey.
-      const legacy = {
-        sessionId,
-        cwd,
-        createdAt: "2026-08-20T00:00:00.000Z",
-        updatedAt: "2026-08-20T00:00:00.000Z",
-        title: null,
-        events: [],
-        llmMessages: [],
-        config: { model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "" },
-        usage: emptySessionUsage(),
-        turnStats: [],
-      };
-      mkdirSync(join(cwd, ".sessions", sessionId), { recursive: true });
-      writeFileSync(
-        join(cwd, ".sessions", sessionId, "state.json"),
-        JSON.stringify(legacy),
-        "utf8",
-      );
-
-      const agent = new ZenAgent();
-      await agent.initialize({
-        protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { terminal: true },
-      } as acp.InitializeRequest);
-      const { cx } = makeAgentContext({});
-      await agent.loadSession(
-        { cwd, sessionId, mcpServers: [] } as acp.LoadSessionRequest,
-        cx,
-      );
-
-      const stored = JSON.parse(
-        readFileSync(join(cwd, ".sessions", sessionId, "state.json"), "utf8"),
-      ) as { clientLogKey: string };
-      expect(stored.clientLogKey).toMatch(/^\d+-[0-9a-f-]+$/);
-
-      // The resumed session's diagnostics go to the backfilled key.
-      const logPath = join(cwd, ".sessions", "client", stored.clientLogKey, "log.jsonl");
-      await vi.waitFor(() => {
-        expect(readFileSync(logPath, "utf8")).toContain('"session loaded"');
-      });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

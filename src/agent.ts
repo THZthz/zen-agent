@@ -155,11 +155,12 @@ export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
   /**
-   * Per-session chains of pending log.jsonl writes, so appends are
-   * serialized and a delete can flush them before removing the log
-   * directory (otherwise a late append would recreate it).
+   * Per-startup debug log identity: "<startup timestamp>-<uuid>". Created
+   * once per agent process; all runtime diagnostics for this run are
+   * appended to <project>/.sessions/client/<startupKey>/log.jsonl.
    */
-  private logChains = new Map<string, Promise<void>>();
+  private readonly startupLogKey = `${Date.now()}-${randomUUID()}`;
+
   private makeActiveSession(session: StoredSession): ActiveSession {
     return {
       session,
@@ -228,7 +229,7 @@ export class ZenAgent {
     });
     await writeSession(session);
     this.sessions.set(session.sessionId, this.makeActiveSession(session));
-    void this.logRuntime(session, "info", "session created", {
+    void this.logRuntime(params.cwd, "info", "session created", {
       sessionId: session.sessionId,
     });
     this.scheduleAvailableCommands(session.sessionId, cx);
@@ -246,7 +247,7 @@ export class ZenAgent {
     this.abortActiveSession(params.sessionId);
     await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
-    void this.logRuntime(session, "info", "session loaded", {
+    void this.logRuntime(params.cwd, "info", "session loaded", {
       sessionId: session.sessionId,
     });
 
@@ -274,7 +275,7 @@ export class ZenAgent {
     this.abortActiveSession(params.sessionId);
     await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
-    void this.logRuntime(session, "info", "session resumed", {
+    void this.logRuntime(params.cwd, "info", "session resumed", {
       sessionId: session.sessionId,
     });
     this.scheduleAvailableCommands(session.sessionId, cx);
@@ -300,10 +301,6 @@ export class ZenAgent {
     }
     this.abortActiveSession(params.sessionId);
     this.sessions.delete(params.sessionId);
-    // Wait for any in-flight log.jsonl append to land before removing the
-    // per-session log directory.
-    await this.logChains.get(params.sessionId)?.catch(() => {});
-    this.logChains.delete(params.sessionId);
     await deleteStoredSession(cwd, params.sessionId);
     return {};
   }
@@ -380,13 +377,13 @@ export class ZenAgent {
       return;
     }
     active.gracefulCancel = true;
-    void this.logRuntime(active.session, "info", "graceful cancel requested", {
+    void this.logRuntime(active.session.cwd, "info", "graceful cancel requested", {
       sessionId: params.sessionId,
     });
     if (GRACEFUL_CANCEL_TIMEOUT_MS > 0) {
       active.cancelTimer = setTimeout(() => {
         active.cancelTimer = null;
-        void this.logRuntime(active.session, "warn", "graceful cancel timed out; hard abort", {
+        void this.logRuntime(active.session.cwd, "warn", "graceful cancel timed out; hard abort", {
           sessionId: params.sessionId,
           timeoutMs: GRACEFUL_CANCEL_TIMEOUT_MS,
         });
@@ -415,7 +412,7 @@ export class ZenAgent {
 
     try {
       const userText = await promptBlocksToText(params.prompt);
-      void this.logRuntime(active.session, "info", "prompt received", {
+      void this.logRuntime(active.session.cwd, "info", "prompt received", {
         sessionId: params.sessionId,
         text: userText,
       });
@@ -457,12 +454,12 @@ export class ZenAgent {
       return response;
     } catch (error) {
       if (controller.signal.aborted) {
-        void this.logRuntime(active.session, "warn", "prompt cancelled", {
+        void this.logRuntime(active.session.cwd, "warn", "prompt cancelled", {
           sessionId: params.sessionId,
         });
         return { stopReason: "cancelled" };
       }
-      void this.logRuntime(active.session, "error", "prompt failed", {
+      void this.logRuntime(active.session.cwd, "error", "prompt failed", {
         sessionId: params.sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -805,12 +802,6 @@ export class ZenAgent {
    *    stay byte-identical, so DeepSeek's context cache keeps hitting.
    */
   private async prepareResumedSession(session: StoredSession): Promise<void> {
-    // Backfill: sessions created before the per-session diagnostic log
-    // existed have no log identity; give them one so they keep their own
-    // client/<timestamp>-<uuid>/log.jsonl from now on.
-    if (!session.clientLogKey) {
-      session.clientLogKey = `${Date.now()}-${randomUUID()}`;
-    }
     if (
       session.llmMessages.length === 0 ||
       !isEnvironmentMessage(session.llmMessages[0]!)
@@ -845,7 +836,7 @@ export class ZenAgent {
         clientCapabilities: this.clientCapabilities,
         emit: (update) => this.emit(active, cx, update),
         logRuntime: (level, message, details) =>
-          this.logRuntime(active.session, level, message, details),
+          this.logRuntime(active.session.cwd, level, message, details),
       },
       cx,
       call,
@@ -880,7 +871,7 @@ export class ZenAgent {
   }
 
   /**
-   * Per-LLM-step stats for the per-session debug log (log.jsonl): token
+   * Per-LLM-step stats for the per-startup debug log (log.jsonl): token
    * usage, cache hit ratio, cost and timing for one model request inside a
    * turn. Skipped when the provider reported no usage (the numbers would
    * all be zero/meaningless).
@@ -892,7 +883,7 @@ export class ZenAgent {
     finishReason: string,
     toolCallCount: number,
   ): void {
-    void this.logRuntime(active.session, "info", "llm step stats", {
+    void this.logRuntime(active.session.cwd, "info", "llm step stats", {
       sessionId: active.session.sessionId,
       step: step + 1,
       model: active.session.config.model,
@@ -912,7 +903,7 @@ export class ZenAgent {
   }
 
   /**
-   * Per-turn stats for the per-session debug log (log.jsonl): aggregate of
+   * Per-turn stats for the per-startup debug log (log.jsonl): aggregate of
    * all LLM steps in the turn plus tool execution time and the stop reason.
    * Called from finalize() after mergeTurnStats() so `usage.turns` already
    * points at this turn.
@@ -922,7 +913,7 @@ export class ZenAgent {
     turn: TurnStats,
     stopReason: acp.StopReason,
   ): void {
-    void this.logRuntime(active.session, "info", "turn stats", {
+    void this.logRuntime(active.session.cwd, "info", "turn stats", {
       sessionId: active.session.sessionId,
       turn: active.session.usage.turns,
       model: active.session.config.model,
@@ -943,25 +934,19 @@ export class ZenAgent {
   }
 
   private async logRuntime(
-    session: StoredSession,
+    cwd: string,
     level: "debug" | "info" | "warn" | "error",
     message: string,
     details?: Record<string, unknown>,
   ): Promise<void> {
-    // Append through a per-session chain so writes stay ordered and
-    // deleteSession can flush them; logging must never break the agent.
-    const previous = this.logChains.get(session.sessionId) ?? Promise.resolve();
-    const next = previous
-      .catch(() => {})
-      .then(() =>
-        appendJsonLine(
-          clientLogPath(session.cwd, session.clientLogKey),
-          makeLogEntry(level, message, details),
-        ),
-      )
-      .catch(() => {});
-    this.logChains.set(session.sessionId, next);
-    await next;
+    try {
+      await appendJsonLine(
+        clientLogPath(cwd, this.startupLogKey),
+        makeLogEntry(level, message, details),
+      );
+    } catch {
+      // Logging must never break the agent.
+    }
   }
 
   private async logLlmExchange(
@@ -1050,7 +1035,7 @@ export class ZenAgent {
 
     active.session.config.systemPrompt = command.argument;
     await this.save(active);
-    void this.logRuntime(active.session, "info", "system prompt updated", {
+    void this.logRuntime(active.session.cwd, "info", "system prompt updated", {
       sessionId: active.session.sessionId,
     });
 
