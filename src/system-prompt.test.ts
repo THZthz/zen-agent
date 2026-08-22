@@ -174,7 +174,7 @@ describe("buildEnvironmentMessage", () => {
 
     const text = await buildEnvironmentMessage(makeSession(dir));
     expect(text).toContain(
-      "> This project contains git submodules: submod. Do not bump submodule pointers in the main repo unless requested by user.",
+      "> This project contains git submodules: submod.",
     );
   });
 });

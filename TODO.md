@@ -7,3 +7,4 @@
 - [x] Check how to make Zen Agent run inside `bwrap` and restrict its write access to /mnt/
 - [x] Check how to deceive agent to believe it is running inside a normal linux, not WSL2
 - [x] Add a new `/sandbox` slash command to put agent's bash tool call inside bwrap, not just by envs
+- [ ] A handy cli tool for Zen Agent to navigate its own command history?

@@ -11,7 +11,6 @@ export const SYSTEM_PROMPT = `You are an experiened software engineer.
 You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.
 
 When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash (npm install --global trash-cli) instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.
-
 > Always use utf-8, no emojis unless needed by your task.`;
 
 /**
@@ -65,8 +64,7 @@ export async function buildEnvironmentMessage(
     const submodules = await readSubmodulePaths(session.cwd);
     if (submodules.length > 0) {
       lines.push(
-        `> This project contains git submodules: ${submodules.join(", ")}. ` +
-          "Do not bump submodule pointers in the main repo unless requested by user.",
+        `> This project contains git submodules: ${submodules.join(", ")}.`,
       );
     }
   }

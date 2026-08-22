@@ -23,7 +23,7 @@
 set -euo pipefail
 
 NODE_BIN="${ZEN_AGENT_NODE_BIN:-$(command -v node)}"
-AGENT_MAIN="${ZEN_AGENT_MAIN:-/home/amias/zen-agent/dist/index.js}"
+AGENT_MAIN="${ZEN_AGENT_MAIN:-/home/amias/projects/zen-agent/dist/index.js}"
 
 exec bwrap \
   --die-with-parent \

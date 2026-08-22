@@ -55,7 +55,7 @@ the agent inside a bubblewrap sandbox (see [Sandboxing](#sandboxing-with-bubblew
         "thinking_effort": "max"
       },
       "type": "custom",
-      "command": "/home/amias/zen-agent/bin/zen-agent-bwrap.sh",
+      "command": "/home/amias/projects/zen-agent/bin/zen-agent-bwrap.sh",
       "args": [],
       "env": {
         "DEEPSEEK_API_KEY": "your-deepseek-api-key",
@@ -77,7 +77,7 @@ Without the sandbox, point the command at `node` directly:
     "Zen Agent": {
       "type": "custom",
       "command": "node",
-      "args": ["/home/amias/zen-agent/dist/index.js"],
+      "args": ["/home/amias/projects/zen-agent/dist/index.js"],
       "env": {
         "DEEPSEEK_API_KEY": "your-deepseek-api-key"
       }
