@@ -86,9 +86,10 @@ describe("getUserMessageName", () => {
 describe("buildEnvironmentMessage", () => {
   it("includes working directory and date even without git", async () => {
     const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toBe(
-      `Working directory: ${dir}.\nCurrent date/time: 2026-08-20T02:00:00.000Z.`,
-    );
+    expect(text).toContain("<environment>");
+    expect(text).toContain(`<working-directory>${dir}</working-directory>`);
+    expect(text).toContain("<current-time>2026-08-20T02:00:00.000Z</current-time>");
+    expect(text).toContain("</environment>");
   });
 
   it("adds branch and clean status inside a git repository", async () => {
@@ -100,8 +101,9 @@ describe("buildEnvironmentMessage", () => {
     git(["commit", "-m", "init"]);
 
     const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toContain(`Working directory: ${dir}`);
-    expect(text).toContain("(Git) branch: feature/test | status: clean");
+    expect(text).toContain(`<working-directory>${dir}</working-directory>`);
+    expect(text).toContain("<git-branch>feature/test</git-branch>");
+    expect(text).toContain("<git-status>clean</git-status>");
     expect(text).not.toContain("submodule");
   });
 
@@ -116,7 +118,8 @@ describe("buildEnvironmentMessage", () => {
     writeFileSync(join(dir, "b.txt"), "new\n");
 
     const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toContain("(Git) branch: main | status: 2 changed files");
+    expect(text).toContain("<git-branch>main</git-branch>");
+    expect(text).toContain("<git-status>2 changed files</git-status>");
   });
 
   it("reminds the agent to follow Conventional Commits with a concise body", async () => {
@@ -198,9 +201,11 @@ describe("buildSessionContinuedMessage", () => {
     writeFileSync(join(dir, "a.txt"), "changed\n");
 
     const text = await buildSessionContinuedMessage(makeSession(dir));
-    expect(text).toContain("Session continued/resumed.");
-    expect(text).toContain(`Current date/time:`);
-    expect(text).toContain("(Git) branch: main | status: 1 changed file");
+    expect(text).toContain("<environment>");
+    expect(text).toContain("<session-state>resumed</session-state>");
+    expect(text).toContain("<current-time>");
+    expect(text).toContain("<git-branch>main</git-branch>");
+    expect(text).toContain("<git-status>1 changed file</git-status>");
     // Workflow guidance lives in the initial environment message, not here,
     // so the frozen cached prefix stays byte-identical across restarts.
     expect(text).not.toContain("Follow Conventional Commits");

@@ -256,7 +256,8 @@ describe("buildSkillInvocationPrompt", () => {
     const skills = await listSkills(projectDir);
     const prompt = await buildSkillInvocationPrompt(skills[0]!, "my plan");
     expect(prompt).toContain('The user invoked the "grill-me" skill');
-    expect(prompt).toContain("Skill argument: my plan");
+    expect(prompt).toContain("Skill argument:");
+    expect(prompt).toContain("<argument>\nmy plan\n</argument>");
     expect(prompt).toContain("Interview the user relentlessly.");
     expect(prompt).toContain("--- grill-me (SKILL.md) ---");
   });

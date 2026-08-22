@@ -438,10 +438,10 @@ describe("loadSession environment backfill", () => {
       const loaded = agent.sessions.get("sess_empty")!.session;
       expect(loaded.llmMessages).toHaveLength(2);
       expect(loaded.llmMessages[0]).toMatchObject({ role: "user", name: "Environment" });
-      expect(String(loaded.llmMessages[0]!.content)).toContain("Working directory:");
+      expect(String(loaded.llmMessages[0]!.content)).toContain("<working-directory>");
       expect(loaded.llmMessages[1]).toMatchObject({ role: "user", name: "Environment" });
       expect(String(loaded.llmMessages[1]!.content)).toContain(
-        "Session continued/resumed.",
+        "<session-state>resumed</session-state>",
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -110,7 +110,8 @@ describe("skill slash commands", () => {
           m.content.includes("grill-me"),
       );
       expect(skillMessage?.content).toContain("The user invoked the \"grill-me\" skill");
-      expect(skillMessage?.content).toContain("Skill argument: my plan");
+      expect(skillMessage?.content).toContain("Skill argument:");
+      expect(skillMessage?.content).toContain("<argument>\nmy plan\n</argument>");
       expect(skillMessage?.content).toContain("Interview the user relentlessly");
 
       // The environment message stayed catalog-free (no skills section).
