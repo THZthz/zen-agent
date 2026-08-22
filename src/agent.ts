@@ -41,6 +41,7 @@ import {
   getUserMessageName,
   isEnvironmentMessage,
 } from "./system-prompt.js";
+import { buildSkillInvocationPrompt, listSkills } from "./skills.js";
 import {
   cacheHitPercent,
   emptyTurnStats,
@@ -451,12 +452,7 @@ export class ZenAgent {
         });
         await this.save(active);
 
-        const stopReason = await this.handleSlashCommand(
-          active,
-          cx,
-          slashCommand,
-        );
-        return { stopReason };
+        return this.handleSlashCommand(active, cx, slashCommand);
       }
 
       const userMessage: NamedUserMessage = {
@@ -1006,13 +1002,42 @@ export class ZenAgent {
     sessionId: string,
     cx: acp.AgentContext,
   ): Promise<void> {
+    const active = this.sessions.get(sessionId);
+    const availableCommands = active
+      ? await this.buildAvailableCommands(active.session)
+      : AVAILABLE_COMMANDS;
     await cx.notify(acp.methods.client.session.update, {
       sessionId,
       update: {
         sessionUpdate: "available_commands_update",
-        availableCommands: AVAILABLE_COMMANDS,
+        availableCommands,
       },
     });
+  }
+
+  /**
+   * Built-in slash commands plus one `/skill-name` command per installed
+   * Agent Skill (discovered live from the session cwd, independent of the
+   * `ZEN_AGENT_SHOW_SKILLS_CATALOG` environment flag).
+   */
+  private async buildAvailableCommands(
+    session: StoredSession,
+  ): Promise<acp.AvailableCommand[]> {
+    const commands: acp.AvailableCommand[] = [...AVAILABLE_COMMANDS];
+    for (const skill of await listSkills(session.cwd)) {
+      commands.push({
+        name: skill.name,
+        description:
+          skill.description ||
+          `Run the "${skill.name}" skill (installed Agent Skill)`,
+        input: {
+          hint:
+            skill.description ||
+            `what to pass to the ${skill.name} skill`,
+        },
+      });
+    }
+    return commands;
   }
 
   private parseSlashCommand(text: string): {
@@ -1037,13 +1062,21 @@ export class ZenAgent {
     active: ActiveSession,
     cx: acp.AgentContext,
     command: { name: string; argument: string },
-  ): Promise<acp.StopReason> {
+  ): Promise<acp.PromptResponse> {
     switch (command.name) {
       case "prompt":
-        return this.handlePromptSlashCommand(active, cx, command.argument);
+        return {
+          stopReason: await this.handlePromptSlashCommand(active, cx, command.argument),
+        };
       case "sandbox":
-        return this.handleSandboxSlashCommand(active, cx, command.argument);
-      default:
+        return {
+          stopReason: await this.handleSandboxSlashCommand(active, cx, command.argument),
+        };
+      default: {
+        const skillStop = await this.handleSkillSlashCommand(active, cx, command);
+        if (skillStop) {
+          return skillStop;
+        }
         await this.emit(active, cx, {
           sessionUpdate: "agent_message_chunk",
           content: {
@@ -1051,8 +1084,46 @@ export class ZenAgent {
             text: `Unknown slash command: /${command.name}`,
           },
         });
-        return "end_turn";
+        return { stopReason: "end_turn" };
+      }
     }
+  }
+
+  /**
+   * `/skill-name <argument>` invokes an installed Agent Skill: the skill's
+   * `SKILL.md` is read and injected as the user message that starts the
+   * next model turn, so the model follows the skill's instructions with its
+   * bash tool. Works for every installed skill, regardless of
+   * `ZEN_AGENT_SHOW_SKILLS_CATALOG` (that flag only controls the frozen
+   * environment catalog, not slash commands). Returns null when no installed
+   * skill matches the command name.
+   */
+  private async handleSkillSlashCommand(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    command: { name: string; argument: string },
+  ): Promise<acp.PromptResponse | null> {
+    const skills = await listSkills(active.session.cwd);
+    const skill = skills.find((s) => s.name.toLowerCase() === command.name);
+    if (!skill) {
+      return null;
+    }
+
+    active.session.llmMessages.push({
+      role: "user",
+      content: await buildSkillInvocationPrompt(skill, command.argument),
+      name: await getUserMessageName(active.session.cwd),
+    });
+    await this.save(active);
+    void this.logRuntime(active.session.cwd, "info", "skill invoked via slash command", {
+      sessionId: active.session.sessionId,
+      skill: skill.name,
+      scope: skill.scope,
+      disableModelInvocation: skill.disableModelInvocation,
+    });
+
+    const signal = active.abortController?.signal ?? new AbortController().signal;
+    return this.runTurn(active, cx, signal);
   }
 
   private async handlePromptSlashCommand(

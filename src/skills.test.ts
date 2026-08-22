@@ -10,11 +10,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildSkillInvocationPrompt,
   buildSkillsSection,
   listSkills,
   parseSkillFrontmatter,
   projectSkillsDir,
   readSkill,
+  readSkillMarkdown,
 } from "./skills.js";
 import { buildEnvironmentMessage } from "./system-prompt.js";
 import { emptySessionUsage, type StoredSession } from "./storage.js";
@@ -77,7 +79,18 @@ describe("parseSkillFrontmatter", () => {
     ).toEqual({
       name: "my-skill",
       description: "A skill",
+      disableModelInvocation: true,
     });
+    expect(
+      parseSkillFrontmatter(
+        '---\nname: x\ndisable-model-invocation: false\n---\n',
+      ).disableModelInvocation,
+    ).toBe(false);
+    expect(
+      parseSkillFrontmatter(
+        "---\nname: x\ndisable-model-invocation: 1\n---\n",
+      ).disableModelInvocation,
+    ).toBe(true);
   });
 
   it("returns an empty object without a leading frontmatter block", () => {
@@ -104,7 +117,18 @@ describe("readSkill", () => {
       description: "Build polished frontends.",
       path: dir,
       scope: "project",
+      disableModelInvocation: false,
     });
+  });
+
+  it("reads disable-model-invocation from the frontmatter", async () => {
+    const dir = writeSkill(
+      projectDir,
+      "grill-me",
+      "---\nname: grill-me\ndescription: A relentless interview.\ndisable-model-invocation: true\n---\nbody",
+    );
+    const skill = await readSkill(dir, "project");
+    expect(skill?.disableModelInvocation).toBe(true);
   });
 
   it("falls back to the folder name when frontmatter has no name", async () => {
@@ -205,5 +229,47 @@ describe("buildEnvironmentMessage integration", () => {
   it("uses the project skills dir matching Zed's layout", () => {
     expect(projectSkillsDir("/a/b")).toBe("/a/b/.agents/skills");
     expect(existsSync(projectDir)).toBe(true);
+  });
+});
+
+describe("readSkillMarkdown", () => {
+  it("returns the full SKILL.md content", async () => {
+    writeSkill(
+      join(projectDir, ".agents", "skills"),
+      "grill-me",
+      "---\nname: grill-me\ndescription: Grill me.\n---\nInterview the user relentlessly.",
+    );
+    const skills = await listSkills(projectDir);
+    expect(await readSkillMarkdown(skills[0]!)).toBe(
+      "---\nname: grill-me\ndescription: Grill me.\n---\nInterview the user relentlessly.",
+    );
+  });
+});
+
+describe("buildSkillInvocationPrompt", () => {
+  it("injects the skill instructions and the user's argument", async () => {
+    writeSkill(
+      join(projectDir, ".agents", "skills"),
+      "grill-me",
+      "---\nname: grill-me\ndescription: A relentless interview.\ndisable-model-invocation: true\n---\nInterview the user relentlessly.",
+    );
+    const skills = await listSkills(projectDir);
+    const prompt = await buildSkillInvocationPrompt(skills[0]!, "my plan");
+    expect(prompt).toContain('The user invoked the "grill-me" skill');
+    expect(prompt).toContain("Skill argument: my plan");
+    expect(prompt).toContain("Interview the user relentlessly.");
+    expect(prompt).toContain("--- grill-me (SKILL.md) ---");
+  });
+
+  it("omits the argument line when the argument is empty", async () => {
+    writeSkill(
+      join(projectDir, ".agents", "skills"),
+      "grill-me",
+      "---\nname: grill-me\n---\nbody",
+    );
+    const skills = await listSkills(projectDir);
+    const prompt = await buildSkillInvocationPrompt(skills[0]!, "");
+    expect(prompt).not.toContain("Skill argument:");
+    expect(prompt).toContain("body");
   });
 });

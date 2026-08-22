@@ -24,6 +24,12 @@ export interface SkillInfo {
   /** Absolute path to the skill folder (contains SKILL.md). */
   path: string;
   scope: SkillScope;
+  /**
+   * `disable-model-invocation: true` from the SKILL.md frontmatter: the
+   * skill is meant to be invoked by the user (slash command) only, never
+   * autonomously by the model.
+   */
+  disableModelInvocation: boolean;
 }
 
 const SKILL_FILE = "SKILL.md";
@@ -41,6 +47,7 @@ export function projectSkillsDir(cwd: string): string {
 export interface SkillFrontmatter {
   name?: string;
   description?: string;
+  disableModelInvocation?: boolean;
 }
 
 /**
@@ -80,6 +87,9 @@ export function parseSkillFrontmatter(content: string): SkillFrontmatter {
       result.name = value || undefined;
     } else if (key === "description") {
       result.description = value || undefined;
+    } else if (key === "disable-model-invocation") {
+      result.disableModelInvocation =
+        value === "true" || value === "yes" || value === "1";
     }
   }
   return result;
@@ -106,6 +116,7 @@ export async function readSkill(
     description: meta.description ?? "",
     path: dir,
     scope,
+    disableModelInvocation: meta.disableModelInvocation ?? false,
   };
 }
 
@@ -182,5 +193,41 @@ export function buildSkillsSection(skills: SkillInfo[]): string {
       `- ${skill.name} [${skill.scope}]${description} — load with: cat ${join(skill.path, SKILL_FILE)}`,
     );
   }
+  return lines.join("\n");
+}
+
+/**
+ * Read a skill's full `SKILL.md` body (frontmatter + instructions) as it
+ * should be handed to the model when the skill is invoked.
+ */
+export async function readSkillMarkdown(skill: SkillInfo): Promise<string> {
+  return readFile(join(skill.path, SKILL_FILE), "utf8");
+}
+
+/**
+ * Build the user message that starts a model turn when a skill is invoked
+ * through its `/skill-name` slash command: the user's argument plus the
+ * skill's full SKILL.md so the model follows the skill's instructions
+ * (reading referenced files/scripts with its bash tool as needed).
+ */
+export async function buildSkillInvocationPrompt(
+  skill: SkillInfo,
+  argument: string,
+): Promise<string> {
+  const content = (await readSkillMarkdown(skill)).trim();
+  const lines = [
+    `The user invoked the "${skill.name}" skill with the /${skill.name} slash command.`,
+  ];
+  if (argument.length > 0) {
+    lines.push(`Skill argument: ${argument}`);
+  }
+  lines.push(
+    "",
+    "Follow the skill's instructions below. You may use your bash tool (in the session working directory) to gather facts or read any files, scripts, or references the skill mentions.",
+    "",
+    `--- ${skill.name} (SKILL.md) ---`,
+    content,
+    `--- end of ${skill.name} ---`,
+  );
   return lines.join("\n");
 }
