@@ -34,6 +34,67 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Default cap on terminal output text sent to the model, in bytes. */
+export const DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 50_000;
+
+export interface TruncatedTerminalOutput {
+  /** The kept text (the tail when truncated, otherwise the original). */
+  text: string;
+  truncated: boolean;
+  /** UTF-8 byte length of the original text. */
+  originalBytes: number;
+  /** UTF-8 byte length of the kept text. */
+  keptBytes: number;
+}
+
+/**
+ * Keep only the tail of `text` so it fits within `maxBytes` UTF-8 bytes.
+ * The cut is adjusted forward to a UTF-8 lead byte so the kept text never
+ * contains a split multi-byte sequence (and never exceeds `maxBytes`).
+ *
+ * Used for the model-visible tool result only: the full output stays on
+ * disk at the log path (and in the terminal card), so the model can read
+ * more with bash whenever it needs to.
+ */
+export function truncateTerminalOutput(
+  text: string,
+  maxBytes: number,
+): TruncatedTerminalOutput {
+  const bytes = Buffer.from(text, "utf8");
+  const originalBytes = bytes.length;
+  if (originalBytes <= maxBytes) {
+    return { text, truncated: false, originalBytes, keptBytes: originalBytes };
+  }
+  let start = bytes.length - maxBytes;
+  // Continuation bytes are 0b10xxxxxx; skip forward to the next lead byte
+  // so we never split a multi-byte character.
+  while (start < bytes.length && (bytes[start]! & 0b1100_0000) === 0b1000_0000) {
+    start++;
+  }
+  const kept = bytes.subarray(start).toString("utf8");
+  return {
+    text: kept,
+    truncated: true,
+    originalBytes,
+    keptBytes: Buffer.byteLength(kept, "utf8"),
+  };
+}
+
+/**
+ * Model-visible terminal output byte budget. Override with
+ * `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` (bytes; must be > 0).
+ */
+function terminalOutputByteLimit(): number {
+  const raw = process.env.ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT;
+  if (!raw) {
+    return DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT;
+}
+
 /**
  * Commands the bash tool may not run; their real binaries are shadowed
  * inside the bwrap namespace by `sandboxBlockShim`, which refuses to run
@@ -373,7 +434,10 @@ export async function executeLlmToolCall(
     const outputText =
       outputResp.output ||
       (status === "completed" ? "(no output)" : `exit code ${exit.exitCode ?? "unknown"}`);
-    const outputForModel = outputText + `\n\n[Full output saved to ${logPath}]`;
+    const modelOutput = truncateTerminalOutput(outputText, terminalOutputByteLimit());
+    const outputForModel = modelOutput.truncated
+      ? `${modelOutput.text}\n\n[Terminal output truncated: showing the last ${modelOutput.keptBytes} of ${modelOutput.originalBytes} bytes; full output saved to ${logPath}]`
+      : `${outputText}\n\n[Full output saved to ${logPath}]`;
     const displayText = `${outputText}\n\n⏱ ${formatMs(durationMs)}`;
 
     await emit({
@@ -392,6 +456,9 @@ export async function executeLlmToolCall(
         exitCode: exit.exitCode,
         signal: exit.signal,
         truncated: outputResp.truncated,
+        truncatedForModel: modelOutput.truncated,
+        outputBytes: modelOutput.originalBytes,
+        outputKeptBytes: modelOutput.keptBytes,
         cancelled,
         durationMs,
         fullOutputPath: logPath,
