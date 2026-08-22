@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
 
@@ -210,6 +212,84 @@ describe("/sandbox slash command", () => {
     } finally {
       delete process.env.ZEN_AGENT_SANDBOX;
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe("bash tool sandbox blocks rm/grep/find", () => {
+  beforeEach(() => {
+    mockedRunLlmStep.mockReset();
+  });
+
+  it("shadows every distinct rm/grep/find binary with the refusing shim", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-sandbox-"));
+    try {
+      const { agent, cx, request, sessionId } = await setupAgent(cwd);
+      await agent.prompt({ sessionId, prompt: [{ type: "text", text: "/sandbox on" }] }, cx);
+
+      queueBashThenAnswer();
+      await agent.prompt({ sessionId, prompt: [{ type: "text", text: "run it" }] }, cx);
+      const script = createdScript(request)!;
+      expect(script).toContain("bwrap");
+
+      const shim = fileURLToPath(
+        new URL("../bin/zen-agent-sandbox-block.sh", import.meta.url),
+      );
+      // Mirror the deduplication in tool-execution.ts: /bin is a symlink to
+      // /usr/bin on most distros, so only distinct real binaries are bound.
+      const seen = new Set<string>();
+      const expectedBinds: string[] = [];
+      for (const cmd of ["rm", "grep", "find"]) {
+        for (const dir of ["/usr/bin", "/bin"]) {
+          const dest = join(dir, cmd);
+          if (!existsSync(dest)) continue;
+          const resolved = realpathSync(dest);
+          if (seen.has(resolved)) continue;
+          seen.add(resolved);
+          expectedBinds.push(`--ro-bind ${shim} ${dest}`);
+        }
+      }
+      expect(expectedBinds.length).toBeGreaterThan(0);
+      for (const bind of expectedBinds) {
+        expect(script).toContain(bind);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses rm, grep and find and suggests their substitutes", () => {
+    const dir = mkdtempSync(join(tmpdir(), "zen-agent-block-"));
+    try {
+      const shim = fileURLToPath(
+        new URL("../bin/zen-agent-sandbox-block.sh", import.meta.url),
+      );
+      const substitutes: Record<string, string> = {
+        rm: "trash",
+        grep: "rg",
+        find: "fdfind",
+      };
+      for (const [cmd, substitute] of Object.entries(substitutes)) {
+        const link = join(dir, cmd);
+        symlinkSync(shim, link);
+        let error: unknown;
+        try {
+          execFileSync(link, ["--some-flag"], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } catch (e) {
+          error = e;
+        }
+        expect(error).toBeDefined();
+        const e = error as { status?: number; stderr?: string };
+        expect(e.status).toBe(1);
+        expect(e.stderr).toContain(`'${cmd}' is blocked`);
+        expect(e.stderr).toContain(`use '${substitute}' instead`);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
