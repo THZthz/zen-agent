@@ -79,7 +79,7 @@ describe("buildEnvironmentMessage", () => {
   it("includes working directory and date even without git", async () => {
     const text = await buildEnvironmentMessage(makeSession(dir));
     expect(text).toBe(
-      `Working directory: ${dir}\nCurrent date/time: 2026-08-20T02:00:00.000Z`,
+      `Working directory: ${dir}.\nCurrent date/time: 2026-08-20T02:00:00.000Z.`,
     );
   });
 
@@ -174,7 +174,7 @@ describe("buildEnvironmentMessage", () => {
 
     const text = await buildEnvironmentMessage(makeSession(dir));
     expect(text).toContain(
-      "> This project contains git submodules: submod. Do not bump submodule pointers in the main repo; leave that to the user.",
+      "> This project contains git submodules: submod. Do not bump submodule pointers in the main repo unless requested by user.",
     );
   });
 });
@@ -191,7 +191,7 @@ describe("buildSessionContinuedMessage", () => {
 
     const text = await buildSessionContinuedMessage(makeSession(dir));
     expect(text).toContain("Session continued/resumed.");
-    expect(text).toContain(`Working directory: ${dir}`);
+    expect(text).toContain(`Current date/time:`);
     expect(text).toContain("(Git) branch: main | status: 1 changed file");
     // Workflow guidance lives in the initial environment message, not here,
     // so the frozen cached prefix stays byte-identical across restarts.
