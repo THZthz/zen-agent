@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { LlmMessage, StoredSession } from "./storage.js";
+import { buildSkillsSection, listSkills } from "./skills.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -66,6 +67,17 @@ export async function buildEnvironmentMessage(
       lines.push(
         `> This project contains git submodules: ${submodules.join(", ")}.`,
       );
+    }
+  }
+  // Skills are opt-in and frozen at session creation: with
+  // ZEN_AGENT_SHOW_SKILLS_CATALOG=1 the catalog (and everything else in this
+  // message) stays byte-identical for DeepSeek's prefix cache, and skills
+  // installed after session creation are picked up by the next session. By
+  // default Zen Agent stays minimal and passes no skill information at all.
+  if (process.env.ZEN_AGENT_SHOW_SKILLS_CATALOG === "1") {
+    const skills = await listSkills(session.cwd);
+    if (skills.length > 0) {
+      lines.push("", buildSkillsSection(skills));
     }
   }
   return lines.join("\n");

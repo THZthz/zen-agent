@@ -13,6 +13,7 @@ import { emptySessionUsage, type StoredSession } from "./storage.js";
 
 let dir: string;
 let configDir: string;
+let homeDir: string;
 let subDir: string | undefined;
 
 beforeEach(() => {
@@ -24,13 +25,20 @@ beforeEach(() => {
   writeFileSync(join(configDir, "gitconfig"), "");
   process.env.GIT_CONFIG_GLOBAL = join(configDir, "gitconfig");
   process.env.GIT_CONFIG_SYSTEM = "/dev/null";
+  // Isolate HOME too: buildEnvironmentMessage discovers skills under
+  // ~/.agents/skills, so a real HOME would leak the developer's skills
+  // into these assertions.
+  homeDir = mkdtempSync(join(tmpdir(), "zen-agent-home-"));
+  process.env.HOME = homeDir;
 });
 
 afterEach(() => {
   delete process.env.GIT_CONFIG_GLOBAL;
   delete process.env.GIT_CONFIG_SYSTEM;
+  delete process.env.HOME;
   rmSync(dir, { recursive: true, force: true });
   rmSync(configDir, { recursive: true, force: true });
+  rmSync(homeDir, { recursive: true, force: true });
   if (subDir) {
     rmSync(subDir, { recursive: true, force: true });
     subDir = undefined;
