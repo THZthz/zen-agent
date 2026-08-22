@@ -159,6 +159,44 @@ sandbox is always on and `/sandbox off` is refused.
 
 Everything after `/prompt` — including newlines — replaces the default system prompt entirely for the rest of the session. Running `/prompt` with no content prints the current effective system prompt.
 
+## Skills (skills.sh)
+
+Zen Agent can use [Agent Skills](https://www.skills.sh/) — the open skill
+format used by the skills.sh registry. Skills are folders containing a
+`SKILL.md` (YAML frontmatter + Markdown instructions) plus optional
+`scripts/`, `references/` and `assets/`.
+
+Zed loads skills from `~/.agents/skills/` (global) and
+`<project>/.agents/skills/` (project-local), and Zen Agent reads the exact
+same locations — so you install skills exactly like you would for Zed:
+
+```bash
+# Project-local (committed with the repo)
+npx skills add vercel-labs/agent-skills -a zed
+
+# Global (available in every project)
+npx skills add vercel-labs/agent-skills -a zed -g
+```
+
+By default Zen Agent stays minimal and passes **no skill information** to
+the model. Set `ZEN_AGENT_SHOW_SKILLS_CATALOG=1` to opt in: at session
+creation Zen Agent scans both directories and freezes a compact catalog
+(skill name, description, scope, and the `cat` command to load it) into the
+environment message, alongside the working directory and git state.
+
+Skill invocation is **by hand only**: the model loads a skill's `SKILL.md`
+with the bash tool — the read shows up as a normal terminal card — only
+when you explicitly ask for that skill by name; it never loads a skill on
+its own.
+
+Notes:
+
+- The catalog is frozen when the session is created (so the cached LLM
+  prefix stays byte-identical). Skills installed after that are picked up by
+  the next session.
+- Zed only exposes skills to its built-in agent, not to ACP agents, which is
+  why Zen Agent discovers them itself.
+
 ## Models
 
 | Config value | API model version | Context | Max output | Thinking |
@@ -192,6 +230,7 @@ These are exposed as ACP session config options and can be changed with `session
 | `DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M input tokens not served from cache (overrides the effective rate for the current period) |
 | `DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M output tokens (overrides the effective rate for the current period) |
 | `ZEN_AGENT_SHOW_STATS` | `1` | Set to `0` to hide the per-turn stats line in the conversation |
+| `ZEN_AGENT_SHOW_SKILLS_CATALOG` | — | Set to `1` to inject the installed Agent Skills catalog (name, description, load command) into the session's environment message (see [Skills](#skills-skillssh)); off by default |
 | `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` | `0` (wait forever) | Hard-abort escape hatch: if a graceful cancel (user follow-up or Stop) is pending longer than this, the in-flight LLM step / bash tool is forcibly aborted. `0` waits indefinitely |
 | `ZEN_AGENT_SANDBOX` | — | Set to `1` to run every bash tool call inside `bwrap` with `/mnt` mounted read-only (see [Sandboxing](#sandboxing-with-bubblewrap)) |
 | `ZEN_AGENT_SANDBOX_CMD` | default bwrap policy | Override the exact bwrap command used for sandboxed bash tool calls |
