@@ -225,6 +225,7 @@ These are exposed as ACP session config options and can be changed with `session
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible base URL (official; `https://api.deepseek.com/v1` also works) |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Fallback model when no session config is present |
 | `ZEN_AGENT_MAX_TURN_STEPS` | `25` | Maximum number of LLM/tool rounds per user prompt |
+| `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` | `50000` | Max UTF-8 bytes of bash terminal output sent to the model per tool call (keeps the tail; the full output stays in the log file and the terminal card) |
 | `DEEPSEEK_CONTEXT_WINDOW` | `1000000` (1M) | Session context window size in tokens, reported via ACP `usage_update` |
 | `DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M input tokens served from DeepSeek's context cache (overrides the effective rate for the current period) |
 | `DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK` | per-model, peak/off-peak | CNY per 1M input tokens not served from cache (overrides the effective rate for the current period) |

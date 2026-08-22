@@ -8,3 +8,4 @@
 - [x] Check how to deceive agent to believe it is running inside a normal linux, not WSL2
 - [x] Add a new `/sandbox` slash command to put agent's bash tool call inside bwrap, not just by envs
 - [ ] A handy cli tool for Zen Agent to navigate its own command history?
+- [x] Bug: should truncate if the terminal output exceeds a certain bytes, not just a certain lines!
