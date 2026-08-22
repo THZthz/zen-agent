@@ -110,6 +110,13 @@ the session: every bash call is then wrapped in its own `bwrap` with the
 same `/mnt` read-only policy, so the agent can never write into `/mnt` even
 through its bash tool.
 
+The bash-tool sandbox also shadows `rm`, `grep` and `find`: inside the bwrap
+namespace their real binaries are replaced (read-only) by a shim that
+refuses to run and tells the agent to use `trash`, `rg` and `fdfind`
+instead. This only happens inside the sandbox's mount namespace — processes
+and scripts on the host keep using the real `rm`/`grep`/`find` untouched, so
+nothing else on the machine is affected.
+
 ## Slash Commands
 
 Zen Agent advertises slash commands in the agent panel:
@@ -188,6 +195,7 @@ These are exposed as ACP session config options and can be changed with `session
 | `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` | `0` (wait forever) | Hard-abort escape hatch: if a graceful cancel (user follow-up or Stop) is pending longer than this, the in-flight LLM step / bash tool is forcibly aborted. `0` waits indefinitely |
 | `ZEN_AGENT_SANDBOX` | — | Set to `1` to run every bash tool call inside `bwrap` with `/mnt` mounted read-only (see [Sandboxing](#sandboxing-with-bubblewrap)) |
 | `ZEN_AGENT_SANDBOX_CMD` | default bwrap policy | Override the exact bwrap command used for sandboxed bash tool calls |
+| `ZEN_AGENT_SANDBOX_BLOCK_SHIM` | repo `bin/zen-agent-sandbox-block.sh` | Shim mounted (read-only) over `rm`/`grep`/`find` inside the bash-tool sandbox; refuses to run and suggests `trash`/`rg`/`fdfind` |
 
 ## Information Displayed to the User
 

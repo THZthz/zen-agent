@@ -1,6 +1,8 @@
 import * as acp from "@agentclientprotocol/sdk";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { LlmToolCall } from "./llm/deepseek.js";
 import { terminalDirectory, type StoredSession } from "./storage.js";
 import { formatMs } from "./turn-stats.js";
@@ -33,20 +35,82 @@ export function shellQuote(value: string): string {
 }
 
 /**
+ * Commands the bash tool may not run; their real binaries are shadowed
+ * inside the bwrap namespace by `sandboxBlockShim`, which refuses to run
+ * and points the agent at the substitute. The host binaries are untouched,
+ * so every other script on the machine keeps using the real `rm`, `grep`
+ * and `find`.
+ */
+const BLOCKED_COMMANDS: Record<string, string> = {
+  rm: "trash",
+  grep: "rg",
+  find: "fdfind",
+};
+
+/** Standard locations of the blocked binaries (checked at runtime). */
+const BLOCKED_BINARY_DIRS = ["/usr/bin", "/bin"];
+
+/**
+ * Path to the shim mounted over the blocked binaries. Override with
+ * `ZEN_AGENT_SANDBOX_BLOCK_SHIM`; the default resolves relative to this
+ * file, so it works both from `src/` (tsx) and `dist/` (compiled).
+ */
+function sandboxBlockShimPath(): string {
+  const override = process.env.ZEN_AGENT_SANDBOX_BLOCK_SHIM;
+  if (override !== undefined && override.trim() !== "") {
+    return override.trim();
+  }
+  return fileURLToPath(
+    new URL("../bin/zen-agent-sandbox-block.sh", import.meta.url),
+  );
+}
+
+/**
+ * `--ro-bind` arguments that replace each blocked binary with the shim
+ * inside the sandbox. `/bin` is a symlink to `/usr/bin` on many distros,
+ * so destinations are deduplicated by their resolved path. Only existing
+ * binaries are shadowed (bwrap refuses to bind onto a missing file).
+ */
+function blockedBinaryBinds(): string[] {
+  const shim = sandboxBlockShimPath();
+  const seen = new Set<string>();
+  const binds: string[] = [];
+  for (const command of Object.keys(BLOCKED_COMMANDS)) {
+    for (const dir of BLOCKED_BINARY_DIRS) {
+      const dest = join(dir, command);
+      if (!existsSync(dest)) continue;
+      const resolved = realpathSync(dest);
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      binds.push(`--ro-bind ${shim} ${dest}`);
+    }
+  }
+  return binds;
+}
+
+/**
  * Default bubblewrap sandbox used for bash tool calls when
  * `ZEN_AGENT_SANDBOX=1`:
  *   --bind / /           rootfs behaves exactly as on the host
  *   --ro-bind /mnt /mnt  /mnt becomes read-only (reads OK, writes fail)
  *   --dev /dev           fresh devtmpfs (host /dev is unusable in a userns)
+ *   --ro-bind shim ...   `rm`, `grep` and `find` are replaced by a shim
+ *                        that refuses to run (use trash/rg/fdfind instead)
  *
  * The sandboxed process runs as the invoking uid in a new user+mount
- * namespace, so it cannot remount /mnt read-write. Override the entire
- * bwrap command with `ZEN_AGENT_SANDBOX_CMD` if a different policy is
- * needed (e.g. `--ro-bind / /` plus explicit writable binds).
+ * namespace, so it cannot remount /mnt read-write or escape the namespace.
+ * Shadowing the binaries only affects processes inside the namespace:
+ * scripts on the host keep using the real `rm`/`grep`/`find`. Override the
+ * entire bwrap command with `ZEN_AGENT_SANDBOX_CMD` if a different policy
+ * is needed (e.g. `--ro-bind / /` plus explicit writable binds).
  */
-const DEFAULT_BASH_SANDBOX =
-  "bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev " +
-  "--bind /dev/pts /dev/pts --tmpfs /dev/shm";
+function defaultBashSandbox(): string {
+  return [
+    "bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev",
+    "--bind /dev/pts /dev/pts --tmpfs /dev/shm",
+    ...blockedBinaryBinds(),
+  ].join(" ");
+}
 
 function bashSandboxPrefix(enabled: boolean): string {
   if (!enabled) {
@@ -56,7 +120,7 @@ function bashSandboxPrefix(enabled: boolean): string {
   if (custom !== undefined && custom.trim() !== "") {
     return `${custom.trim()} `;
   }
-  return `${DEFAULT_BASH_SANDBOX} `;
+  return `${defaultBashSandbox()} `;
 }
 
 /**
@@ -75,7 +139,10 @@ function bashSandboxPrefix(enabled: boolean): string {
  * `bashSandboxPrefix`) whenever sandboxing is enabled — either per session
  * via the `/sandbox` slash command or globally via `ZEN_AGENT_SANDBOX=1`.
  * The sandbox bind-mounts /mnt read-only: the tool can read /mnt but every
- * write to it fails with EROFS.
+ * write to it fails with EROFS. It also shadows `rm`, `grep` and `find`
+ * with refusing shims (see `blockedBinaryBinds`), so the agent can only
+ * use `trash`, `rg` and `fdfind` for those operations; host scripts are
+ * unaffected because the shadowing lives in the bwrap mount namespace.
  */
 export async function executeLlmToolCall(
   context: ToolExecutorContext,

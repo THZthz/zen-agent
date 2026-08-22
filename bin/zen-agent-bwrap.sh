@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run Zen Agent's node process inside a bubblewrap sandbox.
 #
-# Sandbox policy (identical in bin/zen-agent-bwrap.sh and the bash-tool
-# sandbox in src/tool-execution.ts):
+# Sandbox policy for the agent process. The bash-tool sandbox in
+# src/tool-execution.ts uses the same base policy plus read-only shims
+# over rm/grep/find (see README):
 #   --bind / /           whole rootfs behaves exactly as on the host
 #                        (writable where it was writable, ro where it was ro)
 #   --ro-bind /mnt /mnt  /mnt (Windows drives c:/d:/..., WSL mounts) becomes
