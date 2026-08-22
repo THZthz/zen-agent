@@ -13,6 +13,12 @@ export interface ToolExecutionResult {
 
 export interface ToolExecutorContext {
   session: StoredSession;
+  /**
+   * Whether bash tool calls in this session run inside their own bwrap
+   * sandbox. The agent computes this as `session.config.sandbox || env
+   * ZEN_AGENT_SANDBOX=1`, so the environment policy always applies.
+   */
+  sandbox: boolean;
   clientCapabilities: acp.ClientCapabilities;
   emit: (update: acp.SessionUpdate) => Promise<void>;
   logRuntime: (
@@ -42,15 +48,15 @@ const DEFAULT_BASH_SANDBOX =
   "bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev " +
   "--bind /dev/pts /dev/pts --tmpfs /dev/shm";
 
-function bashSandboxPrefix(): string {
+function bashSandboxPrefix(enabled: boolean): string {
+  if (!enabled) {
+    return "";
+  }
   const custom = process.env.ZEN_AGENT_SANDBOX_CMD;
   if (custom !== undefined && custom.trim() !== "") {
     return `${custom.trim()} `;
   }
-  if (process.env.ZEN_AGENT_SANDBOX === "1") {
-    return `${DEFAULT_BASH_SANDBOX} `;
-  }
-  return "";
+  return `${DEFAULT_BASH_SANDBOX} `;
 }
 
 /**
@@ -64,10 +70,12 @@ function bashSandboxPrefix(): string {
  * cancel (user follow-up / Stop) lets the command finish.
  *
  * Because these terminals run in Zed (on the host), sandboxing the agent
- * process with bwrap does NOT constrain the bash tool. When
- * `ZEN_AGENT_SANDBOX=1`, every bash call is therefore wrapped in its own
- * bubblewrap invocation (see `bashSandboxPrefix`) that bind-mounts /mnt
- * read-only: the tool can read /mnt but every write to it fails with EROFS.
+ * process with bwrap does NOT constrain the bash tool. Every bash call is
+ * therefore wrapped in its own bubblewrap invocation (see
+ * `bashSandboxPrefix`) whenever sandboxing is enabled — either per session
+ * via the `/sandbox` slash command or globally via `ZEN_AGENT_SANDBOX=1`.
+ * The sandbox bind-mounts /mnt read-only: the tool can read /mnt but every
+ * write to it fails with EROFS.
  */
 export async function executeLlmToolCall(
   context: ToolExecutorContext,
@@ -75,7 +83,7 @@ export async function executeLlmToolCall(
   call: LlmToolCall,
   signal: AbortSignal,
 ): Promise<ToolExecutionResult> {
-  const { session, clientCapabilities, emit, logRuntime } = context;
+  const { session, sandbox, clientCapabilities, emit, logRuntime } = context;
 
   if (call.name !== "bash") {
     const message = `Unknown tool: ${call.name}`;
@@ -144,7 +152,7 @@ export async function executeLlmToolCall(
   const commandScriptPath = join(terminalDir, `input-${timestamp}-${call.id}.sh`);
   await mkdir(terminalDir, { recursive: true });
   await writeFile(commandScriptPath, command, "utf8");
-  const scriptCommand = `${bashSandboxPrefix()}bash ${shellQuote(commandScriptPath)}`;
+  const scriptCommand = `${bashSandboxPrefix(sandbox)}bash ${shellQuote(commandScriptPath)}`;
   const wrappedCommand = `script -q -e -c ${shellQuote(scriptCommand)} ${shellQuote(logPath)}`;
   const toolStart = Date.now();
 

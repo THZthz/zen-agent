@@ -105,18 +105,22 @@ namespace; it cannot remount `/mnt` read-write.
 
 Important: the agent's `bash` tool executes in a PTY owned by Zed on the
 **host**, outside the agent process's sandbox. To sandbox the bash tool too,
-set `ZEN_AGENT_SANDBOX=1` (as in the config above): every bash call is then
-wrapped in its own `bwrap` with the same `/mnt` read-only policy, so the
-agent can never write into `/mnt` even through its bash tool.
+set `ZEN_AGENT_SANDBOX=1` (as in the config above) or run `/sandbox on` in
+the session: every bash call is then wrapped in its own `bwrap` with the
+same `/mnt` read-only policy, so the agent can never write into `/mnt` even
+through its bash tool.
 
-## Slash Command
+## Slash Commands
 
-Zen Agent advertises a slash command in the agent panel:
+Zen Agent advertises slash commands in the agent panel:
 
 | Command | Description |
 | --- | --- |
 | `/prompt <text>` | Replace the entire system prompt for this session |
 | `/prompt` | Print the current system prompt |
+| `/sandbox on` | Wrap every bash tool call in its own `bwrap` sandbox for this session (persisted across restarts) |
+| `/sandbox off` | Disable the per-session bash sandbox (cannot turn it off while `ZEN_AGENT_SANDBOX=1`) |
+| `/sandbox` | Show the current bash sandbox status |
 
 Examples:
 
@@ -133,6 +137,18 @@ Multi-line:
 Always prefer safe refactors.
 Add tests for all changes.
 ```
+
+Sandboxing:
+
+```text
+/sandbox on
+/sandbox
+```
+
+Unlike `ZEN_AGENT_SANDBOX=1` (a global env policy), `/sandbox` toggles the
+per-session `config.sandbox` flag at runtime and persists it in the session
+state. The env policy still applies on top: with `ZEN_AGENT_SANDBOX=1` the
+sandbox is always on and `/sandbox off` is refused.
 
 Everything after `/prompt` — including newlines — replaces the default system prompt entirely for the rest of the session. Running `/prompt` with no content prints the current effective system prompt.
 

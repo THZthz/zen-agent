@@ -6,3 +6,4 @@
 - [x] Fix live streaming of thinking/answers — `@ai-sdk/openai`'s `throwIfOpenAIStreamErrorBeforeOutput` read ahead until the first content chunk, buffering DeepSeek's entire `reasoning_content` phase (visible as "thinking block does not stream"). Replaced `streamText` with a direct SSE client in `runLlmStep`; reasoning now streams live. This also fixed cache-hit stats (raw usage fields were stripped by the SDK's zod schema)
 - [x] Check how to make Zen Agent run inside `bwrap` and restrict its write access to /mnt/
 - [x] Check how to deceive agent to believe it is running inside a normal linux, not WSL2
+- [x] Add a new `/sandbox` slash command to put agent's bash tool call inside bwrap, not just by envs

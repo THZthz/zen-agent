@@ -31,6 +31,13 @@ export interface SessionConfig {
   model: ModelId;
   thinkingEffort: ThinkingEffort;
   systemPrompt: string;
+  /**
+   * Wrap every bash tool call in its own bubblewrap invocation. Set at
+   * runtime with the `/sandbox` slash command (per session); the
+   * `ZEN_AGENT_SANDBOX=1` environment variable is the global equivalent and
+   * applies even when this flag is off (see tool-execution.ts).
+   */
+  sandbox: boolean;
 }
 
 /**
@@ -220,6 +227,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
       model: DEFAULT_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: "",
+      sandbox: false,
     },
     usage: emptySessionUsage(),
     turnStats: [],

@@ -121,6 +121,7 @@ After `session/new`, `session/load`, or `session/resume`, Zen Agent sends an `av
 | Command | Description |
 | --- | --- |
 | `prompt` | Replace the entire system prompt, or print the current system prompt when used without input. |
+| `sandbox` | Toggle the per-session bash tool sandbox: `on`, `off`, or no input to print the current status. |
 
 The user can type `/prompt <text>` as the first message. The input is unstructured text, so multi-line content is supported:
 
@@ -131,6 +132,8 @@ Add tests for all changes.
 ```
 
 Zen Agent stores the text after `/prompt` (including newlines) as the session's **entire** system prompt and returns `end_turn` without invoking the model. Running `/prompt` with no content prints the current effective system prompt (the custom prompt if set, otherwise the default).
+
+`/sandbox on` sets `config.sandbox` to `true` for the session (persisted in `state.json`), after which every bash tool call is executed inside its own `bwrap` invocation (`--bind / / --ro-bind /mnt /mnt --dev /dev`, see `tool-execution.ts`); `/sandbox off` clears it. The global `ZEN_AGENT_SANDBOX=1` env policy still applies on top: when set, the sandbox is always effective and `/sandbox off` is refused with `end_turn`. `/sandbox` with no argument prints the current effective status (session flag or env policy).
 
 ## 5. Agent Turn Lifecycle (`session/prompt`)
 

@@ -141,6 +141,14 @@ const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
       hint: "custom system prompt or instructions",
     },
   },
+  {
+    name: "sandbox",
+    description:
+      "Run every bash tool call inside a bubblewrap sandbox for this session",
+    input: {
+      hint: "on | off | (empty for status)",
+    },
+  },
 ];
 
 function newMessageId(): string {
@@ -851,6 +859,7 @@ export class ZenAgent {
     return executeLlmToolCall(
       {
         session: active.session,
+        sandbox: this.sessionSandboxEnabled(active.session),
         clientCapabilities: this.clientCapabilities,
         emit: (update) => this.emit(active, cx, update),
         logRuntime: (level, message, details) =>
@@ -1029,18 +1038,29 @@ export class ZenAgent {
     cx: acp.AgentContext,
     command: { name: string; argument: string },
   ): Promise<acp.StopReason> {
-    if (command.name !== "prompt") {
-      await this.emit(active, cx, {
-        sessionUpdate: "agent_message_chunk",
-        content: {
-          type: "text",
-          text: `Unknown slash command: /${command.name}`,
-        },
-      });
-      return "end_turn";
+    switch (command.name) {
+      case "prompt":
+        return this.handlePromptSlashCommand(active, cx, command.argument);
+      case "sandbox":
+        return this.handleSandboxSlashCommand(active, cx, command.argument);
+      default:
+        await this.emit(active, cx, {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: `Unknown slash command: /${command.name}`,
+          },
+        });
+        return "end_turn";
     }
+  }
 
-    if (!command.argument) {
+  private async handlePromptSlashCommand(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    argument: string,
+  ): Promise<acp.StopReason> {
+    if (!argument) {
       await this.emit(active, cx, {
         sessionUpdate: "agent_message_chunk",
         content: {
@@ -1051,7 +1071,7 @@ export class ZenAgent {
       return "end_turn";
     }
 
-    active.session.config.systemPrompt = command.argument;
+    active.session.config.systemPrompt = argument;
     await this.save(active);
     void this.logRuntime(active.session.cwd, "info", "system prompt updated", {
       sessionId: active.session.sessionId,
@@ -1066,6 +1086,100 @@ export class ZenAgent {
     });
 
     return "end_turn";
+  }
+
+  /**
+   * `/sandbox` toggles bwrap wrapping of bash tool calls for this session.
+   *
+   * Unlike `ZEN_AGENT_SANDBOX=1` (a global env policy set at startup), the
+   * slash command changes the per-session `config.sandbox` flag at runtime
+   * and persists it across restarts. The env policy still applies on top:
+   * when `ZEN_AGENT_SANDBOX=1` the sandbox cannot be turned off per session.
+   */
+  private async handleSandboxSlashCommand(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    argument: string,
+  ): Promise<acp.StopReason> {
+    const normalized = argument.trim().toLowerCase();
+    const envForced = process.env.ZEN_AGENT_SANDBOX === "1";
+    const effective = this.sessionSandboxEnabled(active.session);
+
+    if (normalized === "" || normalized === "status") {
+      const via =
+        envForced && !active.session.config.sandbox
+          ? " (enforced by ZEN_AGENT_SANDBOX=1)"
+          : active.session.config.sandbox
+            ? " (session)"
+            : " (off)";
+      await this.emit(active, cx, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text:
+            `Bash tool sandbox: ${effective ? "ON" : "OFF"}${via}\n` +
+            "Usage: /sandbox on | off",
+        },
+      });
+      return "end_turn";
+    }
+
+    const enabled =
+      normalized === "on" || normalized === "1" || normalized === "true" || normalized === "yes";
+    const disabled =
+      normalized === "off" || normalized === "0" || normalized === "false" || normalized === "no";
+
+    if (!enabled && !disabled) {
+      await this.emit(active, cx, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: `Unknown /sandbox argument: ${argument}
+Usage: /sandbox on | off`,
+        },
+      });
+      return "end_turn";
+    }
+
+    if (envForced) {
+      await this.emit(active, cx, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: enabled
+            ? "Bash tool sandbox is already ON (enforced by ZEN_AGENT_SANDBOX=1)."
+            : "Cannot disable: ZEN_AGENT_SANDBOX=1 forces the bash tool sandbox on.",
+        },
+      });
+      return "end_turn";
+    }
+
+    active.session.config.sandbox = enabled;
+    await this.save(active);
+    void this.logRuntime(active.session.cwd, "info", "bash sandbox toggled", {
+      sessionId: active.session.sessionId,
+      sandbox: enabled,
+    });
+
+    await this.emit(active, cx, {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: enabled
+          ? "Bash tool calls are now sandboxed with bubblewrap for this session."
+          : "Bash tool sandbox disabled for this session.",
+      },
+    });
+
+    return "end_turn";
+  }
+
+  /**
+   * Effective sandbox state for a session: the per-session `/sandbox` flag
+   * OR the global `ZEN_AGENT_SANDBOX=1` env policy (which always applies).
+   */
+  private sessionSandboxEnabled(session: StoredSession): boolean {
+    return session.config.sandbox || process.env.ZEN_AGENT_SANDBOX === "1";
   }
 
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
