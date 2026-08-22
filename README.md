@@ -128,6 +128,7 @@ Zen Agent advertises slash commands in the agent panel:
 | `/sandbox on` | Wrap every bash tool call in its own `bwrap` sandbox for this session (persisted across restarts) |
 | `/sandbox off` | Disable the per-session bash sandbox (cannot turn it off while `ZEN_AGENT_SANDBOX=1`) |
 | `/sandbox` | Show the current bash sandbox status |
+| `/skill-name <input>` | Invoke an installed Agent Skill, one command per skill (see [Skills](#skills-skillssh)) |
 
 Examples:
 
@@ -188,6 +189,15 @@ Skill invocation is **by hand only**: the model loads a skill's `SKILL.md`
 with the bash tool — the read shows up as a normal terminal card — only
 when you explicitly ask for that skill by name; it never loads a skill on
 its own.
+
+Every installed skill also gets its own slash command, advertised alongside
+`/prompt` and `/sandbox`: `/grill-me <grill what>` loads `grill-me`'s
+`SKILL.md` straight into the conversation and runs a model turn that follows
+it (so skills with `disable-model-invocation: true` — user-invocation only,
+like `grill-me` — are fully usable). Skill slash commands are always
+available, **regardless of `ZEN_AGENT_SHOW_SKILLS_CATALOG`**: that flag only
+controls whether the skill catalog is listed in the environment message, not
+whether `/skill-name` works.
 
 Notes:
 

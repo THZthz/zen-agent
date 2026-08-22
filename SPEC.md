@@ -122,6 +122,7 @@ After `session/new`, `session/load`, or `session/resume`, Zen Agent sends an `av
 | --- | --- |
 | `prompt` | Replace the entire system prompt, or print the current system prompt when used without input. |
 | `sandbox` | Toggle the per-session bash tool sandbox: `on`, `off`, or no input to print the current status. |
+| `<skill-name>` | One command per installed Agent Skill (see below). |
 
 The user can type `/prompt <text>` as the first message. The input is unstructured text, so multi-line content is supported:
 
@@ -134,6 +135,8 @@ Add tests for all changes.
 Zen Agent stores the text after `/prompt` (including newlines) as the session's **entire** system prompt and returns `end_turn` without invoking the model. Running `/prompt` with no content prints the current effective system prompt (the custom prompt if set, otherwise the default).
 
 `/sandbox on` sets `config.sandbox` to `true` for the session (persisted in `state.json`), after which every bash tool call is executed inside its own `bwrap` invocation (`--bind / / --ro-bind /mnt /mnt --dev /dev`, see `tool-execution.ts`); `/sandbox off` clears it. The global `ZEN_AGENT_SANDBOX=1` env policy still applies on top: when set, the sandbox is always effective and `/sandbox off` is refused with `end_turn`. `/sandbox` with no argument prints the current effective status (session flag or env policy).
+
+Every installed Agent Skill is also advertised as a slash command: `/grill-me <grill what>` finds the `grill-me` skill under `<cwd>/.agents/skills/` or `~/.agents/skills/`, reads its `SKILL.md`, injects it (plus the user's argument) as a user message, and runs a normal model turn that follows the skill's instructions. Skill slash commands are available regardless of `ZEN_AGENT_SHOW_SKILLS_CATALOG` (that flag only controls the catalog in the frozen environment message); a `/name` that matches neither a built-in command nor an installed skill replies `Unknown slash command` and returns `end_turn` without invoking the model.
 
 ## 5. Agent Turn Lifecycle (`session/prompt`)
 

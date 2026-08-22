@@ -1112,7 +1112,7 @@ export class ZenAgent {
     active.session.llmMessages.push({
       role: "user",
       content: await buildSkillInvocationPrompt(skill, command.argument),
-      name: await getUserMessageName(active.session.cwd),
+      name: ENVIRONMENT_MESSAGE_NAME,
     });
     await this.save(active);
     void this.logRuntime(active.session.cwd, "info", "skill invoked via slash command", {
