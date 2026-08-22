@@ -255,11 +255,12 @@ describe("buildSkillInvocationPrompt", () => {
     );
     const skills = await listSkills(projectDir);
     const prompt = await buildSkillInvocationPrompt(skills[0]!, "my plan");
-    expect(prompt).toContain('The user invoked the "grill-me" skill');
-    expect(prompt).toContain("Skill argument:");
-    expect(prompt).toContain("<argument>\nmy plan\n</argument>");
+    expect(prompt).toContain("<skill-invoked>");
+    expect(prompt).toContain("<skill-name>grill-me</skill-name>");
+    expect(prompt).toContain("<skill-argument>\nmy plan\n</skill-argument>");
+    expect(prompt).toContain("<skill-path>");
     expect(prompt).toContain("Interview the user relentlessly.");
-    expect(prompt).toContain("--- grill-me (SKILL.md) ---");
+    expect(prompt).toContain("</skill-invoked>");
   });
 
   it("omits the argument line when the argument is empty", async () => {
@@ -270,7 +271,7 @@ describe("buildSkillInvocationPrompt", () => {
     );
     const skills = await listSkills(projectDir);
     const prompt = await buildSkillInvocationPrompt(skills[0]!, "");
-    expect(prompt).not.toContain("Skill argument:");
+    expect(prompt).not.toContain("<skill-argument>");
     expect(prompt).toContain("body");
   });
 });

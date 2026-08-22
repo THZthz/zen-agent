@@ -218,6 +218,7 @@ export async function buildSkillInvocationPrompt(
 ): Promise<string> {
   const content = (await readSkillMarkdown(skill)).trim();
   const lines = [
+    "<environment>",
     "<skill-invoked>",
     `<skill-name>${skill.name}</skill-name>`,
   ];
@@ -225,13 +226,14 @@ export async function buildSkillInvocationPrompt(
     lines.push(`<skill-argument>\n${argument}\n</skill-argument>`);
   }
   lines.push(
+    `<skill-path>${join(skill.path, SKILL_FILE)}</skill-path>`,
     "<skill-instruction>",
-    `<skill-instruction-path>${join(skill.path, SKILL_FILE)}</skill-instruction-path>`,
-    "<skill-instruction-content>",
     content,
-    "</skill-instruction-content>",
     "</skill-instruction>",
   );
-  lines.push("</skill-invoked>");
+  lines.push(
+    "</skill-invoked>",
+    "</environment>",
+  );
   return lines.join("\n");
 }

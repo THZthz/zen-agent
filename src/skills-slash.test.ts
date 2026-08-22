@@ -109,10 +109,11 @@ describe("skill slash commands", () => {
           typeof m.content === "string" &&
           m.content.includes("grill-me"),
       );
-      expect(skillMessage?.content).toContain("The user invoked the \"grill-me\" skill");
-      expect(skillMessage?.content).toContain("Skill argument:");
-      expect(skillMessage?.content).toContain("<argument>\nmy plan\n</argument>");
+      expect(skillMessage?.content).toContain("<skill-invoked>");
+      expect(skillMessage?.content).toContain("<skill-name>grill-me</skill-name>");
+      expect(skillMessage?.content).toContain("<skill-argument>\nmy plan\n</skill-argument>");
       expect(skillMessage?.content).toContain("Interview the user relentlessly");
+      expect(skillMessage?.content).toContain("</skill-invoked>");
 
       // The environment message stayed catalog-free (no skills section).
       const environment = messages.find(
@@ -151,7 +152,7 @@ describe("skill slash commands", () => {
           m.content.includes("code-review"),
       );
       expect(skillMessage?.content).toContain("Be a strict reviewer.");
-      expect(skillMessage?.content).not.toContain("Skill argument:");
+      expect(skillMessage?.content).not.toContain("<skill-argument>");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
