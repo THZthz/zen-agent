@@ -30,7 +30,7 @@ import {
   runLlmStep,
   type LlmToolCall,
   type LlmUsage,
-} from "./llm/deepseek.js";
+} from "./deepseek.js";
 import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
 import {

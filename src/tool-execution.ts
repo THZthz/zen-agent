@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { LlmToolCall } from "./llm/deepseek.js";
+import type { LlmToolCall } from "./deepseek.js";
 import { terminalDirectory, type StoredSession } from "./storage.js";
 import { formatMs } from "./turn-stats.js";
 

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { LruCache } from "./core/lru.js";
+import { LruCache } from "./lru.js";
 
 interface AddedToken {
   id: number;

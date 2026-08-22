@@ -62,7 +62,6 @@ export async function buildEnvironmentMessage(
   if (git) {
     lines.push(...git);
     lines.push(
-      "",
       "<git-remainder>",
       "> Follow Conventional Commits; keep the commit message body concise.",
       "> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.",

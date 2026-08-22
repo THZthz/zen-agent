@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
-import type { LlmMessage, ModelId, ThinkingEffort } from "../storage.js";
-import { SYSTEM_PROMPT } from "../system-prompt.js";
-export { SYSTEM_PROMPT } from "../system-prompt.js";
+import type { LlmMessage, ModelId, ThinkingEffort } from "./storage.js";
+import { SYSTEM_PROMPT } from "./system-prompt.js";
+export { SYSTEM_PROMPT } from "./system-prompt.js";
 
 export interface LlmToolCall {
   id: string;
