@@ -186,6 +186,7 @@ export function buildSkillsSection(skills: SkillInfo[]): string {
     "Skills are invoked by hand only: load a skill's `SKILL.md` with bash (`cat <path>/SKILL.md`) ONLY when the user explicitly asks for that skill by name. Never load a skill autonomously just because it matches the task. Follow the skill's instructions, including any files it references.",
     "",
     "Available skills:",
+    "<skills>"
   ];
   for (const skill of skills) {
     const description = skill.description ? ` — ${skill.description}` : "";
@@ -193,6 +194,7 @@ export function buildSkillsSection(skills: SkillInfo[]): string {
       `- ${skill.name} [${skill.scope}]${description} — load with: cat ${join(skill.path, SKILL_FILE)}`,
     );
   }
+  lines.push("</skills>");
   return lines.join("\n");
 }
 
@@ -219,14 +221,16 @@ export async function buildSkillInvocationPrompt(
     `The user invoked the "${skill.name}" skill with the /${skill.name} slash command.`,
   ];
   if (argument.length > 0) {
-    lines.push(`Skill argument: ${argument}`);
+    lines.push(`Skill argument: \n<argument>\n${argument}\n</argument>`);
   }
   lines.push(
     "",
     "Follow the skill's instructions below. You may use your bash tool (in the session working directory) to gather facts or read any files, scripts, or references the skill mentions.",
     "",
     `--- ${skill.name} (SKILL.md) ---`,
+    "<content>",
     content,
+    "</content>",
     `--- end of ${skill.name} ---`,
   );
   return lines.join("\n");

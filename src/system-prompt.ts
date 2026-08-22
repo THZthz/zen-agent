@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { LlmMessage, StoredSession } from "./storage.js";
+import { sessionDirectory, type LlmMessage, type StoredSession } from "./storage.js";
 import { buildSkillsSection, listSkills } from "./skills.js";
 
 const execFileAsync = promisify(execFile);
@@ -12,6 +12,7 @@ export const SYSTEM_PROMPT = `You are an experiened software engineer.
 You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.
 
 When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash (npm install --global trash-cli) instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.
+
 > Always use utf-8, no emojis unless needed by your task.`;
 
 /**
@@ -51,14 +52,18 @@ export async function buildEnvironmentMessage(
   session: StoredSession,
 ): Promise<string> {
   const lines = [
-    `Working directory: ${session.cwd}.`,
-    `Current date/time: ${session.createdAt}.`,
+    "<environment>",
+    "<session-state>fresh-started</session-state>",
+    `<session-transcript>${sessionDirectory(session.cwd)}</session-transcript>`,
+    `<working-directory>${session.cwd}</working-directory>`,
+    `<current-time>${session.createdAt}</current-time>`,
   ];
   const git = await readSimpleGitInfo(session.cwd);
   if (git) {
     lines.push(...git);
-    lines.push("");
     lines.push(
+      "",
+      "<git-remainder>",
       "> Follow Conventional Commits; keep the commit message body concise.",
       "> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.",
     );
@@ -68,6 +73,7 @@ export async function buildEnvironmentMessage(
         `> This project contains git submodules: ${submodules.join(", ")}.`,
       );
     }
+    lines.push("</git-remainder>");
   }
   // Skills are opt-in and frozen at session creation: with
   // ZEN_AGENT_SHOW_SKILLS_CATALOG=1 the catalog (and everything else in this
@@ -80,6 +86,7 @@ export async function buildEnvironmentMessage(
       lines.push("", buildSkillsSection(skills));
     }
   }
+  lines.push("</environment>");
   return lines.join("\n");
 }
 
@@ -95,13 +102,15 @@ export async function buildSessionContinuedMessage(
   session: StoredSession,
 ): Promise<string> {
   const lines = [
-    "Session continued/resumed.",
-    `Current date/time: ${new Date().toISOString()}.`,
+    "<environment>",
+    "<session-state>resumed</session-state>",
+    `<current-time>${new Date().toISOString()}</current-time>`,
   ];
   const git = await readSimpleGitInfo(session.cwd);
   if (git) {
     lines.push(...git);
   }
+  lines.push("</environment>");
   return lines.join("\n");
 }
 
@@ -138,7 +147,8 @@ async function readSimpleGitInfo(cwd: string): Promise<string[] | null> {
         ? "clean"
         : `${changed} changed file${changed === 1 ? "" : "s"}`;
     return [
-      `(Git) branch: ${branch} | status: ${state}`,
+      `<git-branch>${branch}</git-branch>`,
+      `<git-status>${state}</git-status>`,
     ];
   } catch {
     return null;
