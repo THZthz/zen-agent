@@ -218,20 +218,20 @@ export async function buildSkillInvocationPrompt(
 ): Promise<string> {
   const content = (await readSkillMarkdown(skill)).trim();
   const lines = [
-    `The user invoked the "${skill.name}" skill with the /${skill.name} slash command.`,
+    "<skill-invoked>",
+    `<skill-name>${skill.name}</skill-name>`,
   ];
   if (argument.length > 0) {
-    lines.push(`Skill argument: \n<argument>\n${argument}\n</argument>`);
+    lines.push(`<skill-argument>\n${argument}\n</skill-argument>`);
   }
   lines.push(
-    "",
-    "Follow the skill's instructions below. You may use your bash tool (in the session working directory) to gather facts or read any files, scripts, or references the skill mentions.",
-    "",
-    `--- ${skill.name} (SKILL.md) ---`,
-    "<content>",
+    "<skill-instruction>",
+    `<skill-instruction-path>${join(skill.path, SKILL_FILE)}</skill-instruction-path>`,
+    "<skill-instruction-content>",
     content,
-    "</content>",
-    `--- end of ${skill.name} ---`,
+    "</skill-instruction-content>",
+    "</skill-instruction>",
   );
+  lines.push("</skill-invoked>");
   return lines.join("\n");
 }
