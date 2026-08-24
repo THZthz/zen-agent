@@ -1,4 +1,5 @@
 import type { LlmMessage, ModelId, ThinkingEffort } from "./storage.js";
+import { healMessages } from "./heal.js";
 import { fetchWithRetry, type RetryOptions } from "./retry.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 
@@ -292,7 +293,31 @@ export interface ChatCompletionsOptions {
 export async function runChatCompletions(
   options: ChatCompletionsOptions,
 ): Promise<LlmStepResult> {
-  const wireMessages = toOpenAiMessages(options.messages, options.reasoningMessageField);
+  // Heal the history before sending: drop unpaired assistant tool calls and
+  // stray tool results (DeepSeek 400s on either shape) without mutating the
+  // session's stored messages.
+  const healed = healMessages(options.messages);
+  if (healed.droppedAssistants > 0 || healed.droppedTools > 0) {
+    console.warn(
+      `${options.label}: dropped ${healed.droppedAssistants} assistant message(s) with unpaired tool calls and ${healed.droppedTools} stray tool message(s)`,
+    );
+  }
+  const wireMessages = toOpenAiMessages(healed.messages, options.reasoningMessageField);
+
+  // Thinking-mode DeepSeek 400s on assistant messages without
+  // `reasoning_content`. Back-fill "" — thinking-mode sessions only, because
+  // on non-thinking sessions the extra field would churn the prefix cache.
+  if (
+    (options.thinkingEffort ?? "off") !== "off" &&
+    options.reasoningMessageField === "reasoning_content"
+  ) {
+    for (const message of wireMessages) {
+      const wire = message as { role?: string; [key: string]: unknown };
+      if (wire.role === "assistant" && typeof wire[options.reasoningMessageField] !== "string") {
+        wire[options.reasoningMessageField] = "";
+      }
+    }
+  }
   const body: Record<string, unknown> = {
     model: options.model,
     messages: [
