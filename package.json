@@ -26,7 +26,8 @@
   "license": "MIT",
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
-    "ai": "^7.0.68"
+    "ai": "^7.0.68",
+    "sonyflake": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Sonyflake } from 'sonyflake';
 import {
   createStoredSession,
   DEFAULT_MODEL,
@@ -152,8 +153,27 @@ const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
   },
 ];
 
+const sonyflake = new Sonyflake({
+  machineId: 0x0d000721 // Unique per server/container
+});
+
+const BASE62_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function toBase62(bigintNum: bigint): string {
+  if (bigintNum === 0n) return "0";
+  let result = "";
+  let num = bigintNum;
+  while (num > 0n) {
+    result = BASE62_CHARS[Number(num % 62n)] + result;
+    num = num / 62n;
+  }
+  return result;
+}
+
 function newMessageId(): string {
-  return `msg_${randomBytes(8).toString("hex")}`;
+  const id = sonyflake.nextId(); // Returns a BigInt or stringified BigInt
+  const bigintId = BigInt(id);
+  return `msg_${toBase62(bigintId)}`; // Example: msg_7zK4X9p2Q
 }
 
 function newSessionIdForPrompt(): string {
