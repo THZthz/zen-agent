@@ -1,4 +1,5 @@
 import type { LlmMessage, ModelId, ThinkingEffort } from "./storage.js";
+import { fetchWithRetry, type RetryOptions } from "./retry.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 
 export interface LlmToolCall {
@@ -254,6 +255,8 @@ export interface ChatCompletionsOptions {
   extraBody?: Record<string, unknown>;
   /** Extra request headers for this provider (e.g. OpenRouter's HTTP-Referer / X-Title). */
   extraHeaders?: Record<string, string>;
+  /** Retry configuration for the initial chat request. Pass `{ maxAttempts: 1 }` to disable retries. */
+  retry?: RetryOptions;
   /** Maps a thinking effort to extra body fields; return undefined to omit them. */
   effortBody?: (effort: ThinkingEffort) => Record<string, unknown> | undefined;
   signal?: AbortSignal;
@@ -322,47 +325,29 @@ export async function runChatCompletions(
   let rawUsage: unknown;
   const toolCallsByIndex = new Map<number, PartialToolCall>();
 
-  const fetchWithRetry = async (): Promise<Response> => {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const response = await fetch(`${options.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${options.apiKey}`,
-            ...options.extraHeaders,
-          },
-          body: JSON.stringify(body),
-          signal: options.signal,
-        });
-        if (response.ok) {
-          return response;
-        }
-        const errorBody = await response.text().catch(() => "");
-        lastError = new Error(
-          `${options.label} API error ${response.status}: ${errorBody.slice(0, 500)}`,
-        );
-        if (
-          response.status !== 429 &&
-          response.status < 500 &&
-          !(options.signal?.aborted ?? false)
-        ) {
-          throw lastError;
-        }
-      } catch (error) {
-        if (options.signal?.aborted) {
-          throw error;
-        }
-        lastError = error;
-      }
-      // Retryable (429/5xx/network): back off before the next attempt.
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-    }
-    throw lastError ?? new Error(`${options.label} request failed`);
-  };
-
-  const response = await fetchWithRetry();
+  const response = await fetchWithRetry(
+    fetch,
+    `${options.baseUrl}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${options.apiKey}`,
+        ...options.extraHeaders,
+      },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    },
+    { ...options.retry, signal: options.signal },
+  );
+  if (!response.ok) {
+    // Only the initial fetch is retried (see fetchWithRetry); a non-2xx here
+    // means the status is non-retryable or attempts ran out — surface it.
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(
+      `${options.label} API error ${response.status}: ${errorBody.slice(0, 500)}`,
+    );
+  }
   if (!response.body) {
     throw new Error(`${options.label} response has no body`);
   }
