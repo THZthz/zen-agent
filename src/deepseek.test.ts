@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   costYuan,
+  fetchDeepSeekBalance,
   getModelPricing,
   isPeakTime,
   parseDeepSeekUsage,
@@ -516,5 +517,84 @@ describe("runLlmStep message wiring", () => {
       { role: "user", name: "Amias", content: "hello" },
       { role: "user", content: "plain user" },
     ]);
+  });
+});
+
+describe("fetchDeepSeekBalance", () => {
+  const originalEnv = { ...process.env };
+  let server: import("node:http").Server | undefined;
+
+  function startServer(
+    handler: (
+      req: import("node:http").IncomingMessage,
+      res: import("node:http").ServerResponse,
+    ) => void,
+  ): Promise<number> {
+    return new Promise((resolve) => {
+      const srv = require("node:http").createServer(handler);
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+  }
+
+  beforeEach(() => {
+    process.env.DEEPSEEK_API_KEY = "test";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    server?.close();
+    server = undefined;
+  });
+
+  it("reads the CNY balance info and sends the API key", async () => {
+    let authorization: string | undefined;
+    const port = await startServer((req, res) => {
+      authorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          is_available: true,
+          balance_infos: [
+            {
+              currency: "CNY",
+              total_balance: "110.00",
+              granted_balance: "10.00",
+              topped_up_balance: "100.00",
+            },
+          ],
+        }),
+      );
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    const balance = await fetchDeepSeekBalance();
+
+    expect(authorization).toBe("Bearer test");
+    expect(balance).toEqual({
+      isAvailable: true,
+      currency: "CNY",
+      totalBalanceCny: 110,
+      grantedBalanceCny: 10,
+      toppedUpBalanceCny: 100,
+    });
+  });
+
+  it("throws on a non-OK response", async () => {
+    const port = await startServer((_req, res) => {
+      res.writeHead(401);
+      res.end("{\"error\":{\"message\":\"invalid key\"}}");
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    await expect(fetchDeepSeekBalance()).rejects.toThrow(/401/);
+  });
+
+  it("throws without DEEPSEEK_API_KEY", async () => {
+    delete process.env.DEEPSEEK_API_KEY;
+    await expect(fetchDeepSeekBalance()).rejects.toThrow(/DEEPSEEK_API_KEY/);
   });
 });

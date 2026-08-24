@@ -27,6 +27,7 @@ import { promptBlocksToText } from "./prompt-content.js";
 import { executeLlmToolCall } from "./tool-execution.js";
 import {
   costYuan,
+  fetchDeepSeekBalance,
   getContextWindowTokens,
   getModelPricing,
   runLlmStep,
@@ -215,6 +216,13 @@ function formatStartupTimestamp(date: Date): string {
 export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
+  /**
+   * Most recent account balance snapshot (CNY) from DeepSeek's /user/balance
+   * endpoint, captured at the end of each turn. The delta to the next turn's
+   * snapshot is compared against the locally estimated cost to verify token
+   * accounting (see verifyTurnCost). Null until the first turn completes.
+   */
+  private lastObservedBalanceCny: number | null = null;
   /**
    * Per-startup debug log identity: "YYYY-MM-DD-HH-mm-ss_<uuid>", e.g.
    * 2026-08-21-23-06-04_<uuid>. Created once per agent process; all runtime
@@ -820,6 +828,58 @@ export class ZenAgent {
       messageId: newMessageId(),
       content: { type: "text", text },
     });
+    // Cross-check the locally estimated cost against DeepSeek's actual
+    // billing; fire-and-forget so a slow/failed balance request never
+    // delays or breaks the stats bubble.
+    void this.verifyTurnCost(active, turn);
+  }
+
+  /**
+   * Verify turn stats against DeepSeek's billing and log the result to
+   * log.jsonl ("turn stats balance verify").
+   *
+   * DeepSeek's /user/balance endpoint returns the current account balance;
+   * the delta between this turn's snapshot and the previous turn's snapshot
+   * should equal the turn's locally estimated cost (turn.costYuan, derived
+   * from the usage fields DeepSeek streams back per step). A persistent
+   * mismatch means the pricing table or token counting is wrong. Balance
+   * values are only two-decimal-precise, so single-turn deltas are noisy —
+   * this is data gathering only, no behavior change.
+   */
+  private async verifyTurnCost(
+    active: ActiveSession,
+    turn: TurnStats,
+  ): Promise<void> {
+    try {
+      const balance = await fetchDeepSeekBalance();
+      const details: Record<string, unknown> = {
+        sessionId: active.session.sessionId,
+        turn: active.session.usage.turns,
+        model: active.session.config.model,
+        estimatedTurnCostYuan: roundYuan(turn.costYuan),
+        sessionEstimatedCostYuan: roundYuan(active.session.usage.costYuan),
+        balanceIsAvailable: balance.isAvailable,
+        balanceCurrency: balance.currency,
+        balanceTotalCny: balance.totalBalanceCny,
+        balanceGrantedCny: balance.grantedBalanceCny,
+        balanceToppedUpCny: balance.toppedUpBalanceCny,
+      };
+      const before = this.lastObservedBalanceCny;
+      if (before !== null) {
+        const balanceDelta = before - balance.totalBalanceCny;
+        details.balanceBeforeCny = before;
+        details.balanceDeltaCny = roundYuan(balanceDelta);
+        details.deltaVsEstimatedCny = roundYuan(balanceDelta - turn.costYuan);
+      }
+      this.lastObservedBalanceCny = balance.totalBalanceCny;
+      await this.logRuntime(active.session.cwd, "info", "turn stats balance verify", details);
+    } catch (error) {
+      await this.logRuntime(active.session.cwd, "warn", "turn stats balance verify failed", {
+        sessionId: active.session.sessionId,
+        turn: active.session.usage.turns,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**
