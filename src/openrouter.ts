@@ -1,4 +1,10 @@
-import type { ThinkingEffort } from "./storage.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import {
+  clientModelsPath,
+  DEFAULT_OPENROUTER_MODEL,
+  type ThinkingEffort,
+} from "./storage.js";
 import {
   runChatCompletions,
   type LlmStepOptions,
@@ -6,8 +12,7 @@ import {
   type LlmUsage,
 } from "./llm-client.js";
 
-/** Default OpenRouter model used when OPENROUTER_MODEL is unset. */
-export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
+export { DEFAULT_OPENROUTER_MODEL } from "./storage.js";
 
 function getOpenRouterApiKey(): string {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -26,10 +31,10 @@ function getOpenRouterBaseUrl(): string {
 /**
  * Per-model metadata (USD per 1M tokens, context window).
  *
- * The live `GET /models` endpoint is the source of truth (fetched once and
- * cached); the fallbacks below only apply when that fetch fails (offline
- * start, invalid key, ...) or for models that left the catalog. The values
- * are indicative snapshots, not guaranteed current.
+ * The live `GET /models` endpoint is the source of truth (fetched once per
+ * process and cached); the fallbacks below only apply when that fetch fails
+ * (offline start, invalid key, ...) or for models that left the catalog.
+ * The values are indicative snapshots, not guaranteed current.
  */
 export interface OpenRouterModelInfo {
   /** USD per 1M input tokens. */
@@ -37,6 +42,14 @@ export interface OpenRouterModelInfo {
   /** USD per 1M output tokens. */
   outputPerM: number;
   contextLength: number;
+}
+
+/** Full catalog entry: model info plus selector-relevant fields. */
+interface CatalogEntry extends OpenRouterModelInfo {
+  id: string;
+  name: string | null;
+  /** Whether the model supports tool calling (the agent requires it). */
+  supportsTools: boolean;
 }
 
 const MODEL_FALLBACKS: Record<string, OpenRouterModelInfo> = {
@@ -51,12 +64,17 @@ const UNKNOWN_MODEL_FALLBACK: OpenRouterModelInfo = {
   contextLength: 200_000,
 };
 
+/** Live catalog fetch timeout: config options must not block session creation forever. */
+const MODELS_FETCH_TIMEOUT_MS = 5_000;
+/** Bumped whenever the persisted catalog file shape changes. */
+const MODELS_CACHE_VERSION = 1;
+
 function parsePrice(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? "");
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-let modelsCache: { key: string; promise: Promise<Map<string, OpenRouterModelInfo>> } | null =
+let modelsCache: { key: string; promise: Promise<Map<string, CatalogEntry>> } | null =
   null;
 
 /** Test hook: drop the cached /models response (env/port changes between tests). */
@@ -64,11 +82,17 @@ export function resetOpenRouterModelsCache(): void {
   modelsCache = null;
 }
 
+/** Missing `supported_parameters` metadata = assume the model supports tools. */
+function supportsTools(supportedParameters: unknown): boolean {
+  return !Array.isArray(supportedParameters) || supportedParameters.includes("tools");
+}
+
 /**
- * Fetch OpenRouter's model catalog once per (base URL, key) and cache it.
- * Never throws: callers fall back to the curated table when the fetch fails.
+ * Fetch OpenRouter's model catalog once per (base URL, key) and cache it in
+ * memory for the process lifetime. Throws on missing key/HTTP errors; callers
+ * fall back to the persisted file or the static table.
  */
-async function fetchOpenRouterModels(): Promise<Map<string, OpenRouterModelInfo>> {
+async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
   const apiKey = getOpenRouterApiKey();
   const baseUrl = getOpenRouterBaseUrl();
   const key = `${baseUrl}|${apiKey}`;
@@ -78,6 +102,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, OpenRouterModelInfo>
   const promise = (async () => {
     const response = await fetch(`${baseUrl}/models`, {
       headers: { authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw new Error(
@@ -87,22 +112,27 @@ async function fetchOpenRouterModels(): Promise<Map<string, OpenRouterModelInfo>
     const data = (await response.json()) as {
       data?: Array<{
         id?: string;
+        name?: string | null;
         context_length?: number;
         pricing?: { prompt?: string; completion?: string; request?: string };
+        supported_parameters?: string[];
       }>;
     };
-    const models = new Map<string, OpenRouterModelInfo>();
+    const models = new Map<string, CatalogEntry>();
     for (const model of data.data ?? []) {
       if (!model.id) {
         continue;
       }
       models.set(model.id, {
+        id: model.id,
+        name: model.name ?? null,
         inputPerM: parsePrice(model.pricing?.prompt),
         outputPerM: parsePrice(model.pricing?.completion),
         contextLength:
           typeof model.context_length === "number" && model.context_length > 0
             ? model.context_length
             : 200_000,
+        supportsTools: supportsTools(model.supported_parameters),
       });
     }
     return models;
@@ -117,14 +147,134 @@ async function fetchOpenRouterModels(): Promise<Map<string, OpenRouterModelInfo>
  */
 export async function getOpenRouterModelInfo(model: string): Promise<OpenRouterModelInfo> {
   try {
-    const info = (await fetchOpenRouterModels()).get(model);
-    if (info) {
-      return info;
+    const entry = (await fetchOpenRouterModels()).get(model);
+    if (entry) {
+      return {
+        inputPerM: entry.inputPerM,
+        outputPerM: entry.outputPerM,
+        contextLength: entry.contextLength,
+      };
     }
   } catch {
     // Offline start, bad key, ... — use the static fallbacks.
   }
   return MODEL_FALLBACKS[model] ?? UNKNOWN_MODEL_FALLBACK;
+}
+
+/** Shape of the persisted catalog file (clientModelsPath). */
+interface ModelsCacheFile {
+  version: number;
+  fetchedAt: string;
+  baseUrl: string;
+  models: CatalogEntry[];
+}
+
+/** Avoid rewriting the file on every session in one process. */
+let modelsPersistedCwd: string | null = null;
+
+/** Best-effort: persist the fetched catalog so offline restarts can use it. */
+async function writeModelsFile(cwd: string, catalog: Map<string, CatalogEntry>): Promise<void> {
+  if (modelsPersistedCwd === cwd) {
+    return;
+  }
+  try {
+    const payload: ModelsCacheFile = {
+      version: MODELS_CACHE_VERSION,
+      fetchedAt: new Date().toISOString(),
+      baseUrl: getOpenRouterBaseUrl(),
+      models: [...catalog.values()],
+    };
+    await mkdir(dirname(clientModelsPath(cwd)), { recursive: true });
+    await writeFile(clientModelsPath(cwd), `${JSON.stringify(payload)}\n`, "utf8");
+    modelsPersistedCwd = cwd;
+  } catch {
+    // Caching must never break session creation.
+  }
+}
+
+/** Read the persisted catalog; null when absent, malformed or outdated. */
+async function readModelsFile(cwd: string): Promise<Map<string, CatalogEntry> | null> {
+  try {
+    const raw = await readFile(clientModelsPath(cwd), "utf8");
+    const parsed = JSON.parse(raw) as ModelsCacheFile;
+    if (parsed.version !== MODELS_CACHE_VERSION || !Array.isArray(parsed.models)) {
+      return null;
+    }
+    const catalog = new Map<string, CatalogEntry>();
+    for (const entry of parsed.models) {
+      if (entry && typeof entry.id === "string" && entry.id.length > 0) {
+        catalog.set(entry.id, entry);
+      }
+    }
+    return catalog;
+  } catch {
+    return null;
+  }
+}
+
+export interface OpenRouterModelOption {
+  value: string;
+  name: string;
+  description: string;
+}
+
+/**
+ * Model choices for the session selector. Prefers the live catalog (fetched
+ * automatically and persisted to `.sessions/client/models.openrouter.json`),
+ * falls back to the persisted file for offline starts, and returns null when
+ * neither exists (the caller then uses the static list).
+ */
+export async function getOpenRouterModelOptions(
+  cwd: string,
+): Promise<OpenRouterModelOption[] | null> {
+  let catalog: Map<string, CatalogEntry> | null = null;
+  try {
+    catalog = await fetchOpenRouterModels();
+    await writeModelsFile(cwd, catalog);
+  } catch {
+    catalog = await readModelsFile(cwd);
+  }
+  if (!catalog || catalog.size === 0) {
+    return null;
+  }
+  return buildModelOptions(catalog);
+}
+
+/** Tool-capable models only; `openrouter/free` first, then alphabetical. */
+function buildModelOptions(catalog: Map<string, CatalogEntry>): OpenRouterModelOption[] {
+  const options: OpenRouterModelOption[] = [];
+  for (const entry of catalog.values()) {
+    if (!entry.supportsTools) {
+      continue;
+    }
+    options.push({
+      value: entry.id,
+      name: entry.name ?? entry.id,
+      description: `${entry.name ?? entry.id} · ${formatContext(entry.contextLength)}`,
+    });
+  }
+  options.sort((a, b) => a.value.localeCompare(b.value, "en"));
+  const freeIndex = options.findIndex((option) => option.value === "openrouter/free");
+  if (freeIndex === -1) {
+    options.unshift({
+      value: "openrouter/free",
+      name: "OpenRouter Free",
+      description: "OpenRouter's free-tier routing model",
+    });
+  } else if (freeIndex > 0) {
+    options.unshift(...options.splice(freeIndex, 1));
+  }
+  return options;
+}
+
+function formatContext(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M ctx`;
+  }
+  if (tokens >= 1000) {
+    return `${Math.round(tokens / 1000)}K ctx`;
+  }
+  return `${tokens} ctx`;
 }
 
 /** OpenRouter's streaming usage object (normalized OpenAI shape). */

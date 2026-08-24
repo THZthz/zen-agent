@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   DEFAULT_OPENROUTER_MODEL,
   fetchOpenRouterBalance,
   getOpenRouterModelInfo,
+  getOpenRouterModelOptions,
   parseOpenRouterUsage,
   resetOpenRouterModelsCache,
   runOpenRouterStep,
@@ -316,6 +321,132 @@ describe("getOpenRouterModelInfo", () => {
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const info = await getOpenRouterModelInfo("vendor/model");
     expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
+  });
+});
+
+describe("getOpenRouterModelOptions", () => {
+  const originalEnv = { ...process.env };
+  let server: import("node:http").Server | undefined;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "zen-agent-models-"));
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    resetOpenRouterModelsCache();
+    server?.close();
+    server = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("fetches the live catalog, persists it, and returns tool-capable models sorted with openrouter/free first", async () => {
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer(
+        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              data: [
+                {
+                  id: "vendor/zeta",
+                  name: "Zeta",
+                  context_length: 1000,
+                  pricing: { prompt: "1", completion: "2" },
+                  supported_parameters: ["tools"],
+                },
+                {
+                  id: "vendor/alpha",
+                  name: "Alpha",
+                  context_length: 200000,
+                  pricing: { prompt: "0.5", completion: "1.5" },
+                },
+                {
+                  id: "vendor/no-tools",
+                  name: "No Tools",
+                  context_length: 1000,
+                  pricing: { prompt: "1", completion: "2" },
+                  supported_parameters: ["reasoning"],
+                },
+                {
+                  id: "openrouter/free",
+                  name: "OpenRouter Free",
+                  context_length: 128000,
+                  pricing: { prompt: "0", completion: "0" },
+                  supported_parameters: ["tools"],
+                },
+              ],
+            }),
+          );
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+
+    const options = await getOpenRouterModelOptions(dir);
+    expect(options?.map((o) => o.value)).toEqual([
+      "openrouter/free",
+      "vendor/alpha",
+      "vendor/zeta",
+    ]);
+    expect(options?.[0].description).toContain("128K");
+
+    // The catalog is persisted for offline restarts.
+    const raw = await readFile(
+      join(dir, ".sessions", "client", "models.openrouter.json"),
+      "utf8",
+    );
+    const file = JSON.parse(raw) as {
+      version: number;
+      models: Array<{ id: string }>;
+    };
+    expect(file.version).toBe(1);
+    expect(file.models.map((m) => m.id)).toEqual([
+      "vendor/zeta",
+      "vendor/alpha",
+      "vendor/no-tools",
+      "openrouter/free",
+    ]);
+  });
+
+  it("falls back to the persisted file when the live fetch fails", async () => {
+    await mkdir(join(dir, ".sessions", "client"), { recursive: true });
+    await writeFile(
+      join(dir, ".sessions", "client", "models.openrouter.json"),
+      JSON.stringify({
+        version: 1,
+        fetchedAt: new Date().toISOString(),
+        baseUrl: "https://openrouter.ai/api/v1",
+        models: [
+          {
+            id: "cached/model",
+            name: "Cached",
+            inputPerM: 1,
+            outputPerM: 2,
+            contextLength: 1000,
+            supportsTools: true,
+          },
+        ],
+      }),
+      "utf8",
+    );
+    delete process.env.OPENROUTER_API_KEY;
+
+    const options = await getOpenRouterModelOptions(dir);
+    expect(options?.map((o) => o.value)).toEqual(["openrouter/free", "cached/model"]);
+  });
+
+  it("returns null when neither the live fetch nor the file is available", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    expect(await getOpenRouterModelOptions(dir)).toBeNull();
   });
 });
 

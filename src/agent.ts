@@ -36,6 +36,7 @@ import {
   type LlmToolCall,
   type LlmUsage,
 } from "./provider.js";
+import { getOpenRouterModelOptions } from "./openrouter.js";
 import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
 import {
@@ -170,8 +171,14 @@ const OPENROUTER_MODEL_OPTIONS: Array<{
   },
 ];
 
-function modelConfigOption(provider: ProviderId) {
+/**
+ * Model selector for a provider. OpenRouter sessions get the live model
+ * catalog (auto-fetched, cached on disk, static list as fallback); DeepSeek
+ * sessions get the two fixed models.
+ */
+async function modelConfigOption(provider: ProviderId, cwd: string) {
   if (provider === "openrouter") {
+    const options = (await getOpenRouterModelOptions(cwd)) ?? OPENROUTER_MODEL_OPTIONS;
     return {
       id: "model",
       name: "Model",
@@ -179,7 +186,7 @@ function modelConfigOption(provider: ProviderId) {
       category: "model",
       type: "select",
       currentValue: getDefaultModel("openrouter"),
-      options: OPENROUTER_MODEL_OPTIONS,
+      options,
     };
   }
   return {
@@ -371,7 +378,7 @@ export class ZenAgent {
     this.scheduleAvailableCommands(session.sessionId, cx);
     return {
       sessionId: session.sessionId,
-      configOptions: this.getConfigOptions(session),
+      configOptions: await this.getConfigOptions(session),
     };
   }
 
@@ -399,7 +406,7 @@ export class ZenAgent {
     this.scheduleAvailableCommands(session.sessionId, cx);
 
     return {
-      configOptions: this.getConfigOptions(session),
+      configOptions: await this.getConfigOptions(session),
     };
   }
 
@@ -416,7 +423,7 @@ export class ZenAgent {
     });
     this.scheduleAvailableCommands(session.sessionId, cx);
     return {
-      configOptions: this.getConfigOptions(session),
+      configOptions: await this.getConfigOptions(session),
     };
   }
 
@@ -506,7 +513,7 @@ export class ZenAgent {
     }
 
     await this.save(active);
-    return { configOptions: this.getConfigOptions(active.session) };
+    return { configOptions: await this.getConfigOptions(active.session) };
   }
 
   /**
@@ -1476,14 +1483,14 @@ Usage: /sandbox on | off`,
     return session.config.sandbox || process.env.ZEN_AGENT_SANDBOX === "1";
   }
 
-  private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
+  private async getConfigOptions(session: StoredSession): Promise<acp.SessionConfigOption[]> {
     return [
       {
         ...PROVIDER_CONFIG_OPTION,
         currentValue: session.config.provider,
       } as acp.SessionConfigOption,
       {
-        ...modelConfigOption(session.config.provider),
+        ...(await modelConfigOption(session.config.provider, session.cwd)),
         currentValue: session.config.model,
       } as acp.SessionConfigOption,
       {

@@ -50,6 +50,7 @@ Layout under the project's `.sessions/` directory:
   <sessionId>/terminals/input-<ts>-<callId>.sh    bash script per tool call
   <sessionId>/terminals/output-<ts>-<callId>.log  full `script -q -e` output
   client/<startupTs>_<uuid>/log.jsonl         per-process runtime diagnostic log
+  client/models.openrouter.json               cached OpenRouter model catalog
 ```
 
 `state.json` holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`), `usage` and `turnStats` (cumulative + per-turn statistics). A global index at `$XDG_DATA_HOME/zen-agent/index.json` maps session ids to their `cwd`.
@@ -170,6 +171,7 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 - Sends `stream_options: { include_usage: true }` (OpenRouter omits usage otherwise). `parseOpenRouterUsage` reads generic `prompt_tokens`/`completion_tokens` plus optional passthrough cache (`prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`) and reasoning fields.
 - `reasoning_effort` uses the OpenAI vocabulary: `off` omits it, `high`/`max` → `high`.
 - Cost/context: `GET /models` (fetched once per base URL+key, cached) provides USD pricing and `context_length`; static fallbacks cover `openrouter/free` ($0) and generic defaults for unknown slugs. OpenRouter bills cached reads at the regular input rate. Balance verification: `GET /auth/key` (remaining = limit − usage).
+- **Model catalog**: the catalog is auto-fetched from `/models` (5s timeout) the first time an OpenRouter session's config options are requested, kept in memory per process, and persisted to `<cwd>/.sessions/client/models.openrouter.json` (versioned; best-effort). Offline starts load that file. The session `model` selector is built from the catalog — tool-capable models only (`supported_parameters` missing = assume yes), `openrouter/free` pinned first, then alphabetical — with the static list (`openrouter/free`) as final fallback.
 
 ### 6.4 Dispatch (`src/provider.ts`)
 

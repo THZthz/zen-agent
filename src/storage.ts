@@ -5,7 +5,6 @@ import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { TurnStats } from "./turn-stats.js";
-import { DEFAULT_OPENROUTER_MODEL } from "./openrouter.js";
 
 /**
  * A user message that may carry a `name` (the OpenAI wire `name` field,
@@ -32,6 +31,7 @@ export type ModelId = string;
 export type ThinkingEffort = "off" | "high" | "max";
 
 export const DEFAULT_DEEPSEEK_MODEL: ModelId = "deepseek-v4-flash";
+export const DEFAULT_OPENROUTER_MODEL: ModelId = "openrouter/free";
 export const DEFAULT_PROVIDER: ProviderId = "deepseek";
 export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "off";
 
@@ -177,6 +177,14 @@ export function sessionLlmLogPath(cwd: string, sessionId: string): string {
  */
 export function clientLogPath(cwd: string, startupKey: string): string {
   return join(sessionDirectory(cwd), "client", startupKey, "log.jsonl");
+}
+
+/**
+ * Cached OpenRouter model catalog shared across agent restarts:
+ * <project>/.sessions/client/models.openrouter.json
+ */
+export function clientModelsPath(cwd: string): string {
+  return join(sessionDirectory(cwd), "client", "models.openrouter.json");
 }
 
 function generateSessionId(): string {
