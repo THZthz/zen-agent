@@ -38,6 +38,13 @@ import {
 } from "./provider.js";
 import { getOpenRouterModelOptions } from "./openrouter.js";
 import { formatLlmError } from "./llm-errors.js";
+import { BASH_TOOL_SCHEMA } from "./llm-client.js";
+import {
+  appendCacheDiagnostic,
+  buildCacheDiagnostic,
+  latestCacheDiagnostic,
+  prefixDiagnosticHashes,
+} from "./cache-diagnostics.js";
 import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
 import {
@@ -688,13 +695,17 @@ export class ZenAgent {
       }
 
       const assistantMessageId = newMessageId();
+      // Captured once per step: the system prompt is part of the byte-stable
+      // prefix the provider's context cache keys on, so it must be identical
+      // for the request, the transcript, and the cache diagnostics.
+      const system = buildSystemPrompt(active.session);
 
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
         type: "llm_request",
         timestamp: new Date().toISOString(),
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
-        system: buildSystemPrompt(active.session),
+        system,
         messages: active.session.llmMessages,
       });
 
@@ -719,7 +730,7 @@ export class ZenAgent {
         signal,
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
-        system: buildSystemPrompt(active.session),
+        system,
         onTextDelta: async (delta) => {
           stream.push("message", delta);
         },
@@ -741,6 +752,7 @@ export class ZenAgent {
 
       if (llmResult.usage) {
         await this.accumulateTurnUsage(active, turn, llmResult.usage);
+        await this.recordCacheDiagnostic(active, llmResult.usage, system);
         contextUsed = llmResult.usage.inputTokens;
         await this.reportUsage(active, cx, contextUsed);
         await this.logStepStats(
@@ -873,6 +885,60 @@ export class ZenAgent {
       usage,
       await getModelPricing(active.session.config.provider, active.session.config.model),
     );
+  }
+
+  /**
+   * Per-step cache diagnostics: hash the stable prefix (system prompt, tool
+   * schemas, frozen environment snapshot) that the provider's context cache
+   * keys on, infer the miss reason locally from hash deltas, and warn when
+   * actionable churn is detected. Entries persist on the session (ring-
+   * buffered at 50) so the history survives restarts.
+   */
+  private async recordCacheDiagnostic(
+    active: ActiveSession,
+    usage: LlmUsage,
+    system: string,
+  ): Promise<void> {
+    const pricing = await getModelPricing(
+      active.session.config.provider,
+      active.session.config.model,
+    );
+    const prefix = prefixDiagnosticHashes({
+      system,
+      toolSpecs: [BASH_TOOL_SCHEMA],
+      env: active.session.llmMessages.find(isEnvironmentMessage) ?? null,
+    });
+    const entry = buildCacheDiagnostic({
+      turn: active.session.usage.turns + 1,
+      model: active.session.config.model,
+      usage: {
+        inputTokens: usage.inputTokens,
+        cachedTokens: usage.cacheReadTokens,
+        missTokens: usage.cacheMissTokens,
+      },
+      pricing,
+      prefix,
+      previous: latestCacheDiagnostic(active.session.cacheDiagnostics),
+    });
+    active.session.cacheDiagnostics = appendCacheDiagnostic(
+      active.session.cacheDiagnostics,
+      entry,
+    );
+    if (
+      entry.missReason === "system-prompt-changed" ||
+      entry.missReason === "env-snapshot-changed" ||
+      entry.missReason === "tool-list-changed" ||
+      entry.missReason === "tool-schema-or-order-changed"
+    ) {
+      await this.logRuntime(active.session.cwd, "warn", "cache miss", {
+        sessionId: active.session.sessionId,
+        turn: entry.turn,
+        model: entry.model,
+        hitRate: entry.cacheHitRate,
+        reason: entry.missReason,
+        detail: entry.missReasonDetail,
+      });
+    }
   }
 
   private mergeTurnStats(active: ActiveSession, turn: TurnStats): void {

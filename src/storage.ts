@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
+import type { CacheDiagnosticEntry } from "./cache-diagnostics.js";
 import type { TurnStats } from "./turn-stats.js";
 
 /**
@@ -126,6 +127,8 @@ export interface StoredSession {
   usage: SessionUsage;
   /** Per-turn stats, one entry per completed LLM-backed turn. */
   turnStats: TurnStats[];
+  /** Per-step cache diagnostics, newest last (ring-buffered at 50 entries). */
+  cacheDiagnostics?: CacheDiagnosticEntry[];
 }
 
 interface SessionIndex {
@@ -251,13 +254,14 @@ export async function createStoredSession(
     llmMessages: [],
     config: {
       provider,
-      model: provider == "openrouter" ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+      model: provider === "openrouter" ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: "",
       sandbox: false,
     },
     usage: emptySessionUsage(),
     turnStats: [],
+    cacheDiagnostics: [],
   };
   await writeSession(session);
   await rememberSession(session);
