@@ -86,6 +86,37 @@ Without the sandbox, point the command at `node` directly:
 }
 ```
 
+### OpenRouter
+
+Set `ZEN_AGENT_LLM_PROVIDER=openrouter` and an OpenRouter key to route the
+agent through OpenRouter instead of DeepSeek (per-process: each agent server
+gets one provider):
+
+```json
+{
+  "agent_servers": {
+    "Zen Agent": {
+      "default_config_options": {
+        "model": "anthropic/claude-sonnet-4",
+        "thinking_effort": "max"
+      },
+      "type": "custom",
+      "command": "node",
+      "args": ["/home/amias/projects/zen-agent/dist/index.js"],
+      "env": {
+        "ZEN_AGENT_LLM_PROVIDER": "openrouter",
+        "ZEN_AGENT_OPENROUTER_API_KEY": "sk-or-v1-...",
+        "ZEN_AGENT_OPENROUTER_MODEL": "anthropic/claude-sonnet-4",
+        "ZEN_AGENT_OPENROUTER_SITE_URL": "https://zed.dev",
+        "ZEN_AGENT_OPENROUTER_APP_NAME": "Zen Agent",
+        "ZEN_AGENT_MAX_TURN_STEPS": "1000",
+        "ZEN_AGENT_SANDBOX": "1"
+      }
+    }
+  }
+}
+```
+
 The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
 
 ## Sandboxing with Bubblewrap
@@ -209,6 +240,8 @@ Notes:
 
 ## Models
 
+### DeepSeek (default)
+
 | Config value | API model version | Context | Max output | Thinking |
 | --- | --- | --- | --- | --- |
 | `deepseek-v4-flash` | `DeepSeek-V4-Flash-0731` | 1M | 384K | non-thinking + thinking (default) |
@@ -216,13 +249,36 @@ Notes:
 
 Both models support JSON output, tool calls, the Responses API, and the Anthropic API.
 
+### OpenRouter
+
+With `ZEN_AGENT_LLM_PROVIDER=openrouter`, the agent talks to
+`https://openrouter.ai/api/v1` and any OpenRouter model slug works. The
+session model selector offers a curated list; arbitrary slugs can be set via
+`ZEN_AGENT_OPENROUTER_MODEL` or `session/set_config_option`:
+
+| Config value | Notes |
+| --- | --- |
+| `anthropic/claude-sonnet-4` | default; strong general coding model |
+| `anthropic/claude-opus-4-1` | most capable Anthropic model |
+| `openai/gpt-5` | OpenAI's flagship reasoning model |
+| `google/gemini-2.5-pro` | long context (1M) |
+| `deepseek/deepseek-chat` | DeepSeek V3 chat via OpenRouter |
+| `deepseek/deepseek-r1` | DeepSeek's reasoning model via OpenRouter |
+
+Pricing (USD), context windows, and balance verification come from
+OpenRouter's `/models` and `/auth/key` endpoints (fetched once and cached),
+with a static fallback table for offline starts. Thinking streams live via
+OpenRouter's normalized `reasoning` field; `thinking_effort: max` maps to
+`high` (the OpenAI vocabulary). Cost is shown in USD (`$`) instead of CNY
+(`¥`).
+
 ## Session Configuration
 
 When a session is created or loaded, Zed can display two configuration selectors:
 
 | Option | Values |
 | --- | --- |
-| Model | `deepseek-v4-flash`, `deepseek-v4-pro` |
+| Model | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: curated model list (see above) |
 | Thinking Effort | `off`, `high`, `max` |
 
 These are exposed as ACP session config options and can be changed with `session/set_config_option`.
@@ -246,6 +302,12 @@ These are exposed as ACP session config options and can be changed with `session
 | `ZEN_AGENT_SANDBOX` | — | Set to `1` to run every bash tool call inside `bwrap` with `/mnt` mounted read-only (see [Sandboxing](#sandboxing-with-bubblewrap)) |
 | `ZEN_AGENT_SANDBOX_CMD` | default bwrap policy | Override the exact bwrap command used for sandboxed bash tool calls |
 | `ZEN_AGENT_SANDBOX_BLOCK_SHIM` | repo `bin/zen-agent-sandbox-block.sh` | Shim mounted (read-only) over `rm`/`grep`/`find` inside the bash-tool sandbox; refuses to run and suggests `trash`/`rg`/`fdfind` |
+| `ZEN_AGENT_LLM_PROVIDER` | `deepseek` | LLM provider: `deepseek` or `openrouter` |
+| `ZEN_AGENT_OPENROUTER_API_KEY` | — | OpenRouter API key (required when the provider is `openrouter`) |
+| `ZEN_AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
+| `ZEN_AGENT_OPENROUTER_MODEL` | `anthropic/claude-sonnet-4` | Default OpenRouter model when no session config is present; any model slug works |
+| `ZEN_AGENT_OPENROUTER_SITE_URL` | — | Sent as the `HTTP-Referer` header (app attribution on OpenRouter) |
+| `ZEN_AGENT_OPENROUTER_APP_NAME` | — | Sent as the `X-Title` header (app attribution on OpenRouter) |
 
 ## Information Displayed to the User
 
@@ -254,7 +316,7 @@ Zen Agent reports what it can through ACP, and Zed renders it natively in the ag
 | Information | How it is displayed |
 | --- | --- |
 | Context window (used / max) | ACP `usage_update` → token-usage ring in the agent panel header; tooltip shows `Context: 45% • 90K / 200K` |
-| Consumption (China yuan) | ACP `usage_update.cost` (`CNY`) → `Cost: ¥0.05` in the same tooltip |
+| Consumption | ACP `usage_update.cost` → `Cost: ¥0.05` in the same tooltip (DeepSeek, CNY) or `Cost: $0.04` (OpenRouter, USD) |
 | Turns, steps, thinking/answering time, tool time, cache hit ratio, input/output tokens, turn cost | Per-turn stats line emitted as a separate message, e.g. `Turn 3 · 4 steps · think 3.2s · answer 8.5s · tools 14.2s` + `in 45.6K · out 3.4K · cache hit 87% · ¥0.043 (session ¥0.12)` |
 | Bash tool call duration | Appended to each tool call's output card as `⏱ 3.2s` |
 
@@ -264,8 +326,8 @@ The stats line is display-only: it is never added to the LLM message history, so
 
 Cumulative stats (`usage`) and per-turn stats (`turnStats`) are persisted in
 `<project>/.sessions/<sessionId>/state.json`, so a resumed session keeps its
-turns, steps, thinking/answering/tool time, cache hit ratio, tokens and CNY
-cost across Zed restarts.
+turns, steps, thinking/answering/tool time, cache hit ratio, tokens and cost
+(in the provider's currency) across Zed restarts.
 
 
 ## Cancellation & Force-Send
@@ -290,6 +352,7 @@ Our direct client parses each SSE event as it arrives, so:
 - `delta.content` is forwarded as `agent_message_chunk` live.
 - Streaming `delta.tool_calls` fragments are accumulated per index and emitted as complete tool calls.
 - Usage is read from DeepSeek's raw chunk (`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`), which the SDK's zod schema strips — so the cache hit ratio and CNY cost are now accurate.
+- OpenRouter only includes the usage chunk when asked: the provider sets `stream_options.include_usage` and parses the generic OpenAI shape (plus passthrough cache/reasoning fields when the upstream model reports them); thinking streams via OpenRouter's normalized `reasoning` delta.
 - Retries (429/5xx) happen only before the first byte, so an in-flight stream is never replayed.
 
 Default pricing (official DeepSeek V4 pricing, CNY per 1M tokens). Off-peak price is half the peak price. Peak hours are Beijing time 09:00-12:00 and 14:00-18:00; all other hours are off-peak:

@@ -21,13 +21,27 @@ export interface NamedUserMessage {
 /** Every message we can persist in a session and send to the LLM. */
 export type LlmMessage = ModelMessage | NamedUserMessage;
 
-export type ModelId = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type ProviderId = "deepseek" | "openrouter";
+
+/**
+ * Model identifier for the active provider, e.g. "deepseek-v4-flash" or
+ * "anthropic/claude-sonnet-4" (OpenRouter uses its own model slugs).
+ */
+export type ModelId = string;
 export type ThinkingEffort = "off" | "high" | "max";
 
 export const DEFAULT_MODEL: ModelId = "deepseek-v4-flash";
+export const DEFAULT_PROVIDER: ProviderId = "deepseek";
 export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "off";
 
 export interface SessionConfig {
+  /**
+   * LLM provider backing this session (persisted so cost and currency stay
+   * consistent across restarts). Set from ZEN_AGENT_LLM_PROVIDER at session
+   * creation; sessions created before providers existed default to
+   * "deepseek" on load.
+   */
+  provider: ProviderId;
   model: ModelId;
   thinkingEffort: ThinkingEffort;
   systemPrompt: string;
@@ -212,7 +226,10 @@ async function forgetSession(sessionId: string): Promise<void> {
   }
 }
 
-export async function createStoredSession(cwd: string): Promise<StoredSession> {
+export async function createStoredSession(
+  cwd: string,
+  provider: ProviderId = DEFAULT_PROVIDER,
+): Promise<StoredSession> {
   await ensureDirectory(sessionDirectory(cwd));
   const now = new Date().toISOString();
   const session: StoredSession = {
@@ -224,6 +241,7 @@ export async function createStoredSession(cwd: string): Promise<StoredSession> {
     events: [],
     llmMessages: [],
     config: {
+      provider,
       model: DEFAULT_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: "",
@@ -263,6 +281,11 @@ export async function readStoredSession(
   }
   if (parsed.cwd !== cwd) {
     throw new Error(`Session ${sessionId} belongs to ${parsed.cwd}, not ${cwd}`);
+  }
+  // Sessions created before providers existed have no `provider`; they are
+  // DeepSeek sessions by definition (the only provider back then).
+  if (parsed.config.provider !== "deepseek" && parsed.config.provider !== "openrouter") {
+    parsed.config.provider = DEFAULT_PROVIDER;
   }
   return parsed;
 }

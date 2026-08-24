@@ -17,8 +17,8 @@ import {
   sessionLlmLogPath,
   terminalDirectory,
   writeSession,
-  type ModelId,
   type NamedUserMessage,
+  type ProviderId,
   type StoredSession,
   type ThinkingEffort,
 } from "./storage.js";
@@ -26,14 +26,16 @@ import { appendJsonLine, makeLogEntry } from "./logger.js";
 import { promptBlocksToText } from "./prompt-content.js";
 import { executeLlmToolCall } from "./tool-execution.js";
 import {
-  costYuan,
-  fetchDeepSeekBalance,
+  costFromUsage,
+  fetchBalanceSnapshot,
   getContextWindowTokens,
+  getDefaultModel,
   getModelPricing,
+  getProvider,
   runLlmStep,
   type LlmToolCall,
   type LlmUsage,
-} from "./deepseek.js";
+} from "./provider.js";
 import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
 import {
@@ -102,7 +104,7 @@ function parseMaxTurnSteps(): number {
   return parsed;
 }
 
-const MODEL_CONFIG_OPTION = {
+const DEEPSEEK_MODEL_CONFIG_OPTION = {
   id: "model",
   name: "Model",
   description: "Deepseek model used for this session",
@@ -122,6 +124,66 @@ const MODEL_CONFIG_OPTION = {
     },
   ],
 };
+
+/**
+ * Curated OpenRouter models for the session selector. Any OpenRouter model
+ * slug can be used beyond this list via ZEN_AGENT_OPENROUTER_MODEL or
+ * session/set_config_option.
+ */
+const OPENROUTER_MODEL_OPTIONS: Array<{
+  value: string;
+  name: string;
+  description: string;
+}> = [
+  {
+    value: "anthropic/claude-sonnet-4",
+    name: "Claude Sonnet 4",
+    description: "Anthropic's flagship coding model",
+  },
+  {
+    value: "anthropic/claude-opus-4-1",
+    name: "Claude Opus 4.1",
+    description: "Anthropic's most powerful model",
+  },
+  {
+    value: "openai/gpt-5",
+    name: "GPT-5",
+    description: "OpenAI's flagship reasoning model",
+  },
+  {
+    value: "google/gemini-2.5-pro",
+    name: "Gemini 2.5 Pro",
+    description: "Google's long-context flagship",
+  },
+  {
+    value: "deepseek/deepseek-chat",
+    name: "DeepSeek V3 (OpenRouter)",
+    description: "DeepSeek chat model on OpenRouter",
+  },
+  {
+    value: "deepseek/deepseek-r1",
+    name: "DeepSeek R1 (OpenRouter)",
+    description: "DeepSeek reasoning model on OpenRouter",
+  },
+];
+
+function modelConfigOption(provider: ProviderId) {
+  if (provider === "openrouter") {
+    return {
+      id: "model",
+      name: "Model",
+      description: "OpenRouter model used for this session",
+      category: "model",
+      type: "select",
+      currentValue: getDefaultModel("openrouter"),
+      options: OPENROUTER_MODEL_OPTIONS,
+    };
+  }
+  return {
+    ...DEEPSEEK_MODEL_CONFIG_OPTION,
+    currentValue: DEFAULT_MODEL,
+  };
+}
 
 const THINKING_CONFIG_OPTION = {
   id: "thinking_effort",
@@ -217,12 +279,13 @@ export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
   /**
-   * Most recent account balance snapshot (CNY) from DeepSeek's /user/balance
-   * endpoint, captured at the end of each turn. The delta to the next turn's
-   * snapshot is compared against the locally estimated cost to verify token
-   * accounting (see verifyTurnCost). Null until the first turn completes.
+   * Most recent balance snapshot for the session's provider (CNY for
+   * DeepSeek, USD for OpenRouter), captured at the end of each turn. The
+   * delta to the next turn's snapshot is compared against the locally
+   * estimated cost to verify token accounting (see verifyTurnCost). Null
+   * until the first turn completes.
    */
-  private lastObservedBalanceCny: number | null = null;
+  private lastObservedBalance: { currency: string; total: number } | null = null;
   /**
    * Per-startup debug log identity: "YYYY-MM-DD-HH-mm-ss_<uuid>", e.g.
    * 2026-08-21-23-06-04_<uuid>. Created once per agent process; all runtime
@@ -286,10 +349,10 @@ export class ZenAgent {
     if (!isAbsolute(params.cwd)) {
       throw new Error("cwd must be an absolute path");
     }
-    const session = await createStoredSession(params.cwd);
+    const session = await createStoredSession(params.cwd, getProvider());
     // Freeze the environment snapshot into the persisted conversation at
     // session creation. It sits right after the system prompt, so it must
-    // stay byte-identical for DeepSeek's prefix cache to keep hitting
+    // stay byte-identical for the provider's context cache to keep hitting
     // across steps and restarts (a per-request regenerated message — e.g.
     // with a changing git status — would break the whole cached prefix).
     session.llmMessages.push({
@@ -395,10 +458,16 @@ export class ZenAgent {
 
     switch (params.configId) {
       case "model": {
-        if (value !== "deepseek-v4-flash" && value !== "deepseek-v4-pro") {
+        if (active.session.config.provider === "openrouter") {
+          // OpenRouter accepts any model slug; only the curated list is
+          // offered in the selector.
+          if (value.trim().length === 0) {
+            throw new Error("Model must not be empty");
+          }
+        } else if (value !== "deepseek-v4-flash" && value !== "deepseek-v4-pro") {
           throw new Error(`Unknown model: ${value}`);
         }
-        active.session.config.model = value as ModelId;
+        active.session.config.model = value;
         break;
       }
       case "thinking_effort": {
@@ -621,10 +690,10 @@ export class ZenAgent {
       });
 
       if (llmResult.usage) {
-        this.accumulateTurnUsage(active, turn, llmResult.usage);
+        await this.accumulateTurnUsage(active, turn, llmResult.usage);
         contextUsed = llmResult.usage.inputTokens;
         await this.reportUsage(active, cx, contextUsed);
-        this.logStepStats(
+        await this.logStepStats(
           active,
           step,
           llmResult.usage,
@@ -736,11 +805,11 @@ export class ZenAgent {
     return finalize("max_turn_requests");
   }
 
-  private accumulateTurnUsage(
+  private async accumulateTurnUsage(
     active: ActiveSession,
     turn: TurnStats,
     usage: LlmUsage,
-  ): void {
+  ): Promise<void> {
     turn.steps += 1;
     turn.inputTokens += usage.inputTokens;
     turn.outputTokens += usage.outputTokens;
@@ -750,7 +819,10 @@ export class ZenAgent {
     turn.llmMs += usage.llmMs;
     turn.thinkingMs += usage.thinkingMs;
     turn.answeringMs += usage.answeringMs;
-    turn.costYuan += costYuan(usage, getModelPricing(active.session.config.model));
+    turn.costYuan += costFromUsage(
+      usage,
+      await getModelPricing(active.session.config.provider, active.session.config.model),
+    );
   }
 
   private mergeTurnStats(active: ActiveSession, turn: TurnStats): void {
@@ -777,8 +849,9 @@ export class ZenAgent {
    * Zed maps this ACP update in `acp_thread.rs` (SessionUpdate::UsageUpdate)
    * into its TokenUsage/SessionCost and renders it in the agent panel header
    * (`agent_ui/.../thread_view.rs::render_token_usage`) as a token-usage ring
-   * whose tooltip shows "Context: used / max" and "Cost: amount CNY". The
-   * ring also warns at 80% and marks the thread exceeded at 100% of `size`.
+   * whose tooltip shows "Context: used / max" and "Cost: amount <currency>"
+   * (CNY for DeepSeek, USD for OpenRouter). The ring also warns at 80% and
+   * marks the thread exceeded at 100% of `size`.
    */
   private async reportUsage(
     active: ActiveSession,
@@ -788,16 +861,24 @@ export class ZenAgent {
     if (contextUsed === undefined) {
       return;
     }
-    const size = getContextWindowTokens();
+    const size = await getContextWindowTokens(
+      active.session.config.provider,
+      active.session.config.model,
+    );
     await this.emit(active, cx, {
       sessionUpdate: "usage_update",
       used: Math.min(contextUsed, size),
       size,
       cost: {
         amount: roundYuan(active.session.usage.costYuan),
-        currency: "CNY",
+        currency: this.costCurrency(active),
       },
     });
+  }
+
+  /** Billing currency of the session's provider (CNY for DeepSeek, USD for OpenRouter). */
+  private costCurrency(active: ActiveSession): "CNY" | "USD" {
+    return active.session.config.provider === "openrouter" ? "USD" : "CNY";
   }
 
   /**
@@ -819,64 +900,68 @@ export class ZenAgent {
     if (turn.steps === 0) {
       return;
     }
+    const symbol = active.session.config.provider === "openrouter" ? "$" : "¥";
     const text = [
       `Turn ${active.session.usage.turns} · ${turn.steps} step${turn.steps === 1 ? "" : "s"} · think ${formatMs(turn.thinkingMs)} · answer ${formatMs(turn.answeringMs)} · tools ${formatMs(turn.toolMs)}`,
-      `in ${formatTokens(turn.inputTokens)} · out ${formatTokens(turn.outputTokens)} · cache hit ${cacheHitPercent(turn)} · ¥${formatYuan(turn.costYuan)} (session ¥${formatYuan(active.session.usage.costYuan)})`,
+      `in ${formatTokens(turn.inputTokens)} · out ${formatTokens(turn.outputTokens)} · cache hit ${cacheHitPercent(turn)} · ${symbol}${formatYuan(turn.costYuan)} (session ${symbol}${formatYuan(active.session.usage.costYuan)})`,
     ].join("\n");
     await this.emit(active, cx, {
       sessionUpdate: "agent_message_chunk",
       messageId: newMessageId(),
       content: { type: "text", text },
     });
-    // Cross-check the locally estimated cost against DeepSeek's actual
+    // Cross-check the locally estimated cost against the provider's actual
     // billing; fire-and-forget so a slow/failed balance request never
     // delays or breaks the stats bubble.
     void this.verifyTurnCost(active, turn);
   }
 
   /**
-   * Verify turn stats against DeepSeek's billing and log the result to
+   * Verify turn stats against the provider's billing and log the result to
    * log.jsonl ("turn stats balance verify").
    *
-   * DeepSeek's /user/balance endpoint returns the current account balance;
-   * the delta between this turn's snapshot and the previous turn's snapshot
-   * should equal the turn's locally estimated cost (turn.costYuan, derived
-   * from the usage fields DeepSeek streams back per step). A persistent
-   * mismatch means the pricing table or token counting is wrong. Balance
-   * values are only two-decimal-precise, so single-turn deltas are noisy —
-   * this is data gathering only, no behavior change.
+   * DeepSeek's /user/balance (and OpenRouter's /auth/key) returns the current
+   * account balance; the delta between this turn's snapshot and the previous
+   * turn's snapshot should equal the turn's locally estimated cost
+   * (turn.costYuan, derived from the usage fields the provider streams back
+   * per step). A persistent mismatch means the pricing table or token
+   * counting is wrong. Balance values are only two-decimal-precise, so
+   * single-turn deltas are noisy — this is data gathering only, no behavior
+   * change.
    */
   private async verifyTurnCost(
     active: ActiveSession,
     turn: TurnStats,
   ): Promise<void> {
     try {
-      const balance = await fetchDeepSeekBalance();
+      const provider = active.session.config.provider;
+      const snapshot = await fetchBalanceSnapshot(provider);
       const details: Record<string, unknown> = {
         sessionId: active.session.sessionId,
         turn: active.session.usage.turns,
+        provider,
         model: active.session.config.model,
-        estimatedTurnCostYuan: roundYuan(turn.costYuan),
-        sessionEstimatedCostYuan: roundYuan(active.session.usage.costYuan),
-        balanceIsAvailable: balance.isAvailable,
-        balanceCurrency: balance.currency,
-        balanceTotalCny: balance.totalBalanceCny,
-        balanceGrantedCny: balance.grantedBalanceCny,
-        balanceToppedUpCny: balance.toppedUpBalanceCny,
+        estimatedTurnCost: roundYuan(turn.costYuan),
+        sessionEstimatedCost: roundYuan(active.session.usage.costYuan),
+        balanceIsAvailable: snapshot.isAvailable,
+        balanceCurrency: snapshot.currency,
+        balanceTotal: snapshot.total,
+        ...snapshot.details,
       };
-      const before = this.lastObservedBalanceCny;
-      if (before !== null) {
-        const balanceDelta = before - balance.totalBalanceCny;
-        details.balanceBeforeCny = before;
-        details.balanceDeltaCny = roundYuan(balanceDelta);
-        details.deltaVsEstimatedCny = roundYuan(balanceDelta - turn.costYuan);
+      const before = this.lastObservedBalance;
+      if (before !== null && before.currency === snapshot.currency) {
+        const balanceDelta = before.total - snapshot.total;
+        details.balanceBefore = before.total;
+        details.balanceDelta = roundYuan(balanceDelta);
+        details.deltaVsEstimated = roundYuan(balanceDelta - turn.costYuan);
       }
-      this.lastObservedBalanceCny = balance.totalBalanceCny;
+      this.lastObservedBalance = { currency: snapshot.currency, total: snapshot.total };
       await this.logRuntime(active.session.cwd, "info", "turn stats balance verify", details);
     } catch (error) {
       await this.logRuntime(active.session.cwd, "warn", "turn stats balance verify failed", {
         sessionId: active.session.sessionId,
         turn: active.session.usage.turns,
+        provider: active.session.config.provider,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -916,7 +1001,7 @@ export class ZenAgent {
    *    conversation so the model knows the session was continued. Being
    *    appended after all history, it does not disturb the cached prefix —
    *    the system prompt, frozen environment message and persisted history
-   *    stay byte-identical, so DeepSeek's context cache keeps hitting.
+   *    stay byte-identical, so the provider's context cache keeps hitting.
    */
   private async prepareResumedSession(session: StoredSession): Promise<void> {
     if (
@@ -994,16 +1079,21 @@ export class ZenAgent {
    * turn. Skipped when the provider reported no usage (the numbers would
    * all be zero/meaningless).
    */
-  private logStepStats(
+  private async logStepStats(
     active: ActiveSession,
     step: number,
     usage: LlmUsage,
     finishReason: string,
     toolCallCount: number,
-  ): void {
+  ): Promise<void> {
+    const pricing = await getModelPricing(
+      active.session.config.provider,
+      active.session.config.model,
+    );
     void this.logRuntime(active.session.cwd, "info", "llm step stats", {
       sessionId: active.session.sessionId,
       step: step + 1,
+      provider: active.session.config.provider,
       model: active.session.config.model,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -1011,7 +1101,7 @@ export class ZenAgent {
       cacheMissTokens: usage.cacheMissTokens,
       cacheHitPercent: cacheHitPercent(usage),
       reasoningTokens: usage.reasoningTokens,
-      costYuan: costYuan(usage, getModelPricing(active.session.config.model)),
+      costYuan: costFromUsage(usage, pricing),
       llmMs: usage.llmMs,
       thinkingMs: usage.thinkingMs,
       answeringMs: usage.answeringMs,
@@ -1034,6 +1124,7 @@ export class ZenAgent {
     void this.logRuntime(active.session.cwd, "info", "turn stats", {
       sessionId: active.session.sessionId,
       turn: active.session.usage.turns,
+      provider: active.session.config.provider,
       model: active.session.config.model,
       stopReason,
       steps: turn.steps,
@@ -1351,7 +1442,7 @@ Usage: /sandbox on | off`,
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
     return [
       {
-        ...MODEL_CONFIG_OPTION,
+        ...modelConfigOption(session.config.provider),
         currentValue: session.config.model,
       } as acp.SessionConfigOption,
       {

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import * as acp from "@agentclientprotocol/sdk";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import { ZenAgent } from "./agent.js";
 import { prepareReplayEvents } from "./replay.js";
@@ -25,7 +29,7 @@ function makeSession(sessionId = "s1"): StoredSession {
     title: null,
     events: [],
     llmMessages: [],
-    config: { model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "", sandbox: false },
+    config: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "", sandbox: false },
     usage: emptySessionUsage(),
     turnStats: [],
   };
@@ -46,6 +50,50 @@ type TestAgent = {
   abortActiveSession(sessionId: string): void;
   cancel(params: { sessionId: string }): void;
 };
+
+describe("newSession provider wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("persists the provider and advertises OpenRouter model options when ZEN_AGENT_LLM_PROVIDER=openrouter", async () => {
+    process.env.ZEN_AGENT_LLM_PROVIDER = "openrouter";
+    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
+    try {
+      const agent = new ZenAgent();
+      await agent.initialize({
+        protocolVersion: acp.PROTOCOL_VERSION,
+        clientCapabilities: {},
+      } as acp.InitializeRequest);
+      const cx = {
+        notify: async () => {},
+        request: async () => {
+          throw new Error("unexpected client request");
+        },
+      } as unknown as acp.AgentContext;
+      const created = await agent.newSession(
+        { cwd, mcpServers: [] } as acp.NewSessionRequest,
+        cx,
+      );
+      const modelOption = created.configOptions?.find((o) => o.id === "model") as
+        | { options?: Array<{ value: string }> }
+        | undefined;
+      expect(modelOption?.options).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ value: "anthropic/claude-sonnet-4" }),
+        ]),
+      );
+      const active = (agent as unknown as {
+        sessions: Map<string, { session: StoredSession }>;
+      }).sessions.get(created.sessionId);
+      expect(active?.session.config.provider).toBe("openrouter");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("prepareReplayEvents", () => {
   it("synthesizes a display-only terminal for legacy bash calls so output stays visible", () => {

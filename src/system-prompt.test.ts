@@ -54,7 +54,7 @@ function makeSession(cwd: string): StoredSession {
     title: null,
     events: [],
     llmMessages: [],
-    config: { model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "", sandbox: false },
+    config: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "", sandbox: false },
     usage: emptySessionUsage(),
     turnStats: [],
   };

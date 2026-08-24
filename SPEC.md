@@ -221,31 +221,66 @@ Every installed Agent Skill is also advertised as a slash command: `/grill-me <g
 
 ## 7. LLM Provider
 
-The agent uses the **Vercel AI SDK** with **Deepseek** through Deepseek's OpenAI-compatible endpoint.
+Zen Agent talks to OpenAI-compatible chat completions endpoints through a
+single shared SSE client (`src/llm-client.ts`) that streams text, reasoning
+tokens, and tool calls live. Two providers use it: **DeepSeek** (default) and
+**OpenRouter**; the active one is selected with `ZEN_AGENT_LLM_PROVIDER` and
+persisted per session (`config.provider`) so cost/currency stay consistent
+across restarts.
 
 ### 7.1 Provider Configuration
+
+DeepSeek:
 
 | Variable | Purpose |
 | --- | --- |
 | `DEEPSEEK_API_KEY` | Deepseek API key (required). |
-| `DEEPSEEK_BASE_URL` | Deepseek-compatible base URL (default: `https://api.deepseek.com/v1`). |
+| `DEEPSEEK_BASE_URL` | Deepseek-compatible base URL (default: `https://api.deepseek.com`). |
 | `DEEPSEEK_MODEL` | Fallback model name (default: `deepseek-v4-flash`). |
+
+OpenRouter:
+
+| Variable | Purpose |
+| --- | --- |
+| `ZEN_AGENT_LLM_PROVIDER` | `openrouter` selects OpenRouter (default `deepseek`). |
+| `ZEN_AGENT_OPENROUTER_API_KEY` | OpenRouter API key (required). |
+| `ZEN_AGENT_OPENROUTER_BASE_URL` | Base URL (default: `https://openrouter.ai/api/v1`). |
+| `ZEN_AGENT_OPENROUTER_MODEL` | Fallback model slug (default: `anthropic/claude-sonnet-4`). |
+| `ZEN_AGENT_OPENROUTER_SITE_URL` / `ZEN_AGENT_OPENROUTER_APP_NAME` | Optional `HTTP-Referer` / `X-Title` headers. |
 
 Sessions expose two ACP config options:
 
 | Option | Values |
 | --- | --- |
-| `model` | `deepseek-v4-flash`, `deepseek-v4-pro` |
+| `model` | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: curated slugs (any slug accepted via `set_config_option`) |
 | `thinking_effort` | `off`, `high`, `max` |
 
-`off` omits the provider reasoning effort parameter; `high` and `max` map to OpenAI-compatible `reasoning_effort` values.
+`off` omits the provider reasoning effort parameter. DeepSeek maps `high`/`max`
+to its `reasoning_effort`; OpenRouter maps both to `high` (its OpenAI-compatible
+vocabulary only knows `low`/`medium`/`high`).
 
 ### 7.2 Integration
 
-- Use `createOpenAI` from `@ai-sdk/openai` with the Deepseek base URL and API key.
-- Use AI SDK `streamText` to stream text deltas and collect tool calls.
-- The only registered tool is `bash`.
-- If a Deepseek model does not support streaming tool calls, fall back to `generateText` with the same tool definition.
+- The shared client (`runChatCompletions` in `src/llm-client.ts`) POSTs to
+  `<baseUrl>/chat/completions` and parses the SSE stream directly — the AI SDK
+  was dropped because `@ai-sdk/openai`'s `throwIfOpenAIStreamErrorBeforeOutput`
+  buffers the entire reasoning phase (DeepSeek's `reasoning_content`), breaking
+  live thinking streaming; the raw parse also preserves provider-specific usage
+  fields (cache tokens) that the SDK's zod schema strips.
+- DeepSeek streams reasoning as `delta.reasoning_content`; OpenRouter as
+  `delta.reasoning` (with `reasoning_content` accepted as passthrough). Stored
+  reasoning is sent back in history using the provider's field.
+- OpenRouter sends `stream_options: { include_usage: true }` (it omits usage
+  otherwise) and parses usage with `parseOpenRouterUsage`, which reads generic
+  `prompt_tokens`/`completion_tokens` plus optional passthrough cache/reasoning
+  fields.
+- The only registered tool is `bash` (byte-identical schema for both providers).
+- Costs: DeepSeek uses a static CNY rate table with Beijing peak/off-peak
+  windows; OpenRouter fetches USD pricing and context windows from `/models`
+  (cached, with a static fallback table) and verifies credits via `/auth/key`.
+  The ACP `usage_update` cost currency is `CNY` (DeepSeek) or `USD` (OpenRouter).
+- If a provider's model does not support streaming, the request fails with a
+  clear error (no silent fallback).
 
 ## 8. Session History and Context
 
@@ -265,8 +300,10 @@ zen-agent/
     index.ts          # entry point: stdio stream + agent app
     agent.ts          # ACP handlers and session store
     storage.ts        # session file persistence under <cwd>/.sessions/
-    llm/
-      deepseek.ts     # Deepseek via AI SDK
+    llm-client.ts     # shared OpenAI-compatible SSE client + bash tool schema
+    deepseek.ts       # DeepSeek provider: pricing, usage, balance
+    openrouter.ts     # OpenRouter provider: models catalog, usage, balance
+    provider.ts       # provider selection (ZEN_AGENT_LLM_PROVIDER) and dispatch
 ```
 
 ## 10. Dependencies
@@ -285,7 +322,10 @@ zen-agent/
 
 ## 12. Decisions
 
-1. **LLM provider**: Deepseek for now, using the Vercel AI SDK.
+1. **LLM provider**: DeepSeek by default, OpenRouter opt-in via
+   `ZEN_AGENT_LLM_PROVIDER=openrouter`; both share one hand-rolled
+   OpenAI-compatible SSE client (`llm-client.ts`). The AI SDK was dropped
+   because it buffers reasoning-phase streaming (see §7.2).
 2. **ACP SDK**: Use the official `@agentclientprotocol/sdk`.
 3. **Session persistence**: Store sessions in `<cwd>/.sessions/` and support `session/load`, `session/list`, `session/resume`, `session/delete`, and `session/close`.
 4. **MCP servers**: Ignore MCP servers; the agent exposes only the `bash` tool.

@@ -1,65 +1,16 @@
-import type { ModelMessage } from "ai";
-import type { LlmMessage, ModelId, ThinkingEffort } from "./storage.js";
-import { SYSTEM_PROMPT } from "./system-prompt.js";
+import type { ModelId, ThinkingEffort } from "./storage.js";
+import {
+  BASH_TOOL_SCHEMA,
+  costFromUsage,
+  runChatCompletions,
+  type LlmStepOptions,
+  type LlmStepResult,
+  type LlmUsage,
+} from "./llm-client.js";
 export { SYSTEM_PROMPT } from "./system-prompt.js";
+export { BASH_TOOL_SCHEMA } from "./llm-client.js";
 
-export interface LlmToolCall {
-  id: string;
-  name: string;
-  input: unknown;
-}
-
-export interface LlmUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cacheReadTokens: number;
-  cacheMissTokens: number;
-  reasoningTokens: number;
-  /** Wall-clock time of the whole LLM request in ms. */
-  llmMs: number;
-  /** Time from request start until the first answer token arrived (thinking time) in ms. */
-  thinkingMs: number;
-  /** Time spent streaming answer text in ms. */
-  answeringMs: number;
-}
-
-export interface LlmStepResult {
-  text: string;
-  /** Full reasoning_content emitted by DeepSeek during this step. */
-  reasoning: string;
-  toolCalls: LlmToolCall[];
-  finishReason: string;
-  /** Token usage and timing for this LLM step, if reported by the provider. */
-  usage: LlmUsage | null;
-}
-
-/**
- * The bash tool exposed to the model, in OpenAI function-calling wire format.
- * Kept as a plain object (no AI SDK `tool()` wrapper) because we talk to
- * DeepSeek's OpenAI-compatible API directly (see runLlmStep) — the description
- * and schema must stay byte-identical to what the AI SDK previously sent so
- * the model's behavior does not change.
- */
-export const BASH_TOOL_SCHEMA = {
-  type: "function",
-  function: {
-    name: "bash",
-    description:
-      'Execute a bash command in current OS. The command is completely unrestricted. Your command will be wrapped inside `script -q -e -c "bash <script file containing your command>" "<log path>"`. If output is large, this tool will tell you to check the log file instead of showing all.',
-    parameters: {
-      type: "object",
-      properties: {
-        command: {
-          type: "string",
-          description: "The bash command to execute.",
-        },
-      },
-      required: ["command"],
-      additionalProperties: false,
-    },
-  },
-} as const;
+export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from "./llm-client.js";
 
 export interface ModelPricing {
   /** CNY per 1M input tokens served from cache. */
@@ -85,7 +36,7 @@ interface ModelRateTable {
  * 09:00-12:00 and 14:00-18:00; all other hours are off-peak.
  * Values can be overridden with DEEPSEEK_PRICE_* environment variables.
  */
-const MODEL_RATE_TABLE: Record<ModelId, ModelRateTable> = {
+const MODEL_RATE_TABLE: Record<string, ModelRateTable> = {
   "deepseek-v4-flash": {
     cacheHit: { peak: 0.1, offPeak: 0.05 },
     cacheMiss: { peak: 3.0, offPeak: 1.5 },
@@ -151,11 +102,12 @@ export function getContextWindowTokens(): number {
 
 /** Cost in CNY for a single LLM step's token usage. */
 export function costYuan(usage: LlmUsage, pricing: ModelPricing): number {
-  return (
-    (usage.cacheReadTokens / 1_000_000) * pricing.cacheHitCnyPerM +
-    (usage.cacheMissTokens / 1_000_000) * pricing.cacheMissCnyPerM +
-    (usage.outputTokens / 1_000_000) * pricing.outputCnyPerM
-  );
+  return costFromUsage(usage, {
+    currency: "CNY",
+    cacheHitPerM: pricing.cacheHitCnyPerM,
+    cacheMissPerM: pricing.cacheMissCnyPerM,
+    outputPerM: pricing.outputCnyPerM,
+  });
 }
 
 /**
@@ -273,406 +225,34 @@ export function parseDeepSeekUsage(
   };
 }
 
-/** A single parsed SSE chunk from the DeepSeek chat completions stream. */
-interface DeepSeekChunk {
-  choices?: Array<{
-    index: number;
-    delta?: {
-      role?: string;
-      content?: string | null;
-      reasoning_content?: string | null;
-      tool_calls?: Array<{
-        index?: number;
-        id?: string;
-        type?: string;
-        function?: { name?: string; arguments?: string };
-      }>;
-    };
-    finish_reason?: string | null;
-  }>;
-  usage?: DeepSeekUsage;
-  error?: { message?: string };
-}
-
-/** Partial tool call accumulated from streaming `delta.tool_calls` fragments. */
-interface PartialToolCall {
-  id: string;
-  name: string;
-  arguments: string;
-}
-
-/** Convert our stored AI-SDK ModelMessage history to the OpenAI wire format. */
-function toOpenAiMessages(messages: LlmMessage[]): unknown[] {
-  const out: unknown[] = [];
-
-  for (const message of messages) {
-    switch (message.role) {
-      case "user": {
-        const content =
-          typeof message.content === "string"
-            ? message.content
-            : message.content
-                .filter((part) => part.type === "text")
-                .map((part) => (part as { text: string }).text)
-                .join("");
-        const userMessage: Record<string, unknown> = { role: "user", content };
-        if ("name" in message && typeof message.name === "string" && message.name.length > 0) {
-          userMessage.name = message.name;
-        }
-        out.push(userMessage);
-        break;
-      }
-      case "assistant": {
-        const parts = Array.isArray(message.content) ? message.content : [];
-        const text = parts
-          .filter((part) => part.type === "text")
-          .map((part) => (part as { text: string }).text)
-          .join("");
-        const reasoning = parts
-          .filter((part) => part.type === "reasoning")
-          .map((part) => (part as { text: string }).text)
-          .join("");
-        const toolCalls = parts
-          .filter((part) => part.type === "tool-call")
-          .map((part) => ({
-            id: (part as { toolCallId: string }).toolCallId,
-            type: "function",
-            function: {
-              name: (part as { toolName: string }).toolName,
-              arguments: JSON.stringify((part as { input: unknown }).input),
-            },
-          }));
-        const assistantMessage: Record<string, unknown> = {
-          role: "assistant",
-          content: text || null,
-        };
-        if (toolCalls.length > 0 && parts.some((part) => part.type === "reasoning")) {
-          assistantMessage.reasoning_content = reasoning;
-        }
-        if (toolCalls.length > 0) {
-          assistantMessage.tool_calls = toolCalls;
-        }
-        out.push(assistantMessage);
-        break;
-      }
-      case "tool": {
-        const parts = Array.isArray(message.content) ? message.content : [];
-        for (const part of parts) {
-          if (part.type !== "tool-result") {
-            continue;
-          }
-          const output = (part as { output: unknown }).output;
-          const text =
-            typeof output === "string"
-              ? output
-              : typeof output === "object" &&
-                  output !== null &&
-                  "value" in (output as Record<string, unknown>) &&
-                  typeof (output as Record<string, unknown>).value === "string"
-                ? ((output as Record<string, unknown>).value as string)
-                : JSON.stringify(output);
-          out.push({
-            role: "tool",
-            tool_call_id: (part as { toolCallId: string }).toolCallId,
-            content: text,
-          });
-        }
-        break;
-      }
-      case "system": {
-        out.push({
-          role: "system",
-          content: typeof message.content === "string" ? message.content : JSON.stringify(message.content),
-        });
-        break;
-      }
-    }
-  }
-
-  return out;
-}
-
-function mapFinishReason(raw: string | null | undefined): string {
-  switch (raw) {
-    case "stop":
-      return "stop";
-    case "length":
-      return "length";
-    case "tool_calls":
-      return "tool-calls";
-    case "content_filter":
-      return "content-filter";
-    case "insufficient_system_resource":
-      return "error";
-    default:
-      return raw ? "other" : "unknown";
-  }
-}
-
 /**
- * Calls DeepSeek's OpenAI-compatible chat completions API DIRECTLY and parses
- * the SSE stream ourselves.
- *
- * WHY NOT the AI SDK (`streamText` + `@ai-sdk/openai`): the provider's
- * `throwIfOpenAIStreamErrorBeforeOutput` reads ahead from the response until
- * it sees the first "output" chunk (non-empty `delta.content` / tool call).
- * DeepSeek's thinking mode only sends `delta.reasoning_content` during the
- * reasoning phase, which is invisible to that check, so the SDK swallows the
- * ENTIRE reasoning phase and hands the consumer a buffered burst once the
- * answer starts — the thinking block appears to not stream at all. By parsing
- * the SSE directly we get every reasoning delta live.
- *
- * This also lets us read DeepSeek's raw cache-token fields (see
- * parseDeepSeekUsage), which the SDK's zod schema strips.
+ * DeepSeek's OpenAI-compatible chat completions step. The SSE client itself
+ * is shared with the OpenRouter provider (see runChatCompletions); this
+ * wrapper supplies DeepSeek's endpoint, reasoning field (`reasoning_content`)
+ * and usage parsing.
  */
-export async function runLlmStep(options: {
-  messages: LlmMessage[];
-  signal?: AbortSignal;
-  onTextDelta?: (delta: string) => void | Promise<void>;
-  onReasoningDelta?: (delta: string) => void | Promise<void>;
-  model?: ModelId;
-  thinkingEffort?: ThinkingEffort;
-  system?: string;
-}): Promise<LlmStepResult> {
+export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY environment variable is required");
   }
   const baseURL = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, "");
   const modelName = options.model ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-
-  // The environment message (name "environment") lives in `llmMessages`,
-  // persisted at session creation so the prefix is byte-stable and DeepSeek's
-  // context cache keeps hitting across steps and session restarts.
-  const wireMessages = toOpenAiMessages(options.messages);
-  const body: Record<string, unknown> = {
+  return runChatCompletions({
+    baseUrl: baseURL,
+    apiKey,
+    label: "DeepSeek",
     model: modelName,
-    messages: [
-      { role: "system", content: options.system ?? SYSTEM_PROMPT },
-      ...(wireMessages.filter(
-        (message) => (message as { role?: string }).role !== "system",
-      ) as Array<Record<string, unknown>>),
-    ],
-    tools: [BASH_TOOL_SCHEMA],
-    stream: true,
-  };
-  if (options.thinkingEffort && options.thinkingEffort !== "off") {
-    // Same wire field the AI SDK's providerOptions.openai.reasoningEffort mapped to.
-    body.reasoning_effort = options.thinkingEffort;
-  }
-
-  // Timing: "thinking" is the wall time from request start until the first
-  // answer (non-reasoning) token arrives — i.e. TTFB, dominated by the
-  // model's reasoning phase when thinking is enabled. "answering" is the
-  // remaining stream time. If the step only produced reasoning (no text,
-  // e.g. a tool-call-only step), firstTextAt stays null and thinking covers
-  // the whole request.
-  const requestStart = Date.now();
-  let firstTextAt: number | null = null;
-  let lastReasoningAt: number | null = null;
-
-  let text = "";
-  let reasoning = "";
-  let finishReason = "unknown";
-  let sawFinishReason = false;
-  let sawOutput = false;
-  let rawUsage: DeepSeekUsage | undefined;
-  const toolCallsByIndex = new Map<number, PartialToolCall>();
-
-  const fetchWithRetry = async (): Promise<Response> => {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const response = await fetch(`${baseURL}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-          signal: options.signal,
-        });
-        if (response.ok) {
-          return response;
-        }
-        const errorBody = await response.text().catch(() => "");
-        lastError = new Error(
-          `DeepSeek API error ${response.status}: ${errorBody.slice(0, 500)}`,
-        );
-        if (
-          response.status !== 429 &&
-          response.status < 500 &&
-          !(options.signal?.aborted ?? false)
-        ) {
-          throw lastError;
-        }
-      } catch (error) {
-        if (options.signal?.aborted) {
-          throw error;
-        }
-        lastError = error;
-      }
-      // Retryable (429/5xx/network): back off before the next attempt.
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-    }
-    throw lastError ?? new Error("DeepSeek request failed");
-  };
-
-  const response = await fetchWithRetry();
-  if (!response.body) {
-    throw new Error("DeepSeek response has no body");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  const processEvent = async (rawEvent: string): Promise<boolean> => {
-    // SSE spec: consecutive `data:` lines are joined with \n. Some servers
-    // emit one data line per event; DeepSeek uses a single line.
-    const dataLines: string[] = [];
-    for (const line of rawEvent.split("\n")) {
-      if (line.startsWith("data:")) {
-        dataLines.push(line.slice(5).trimStart());
-      }
-    }
-    if (dataLines.length === 0) {
-      return false;
-    }
-    const data = dataLines.join("\n");
-    if (data === "[DONE]") {
-      return true;
-    }
-
-    let chunk: DeepSeekChunk;
-    try {
-      chunk = JSON.parse(data) as DeepSeekChunk;
-    } catch {
-      return false;
-    }
-
-    if (chunk.error) {
-      throw new Error(`DeepSeek stream error: ${chunk.error.message ?? "unknown"}`);
-    }
-    if (chunk.usage) {
-      rawUsage = chunk.usage;
-    }
-
-    const choice = chunk.choices?.[0];
-    if (!choice) {
-      return false;
-    }
-
-    if (choice.finish_reason != null) {
-      finishReason = mapFinishReason(choice.finish_reason);
-      sawFinishReason = true;
-    }
-
-    const delta = choice.delta;
-    if (!delta) {
-      return false;
-    }
-
-    // Reasoning content (DeepSeek thinking mode) — forwarded LIVE, which is
-    // the whole point of bypassing the AI SDK here.
-    if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
-      reasoning += delta.reasoning_content;
-      lastReasoningAt = Date.now();
-      sawOutput = true;
-      await options.onReasoningDelta?.(delta.reasoning_content);
-    }
-
-    // Answer text.
-    if (typeof delta.content === "string" && delta.content.length > 0) {
-      if (firstTextAt === null) {
-        firstTextAt = Date.now();
-      }
-      text += delta.content;
-      sawOutput = true;
-      await options.onTextDelta?.(delta.content);
-    }
-
-    // Streaming tool calls (accumulate fragments per index).
-    if (delta.tool_calls) {
-      for (const toolCallDelta of delta.tool_calls) {
-        const index = toolCallDelta.index ?? 0;
-        const partial = toolCallsByIndex.get(index) ?? {
-          id: "",
-          name: "",
-          arguments: "",
-        };
-        if (toolCallDelta.id) {
-          partial.id = toolCallDelta.id;
-        }
-        if (toolCallDelta.function?.name) {
-          partial.name = toolCallDelta.function.name;
-        }
-        if (toolCallDelta.function?.arguments) {
-          partial.arguments += toolCallDelta.function.arguments;
-        }
-        toolCallsByIndex.set(index, partial);
-        sawOutput = true;
-      }
-    }
-
-    return false;
-  };
-
-  let done = false;
-  while (!done) {
-    const { value, done: streamDone } = await reader.read();
-    if (streamDone) {
-      // Flush any trailing event without a closing blank line.
-      if (buffer.trim().length > 0) {
-        done = await processEvent(buffer);
-        buffer = "";
-      }
-      break;
-    }
-    // Normalize CRLF so events split on \n\n regardless of server style.
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-    let separator: number;
-    while ((separator = buffer.indexOf("\n\n")) !== -1) {
-      const rawEvent = buffer.slice(0, separator);
-      buffer = buffer.slice(separator + 2);
-      done = await processEvent(rawEvent);
-      if (done) {
-        break;
-      }
-    }
-  }
-
-  if (!sawOutput && !sawFinishReason) {
-    throw new Error("No output generated. The model stream ended without a finish chunk.");
-  }
-
-  const toolCalls: LlmToolCall[] = [];
-  for (const partial of toolCallsByIndex.values()) {
-    if (!partial.id) {
-      continue;
-    }
-    let input: unknown;
-    try {
-      input = JSON.parse(partial.arguments || "{}");
-    } catch {
-      input = { command: partial.arguments };
-    }
-    toolCalls.push({
-      id: partial.id,
-      name: partial.name || "bash",
-      input,
-    });
-  }
-
-  const llmMs = Date.now() - requestStart;
-  const thinkingMs = (firstTextAt ?? lastReasoningAt ?? requestStart + llmMs) - requestStart;
-  const answeringMs = firstTextAt !== null ? requestStart + llmMs - firstTextAt : 0;
-
-  return {
-    text,
-    reasoning,
-    toolCalls,
-    finishReason: finishReason === "unknown" && toolCalls.length > 0 ? "tool-calls" : finishReason,
-    usage: parseDeepSeekUsage(rawUsage, { llmMs, thinkingMs, answeringMs }),
-  };
+    messages: options.messages,
+    system: options.system,
+    signal: options.signal,
+    onTextDelta: options.onTextDelta,
+    onReasoningDelta: options.onReasoningDelta,
+    thinkingEffort: options.thinkingEffort,
+    reasoningMessageField: "reasoning_content",
+    reasoningDeltaFields: ["reasoning_content"],
+    effortBody: (effort) =>
+      effort === "off" ? undefined : { reasoning_effort: effort },
+    parseUsage: (raw, timing) => parseDeepSeekUsage(raw as DeepSeekUsage, timing),
+  });
 }
