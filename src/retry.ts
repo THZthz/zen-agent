@@ -41,7 +41,7 @@ export async function fetchWithRetry(
   const retryable = new Set(opts.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (opts.signal?.aborted) throw new Error("aborted");
+    if (opts.signal?.aborted) throw abortError(opts.signal);
 
     try {
       const resp = await fetchFn(url, init);
@@ -98,12 +98,17 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal) {
       const onAbort = () => {
         clearTimeout(timer);
-        reject(new Error("aborted"));
+        reject(abortError(signal));
       };
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }
   });
+}
+
+/** Preserve the abort reason (e.g. a timeout error) instead of masking it with "aborted". */
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("aborted");
 }
 
 function isAbortError(err: unknown): boolean {
