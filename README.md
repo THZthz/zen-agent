@@ -17,7 +17,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 
 - Node.js 22+
 - WSL2/Linux
-- `DEEPSEEK_API_KEY` and/or `ZEN_AGENT_OPENROUTER_API_KEY`
+- `DEEPSEEK_API_KEY` and/or `OPENROUTER_API_KEY`
 
 ## Setup
 
@@ -36,25 +36,6 @@ DEEPSEEK_API_KEY=... node dist/index.js
 
 Point Zed's ACP agent at the built entrypoint (`agent_servers` → type `custom`). The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
 
-### DeepSeek (default)
-
-```json
-{
-  "agent_servers": {
-    "Zen Agent": {
-      "type": "custom",
-      "command": "node",
-      "args": ["/home/amias/projects/zen-agent/dist/index.js"],
-      "env": { "DEEPSEEK_API_KEY": "your-deepseek-api-key" }
-    }
-  }
-}
-```
-
-### OpenRouter (per session)
-
-One server can hold keys for both providers. Pick the provider per session in the AI settings, or default new sessions to OpenRouter:
-
 ```json
 {
   "agent_servers": {
@@ -69,9 +50,9 @@ One server can hold keys for both providers. Pick the provider per session in th
       "args": ["/home/amias/projects/zen-agent/dist/index.js"],
       "env": {
         "DEEPSEEK_API_KEY": "your-deepseek-api-key",
-        "ZEN_AGENT_OPENROUTER_API_KEY": "sk-or-v1-...",
-        "ZEN_AGENT_OPENROUTER_SITE_URL": "https://zed.dev",
-        "ZEN_AGENT_OPENROUTER_APP_NAME": "Zen Agent"
+        "OPENROUTER_API_KEY": "sk-or-v1-...",
+        "OPENROUTER_SITE_URL": "https://zed.dev",
+        "OPENROUTER_APP_NAME": "Zen Agent"
       }
     }
   }
@@ -128,11 +109,11 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 | `DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK` | per model, peak/off-peak | Override DeepSeek cache-hit input price (CNY per 1M tokens) |
 | `DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK` | per model, peak/off-peak | Override DeepSeek cache-miss input price |
 | `DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK` | per model, peak/off-peak | Override DeepSeek output price |
-| `ZEN_AGENT_OPENROUTER_API_KEY` | — | OpenRouter API key (required for OpenRouter sessions) |
-| `ZEN_AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
-| `ZEN_AGENT_OPENROUTER_MODEL` | `openrouter/free` | Fallback OpenRouter model slug |
-| `ZEN_AGENT_OPENROUTER_SITE_URL` | — | Sent as `HTTP-Referer` (app attribution) |
-| `ZEN_AGENT_OPENROUTER_APP_NAME` | — | Sent as `X-Title` (app attribution) |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key (required for OpenRouter sessions) |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
+| `OPENROUTER_MODEL` | `openrouter/free` | Fallback OpenRouter model slug |
+| `OPENROUTER_SITE_URL` | — | Sent as `HTTP-Referer` (app attribution) |
+| `OPENROUTER_APP_NAME` | — | Sent as `X-Title` (app attribution) |
 | `ZEN_AGENT_MAX_TURN_STEPS` | `25` | Max LLM/tool rounds per user prompt |
 | `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` | `50000` | Max bytes of bash output sent to the model per tool call (tail kept) |
 | `ZEN_AGENT_SHOW_STATS` | `1` | Set `0` to hide the per-turn stats line |

@@ -154,7 +154,7 @@ const DEEPSEEK_MODEL_CONFIG_OPTION = {
 
 /**
  * OpenRouter models offered in the session selector. Any OpenRouter model
- * slug can be used beyond this list via ZEN_AGENT_OPENROUTER_MODEL or
+ * slug can be used beyond this list via OPENROUTER_MODEL or
  * session/set_config_option; `openrouter/free` routes to OpenRouter's
  * free-tier models.
  */

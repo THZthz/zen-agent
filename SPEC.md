@@ -161,10 +161,10 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 | Env | Default | Purpose |
 | --- | --- | --- |
-| `ZEN_AGENT_OPENROUTER_API_KEY` | — | API key (required). |
-| `ZEN_AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL. |
-| `ZEN_AGENT_OPENROUTER_MODEL` | `openrouter/free` | Fallback model slug. |
-| `ZEN_AGENT_OPENROUTER_SITE_URL` / `ZEN_AGENT_OPENROUTER_APP_NAME` | — | `HTTP-Referer` / `X-Title` headers. |
+| `OPENROUTER_API_KEY` | — | API key (required). |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL. |
+| `OPENROUTER_MODEL` | `openrouter/free` | Fallback model slug. |
+| `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` | — | `HTTP-Referer` / `X-Title` headers. |
 
 - Reasoning streams as `delta.reasoning` (with `reasoning_content` accepted as passthrough for DeepSeek routes); stored reasoning is echoed back as `reasoning`.
 - Sends `stream_options: { include_usage: true }` (OpenRouter omits usage otherwise). `parseOpenRouterUsage` reads generic `prompt_tokens`/`completion_tokens` plus optional passthrough cache (`prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`) and reasoning fields.

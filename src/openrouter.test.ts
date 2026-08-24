@@ -67,10 +67,10 @@ describe("runOpenRouterStep (live SSE)", () => {
     })}\n\n`;
 
   beforeEach(() => {
-    process.env.ZEN_AGENT_OPENROUTER_API_KEY = "test";
-    delete process.env.ZEN_AGENT_OPENROUTER_MODEL;
-    delete process.env.ZEN_AGENT_OPENROUTER_SITE_URL;
-    delete process.env.ZEN_AGENT_OPENROUTER_APP_NAME;
+    process.env.OPENROUTER_API_KEY = "test";
+    delete process.env.OPENROUTER_MODEL;
+    delete process.env.OPENROUTER_SITE_URL;
+    delete process.env.OPENROUTER_APP_NAME;
   });
 
   afterEach(() => {
@@ -124,7 +124,7 @@ describe("runOpenRouterStep (live SSE)", () => {
       });
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const t0 = Date.now();
     const reasoningArrivals: number[] = [];
     const result = await runOpenRouterStep({
@@ -169,7 +169,7 @@ describe("runOpenRouterStep (live SSE)", () => {
       });
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const result = await runOpenRouterStep({
       messages: [{ role: "user", content: "hi" }],
       thinkingEffort: "off",
@@ -202,7 +202,7 @@ describe("runOpenRouterStep (live SSE)", () => {
       });
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
 
     await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "max" });
     await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
@@ -216,7 +216,7 @@ describe("runOpenRouterStep (live SSE)", () => {
     expect(bodies[1]?.reasoning_effort).toBeUndefined();
   });
 
-  it("sends HTTP-Referer and X-Title when configured, and honors ZEN_AGENT_OPENROUTER_MODEL", async () => {
+  it("sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL", async () => {
     let headers: import("node:http").IncomingHttpHeaders | undefined;
     let body: Record<string, unknown> | undefined;
     const port = await new Promise<number>((resolve) => {
@@ -242,10 +242,10 @@ describe("runOpenRouterStep (live SSE)", () => {
       });
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
-    process.env.ZEN_AGENT_OPENROUTER_SITE_URL = "https://zed.dev";
-    process.env.ZEN_AGENT_OPENROUTER_APP_NAME = "Zen Agent";
-    process.env.ZEN_AGENT_OPENROUTER_MODEL = "openai/gpt-5";
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_SITE_URL = "https://zed.dev";
+    process.env.OPENROUTER_APP_NAME = "Zen Agent";
+    process.env.OPENROUTER_MODEL = "openai/gpt-5";
 
     await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
 
@@ -254,11 +254,11 @@ describe("runOpenRouterStep (live SSE)", () => {
     expect(body?.model).toBe("openai/gpt-5");
   });
 
-  it("requires ZEN_AGENT_OPENROUTER_API_KEY", async () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+  it("requires OPENROUTER_API_KEY", async () => {
+    delete process.env.OPENROUTER_API_KEY;
     await expect(
       runOpenRouterStep({ messages: [{ role: "user", content: "hi" }] }),
-    ).rejects.toThrow(/ZEN_AGENT_OPENROUTER_API_KEY/);
+    ).rejects.toThrow(/OPENROUTER_API_KEY/);
   });
 });
 
@@ -274,13 +274,13 @@ describe("getOpenRouterModelInfo", () => {
   });
 
   it("falls back to the static table without an API key", async () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     const info = await getOpenRouterModelInfo("openrouter/free");
     expect(info).toEqual({ inputPerM: 0, outputPerM: 0, contextLength: 128_000 });
   });
 
   it("falls back to generic defaults for unknown models", async () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     const info = await getOpenRouterModelInfo("some/unknown-model");
     expect(info.contextLength).toBe(200_000);
     expect(info.inputPerM).toBeGreaterThan(0);
@@ -312,8 +312,8 @@ describe("getOpenRouterModelInfo", () => {
       });
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_API_KEY = "test";
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const info = await getOpenRouterModelInfo("vendor/model");
     expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
   });
@@ -340,7 +340,7 @@ describe("fetchOpenRouterBalance", () => {
   }
 
   beforeEach(() => {
-    process.env.ZEN_AGENT_OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_API_KEY = "test";
   });
 
   afterEach(() => {
@@ -361,7 +361,7 @@ describe("fetchOpenRouterBalance", () => {
       );
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const balance = await fetchOpenRouterBalance();
 
     expect(authorization).toBe("Bearer test");
@@ -381,12 +381,12 @@ describe("fetchOpenRouterBalance", () => {
       res.end("{\"error\":{\"message\":\"invalid key\"}}");
     });
 
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     await expect(fetchOpenRouterBalance()).rejects.toThrow(/401/);
   });
 
-  it("throws without ZEN_AGENT_OPENROUTER_API_KEY", async () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
-    await expect(fetchOpenRouterBalance()).rejects.toThrow(/ZEN_AGENT_OPENROUTER_API_KEY/);
+  it("throws without OPENROUTER_API_KEY", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    await expect(fetchOpenRouterBalance()).rejects.toThrow(/OPENROUTER_API_KEY/);
   });
 });

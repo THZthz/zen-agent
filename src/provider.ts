@@ -37,10 +37,10 @@ export interface BalanceSnapshot {
   details: Record<string, unknown>;
 }
 
-/** Default model for a provider: DeepSeek's fallback or ZEN_AGENT_OPENROUTER_MODEL. */
+/** Default model for a provider: DeepSeek's fallback or OPENROUTER_MODEL. */
 export function getDefaultModel(provider: ProviderId): ModelId {
   if (provider === "openrouter") {
-    return process.env.ZEN_AGENT_OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+    return process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
   }
   return DEFAULT_DEEPSEEK_MODEL;
 }

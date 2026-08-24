@@ -21,9 +21,9 @@ describe("runLlmStep", () => {
     await expect(runLlmStep("deepseek", { messages: [] })).rejects.toThrow(
       /DEEPSEEK_API_KEY/,
     );
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     await expect(runLlmStep("openrouter", { messages: [] })).rejects.toThrow(
-      /ZEN_AGENT_OPENROUTER_API_KEY/,
+      /OPENROUTER_API_KEY/,
     );
   });
 });
@@ -39,10 +39,10 @@ describe("getDefaultModel", () => {
     expect(getDefaultModel("deepseek")).toBe("deepseek-v4-flash");
   });
 
-  it("returns ZEN_AGENT_OPENROUTER_MODEL when set, else the curated default", () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_MODEL;
+  it("returns OPENROUTER_MODEL when set, else the curated default", () => {
+    delete process.env.OPENROUTER_MODEL;
     expect(getDefaultModel("openrouter")).toBe(DEFAULT_OPENROUTER_MODEL);
-    process.env.ZEN_AGENT_OPENROUTER_MODEL = "openai/gpt-5";
+    process.env.OPENROUTER_MODEL = "openai/gpt-5";
     expect(getDefaultModel("openrouter")).toBe("openai/gpt-5");
   });
 });
@@ -68,7 +68,7 @@ describe("getModelPricing", () => {
   });
 
   it("returns USD OpenRouter pricing from the fallback table without network", async () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     const pricing = await getModelPricing("openrouter", "openrouter/free");
     // openrouter/free routes to free models: billed at $0.
     expect(pricing).toEqual({
@@ -94,7 +94,7 @@ describe("getContextWindowTokens", () => {
   });
 
   it("uses the model's context length for openrouter", async () => {
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     expect(await getContextWindowTokens("openrouter", "openrouter/free")).toBe(128_000);
   });
 });
@@ -109,9 +109,9 @@ describe("fetchBalanceSnapshot", () => {
   it("throws with a provider hint when the provider's key is missing", async () => {
     delete process.env.DEEPSEEK_API_KEY;
     await expect(fetchBalanceSnapshot("deepseek")).rejects.toThrow(/DEEPSEEK_API_KEY/);
-    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     await expect(fetchBalanceSnapshot("openrouter")).rejects.toThrow(
-      /ZEN_AGENT_OPENROUTER_API_KEY/,
+      /OPENROUTER_API_KEY/,
     );
   });
 });

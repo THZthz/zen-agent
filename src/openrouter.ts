@@ -6,20 +6,20 @@ import {
   type LlmUsage,
 } from "./llm-client.js";
 
-/** Default OpenRouter model used when ZEN_AGENT_OPENROUTER_MODEL is unset. */
+/** Default OpenRouter model used when OPENROUTER_MODEL is unset. */
 export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 function getOpenRouterApiKey(): string {
-  const apiKey = process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("ZEN_AGENT_OPENROUTER_API_KEY environment variable is required");
+    throw new Error("OPENROUTER_API_KEY environment variable is required");
   }
   return apiKey;
 }
 
 function getOpenRouterBaseUrl(): string {
   return (
-    process.env.ZEN_AGENT_OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1"
+    process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1"
   ).replace(/\/+$/, "");
 }
 
@@ -236,20 +236,20 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
  * - `reasoning_effort` uses the OpenAI vocabulary (low/medium/high), so
  *   DeepSeek's `max` maps to `high`
  * - optional `HTTP-Referer` / `X-Title` headers identify the app
- *   (ZEN_AGENT_OPENROUTER_SITE_URL / ZEN_AGENT_OPENROUTER_APP_NAME)
+ *   (OPENROUTER_SITE_URL / OPENROUTER_APP_NAME)
  */
 export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmStepResult> {
   const apiKey = getOpenRouterApiKey();
   const baseUrl = getOpenRouterBaseUrl();
   const modelName =
-    options.model ?? process.env.ZEN_AGENT_OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+    options.model ?? process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
 
   const extraHeaders: Record<string, string> = {};
-  const siteUrl = process.env.ZEN_AGENT_OPENROUTER_SITE_URL;
+  const siteUrl = process.env.OPENROUTER_SITE_URL;
   if (siteUrl) {
     extraHeaders["HTTP-Referer"] = siteUrl;
   }
-  const appName = process.env.ZEN_AGENT_OPENROUTER_APP_NAME;
+  const appName = process.env.OPENROUTER_APP_NAME;
   if (appName) {
     extraHeaders["X-Title"] = appName;
   }
