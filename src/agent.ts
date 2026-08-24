@@ -37,6 +37,7 @@ import {
   type LlmUsage,
 } from "./provider.js";
 import { getOpenRouterModelOptions } from "./openrouter.js";
+import { formatLlmError } from "./llm-errors.js";
 import { prepareReplayEvents, coalesceReplayEvents } from "./replay.js";
 import { StreamThrottle } from "./stream-throttle.js";
 import {
@@ -262,10 +263,6 @@ function newMessageId(): string {
   const id = sonyflake.nextId(); // Returns a BigInt or stringified BigInt
   const bigintId = BigInt(id);
   return `msg_${toBase62(bigintId)}`; // Example: msg_7zK4X9p2Q
-}
-
-function newSessionIdForPrompt(): string {
-  return newMessageId();
 }
 
 /**
@@ -637,10 +634,19 @@ export class ZenAgent {
         });
         return { stopReason: "cancelled" };
       }
+      // Classify API failures (401/402/429/5xx/context overflow) into
+      // actionable guidance for the user; the original error is kept as the
+      // thrown instance so its stack and cause survive.
+      const formatted = await formatLlmError(error, {
+        provider: active.session.config.provider,
+      });
       void this.logRuntime(active.session.cwd, "error", "prompt failed", {
         sessionId: params.sessionId,
-        error: error instanceof Error ? error.message : String(error),
+        error: formatted,
       });
+      if (error instanceof Error && formatted !== error.message) {
+        error.message = formatted;
+      }
       throw error;
     } finally {
       active.abortController = null;

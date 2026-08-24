@@ -131,7 +131,9 @@ export interface DeepSeekBalance {
  * (used by the integration tests) and fails loudly on HTTP errors so callers
  * can log a verification failure instead of silently comparing stale data.
  */
-export async function fetchDeepSeekBalance(): Promise<DeepSeekBalance> {
+export async function fetchDeepSeekBalance(
+  opts: { signal?: AbortSignal } = {},
+): Promise<DeepSeekBalance> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY environment variable is required");
@@ -141,6 +143,7 @@ export async function fetchDeepSeekBalance(): Promise<DeepSeekBalance> {
   ).replace(/\/+$/, "");
   const response = await fetch(`${baseURL}/user/balance`, {
     headers: { authorization: `Bearer ${apiKey}` },
+    signal: opts.signal,
   });
   if (!response.ok) {
     throw new Error(
