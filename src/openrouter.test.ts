@@ -273,10 +273,10 @@ describe("getOpenRouterModelInfo", () => {
     server = undefined;
   });
 
-  it("falls back to the curated table without an API key", async () => {
+  it("falls back to the static table without an API key", async () => {
     delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
-    const info = await getOpenRouterModelInfo("anthropic/claude-sonnet-4");
-    expect(info).toEqual({ inputPerM: 3, outputPerM: 15, contextLength: 200_000 });
+    const info = await getOpenRouterModelInfo("openrouter/free");
+    expect(info).toEqual({ inputPerM: 0, outputPerM: 0, contextLength: 128_000 });
   });
 
   it("falls back to generic defaults for unknown models", async () => {

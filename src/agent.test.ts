@@ -82,7 +82,7 @@ describe("newSession provider wiring", () => {
         | undefined;
       expect(modelOption?.options).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ value: "anthropic/claude-sonnet-4" }),
+          expect.objectContaining({ value: "openrouter/free" }),
         ]),
       );
       const active = (agent as unknown as {
@@ -124,7 +124,7 @@ describe("setSessionConfigOption", () => {
     });
 
     expect(session.config.provider).toBe("openrouter");
-    expect(session.config.model).toBe("anthropic/claude-sonnet-4");
+    expect(session.config.model).toBe("openrouter/free");
     const providerOption = res.configOptions?.find((o) => o.id === "provider") as
       | { currentValue?: string }
       | undefined;
@@ -133,7 +133,7 @@ describe("setSessionConfigOption", () => {
       | { options?: Array<{ value: string }> }
       | undefined;
     expect(modelOption?.options?.some((o) => o.value === "deepseek-v4-flash")).toBe(false);
-    expect(modelOption?.options?.some((o) => o.value === "anthropic/claude-sonnet-4")).toBe(true);
+    expect(modelOption?.options?.some((o) => o.value === "openrouter/free")).toBe(true);
   });
 
   it("rejects unknown providers", async () => {

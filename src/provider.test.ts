@@ -93,13 +93,13 @@ describe("getModelPricing", () => {
 
   it("returns USD OpenRouter pricing from the fallback table without network", async () => {
     delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
-    const pricing = await getModelPricing("openrouter", "anthropic/claude-sonnet-4");
-    // OpenRouter bills cached reads at the regular input rate.
+    const pricing = await getModelPricing("openrouter", "openrouter/free");
+    // openrouter/free routes to free models: billed at $0.
     expect(pricing).toEqual({
       currency: "USD",
-      cacheHitPerM: 3,
-      cacheMissPerM: 3,
-      outputPerM: 15,
+      cacheHitPerM: 0,
+      cacheMissPerM: 0,
+      outputPerM: 0,
     });
   });
 });
@@ -119,7 +119,7 @@ describe("getContextWindowTokens", () => {
 
   it("uses the model's context length for openrouter", async () => {
     delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
-    expect(await getContextWindowTokens("openrouter", "google/gemini-2.5-pro")).toBe(1_000_000);
+    expect(await getContextWindowTokens("openrouter", "openrouter/free")).toBe(128_000);
   });
 });
 

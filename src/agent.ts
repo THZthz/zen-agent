@@ -154,9 +154,10 @@ const DEEPSEEK_MODEL_CONFIG_OPTION = {
 };
 
 /**
- * Curated OpenRouter models for the session selector. Any OpenRouter model
+ * OpenRouter models offered in the session selector. Any OpenRouter model
  * slug can be used beyond this list via ZEN_AGENT_OPENROUTER_MODEL or
- * session/set_config_option.
+ * session/set_config_option; `openrouter/free` routes to OpenRouter's
+ * free-tier models.
  */
 const OPENROUTER_MODEL_OPTIONS: Array<{
   value: string;
@@ -164,34 +165,9 @@ const OPENROUTER_MODEL_OPTIONS: Array<{
   description: string;
 }> = [
   {
-    value: "anthropic/claude-sonnet-4",
-    name: "Claude Sonnet 4",
-    description: "Anthropic's flagship coding model",
-  },
-  {
-    value: "anthropic/claude-opus-4-1",
-    name: "Claude Opus 4.1",
-    description: "Anthropic's most powerful model",
-  },
-  {
-    value: "openai/gpt-5",
-    name: "GPT-5",
-    description: "OpenAI's flagship reasoning model",
-  },
-  {
-    value: "google/gemini-2.5-pro",
-    name: "Gemini 2.5 Pro",
-    description: "Google's long-context flagship",
-  },
-  {
-    value: "deepseek/deepseek-chat",
-    name: "DeepSeek V3 (OpenRouter)",
-    description: "DeepSeek chat model on OpenRouter",
-  },
-  {
-    value: "deepseek/deepseek-r1",
-    name: "DeepSeek R1 (OpenRouter)",
-    description: "DeepSeek reasoning model on OpenRouter",
+    value: "openrouter/free",
+    name: "OpenRouter Free",
+    description: "OpenRouter's free-tier routing model",
   },
 ];
 

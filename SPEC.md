@@ -245,7 +245,7 @@ OpenRouter:
 | `ZEN_AGENT_LLM_PROVIDER` | Default provider for new sessions: `deepseek` (default) or `openrouter`. |
 | `ZEN_AGENT_OPENROUTER_API_KEY` | OpenRouter API key (required). |
 | `ZEN_AGENT_OPENROUTER_BASE_URL` | Base URL (default: `https://openrouter.ai/api/v1`). |
-| `ZEN_AGENT_OPENROUTER_MODEL` | Fallback model slug (default: `anthropic/claude-sonnet-4`). |
+| `ZEN_AGENT_OPENROUTER_MODEL` | Fallback model slug (default: `openrouter/free`). |
 | `ZEN_AGENT_OPENROUTER_SITE_URL` / `ZEN_AGENT_OPENROUTER_APP_NAME` | Optional `HTTP-Referer` / `X-Title` headers. |
 
 Sessions expose three ACP config options:
@@ -253,7 +253,7 @@ Sessions expose three ACP config options:
 | Option | Values |
 | --- | --- |
 | `provider` | `deepseek`, `openrouter` (switching resets the model to the provider default) |
-| `model` | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: curated slugs (any slug accepted via `set_config_option`) |
+| `model` | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug accepted via `set_config_option`) |
 | `thinking_effort` | `off`, `high`, `max` |
 
 `provider`, `model` and `thinking_effort` are locked once the session has

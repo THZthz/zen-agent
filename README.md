@@ -99,7 +99,7 @@ used side by side: pick the provider per session in the AI settings (the
     "Zen Agent": {
       "default_config_options": {
         "provider": "openrouter",
-        "model": "anthropic/claude-sonnet-4",
+        "model": "openrouter/free",
         "thinking_effort": "max"
       },
       "type": "custom",
@@ -108,7 +108,7 @@ used side by side: pick the provider per session in the AI settings (the
       "env": {
         "DEEPSEEK_API_KEY": "your-deepseek-api-key",
         "ZEN_AGENT_OPENROUTER_API_KEY": "sk-or-v1-...",
-        "ZEN_AGENT_OPENROUTER_MODEL": "anthropic/claude-sonnet-4",
+        "ZEN_AGENT_OPENROUTER_MODEL": "openrouter/free",
         "ZEN_AGENT_OPENROUTER_SITE_URL": "https://zed.dev",
         "ZEN_AGENT_OPENROUTER_APP_NAME": "Zen Agent",
         "ZEN_AGENT_MAX_TURN_STEPS": "1000",
@@ -260,17 +260,9 @@ Both models support JSON output, tool calls, the Responses API, and the Anthropi
 With the session `provider` set to `openrouter` (or `ZEN_AGENT_LLM_PROVIDER`
 as the default for new sessions), the agent talks to
 `https://openrouter.ai/api/v1` and any OpenRouter model slug works. The
-session model selector offers a curated list; arbitrary slugs can be set via
-`ZEN_AGENT_OPENROUTER_MODEL` or `session/set_config_option`:
-
-| Config value | Notes |
-| --- | --- |
-| `anthropic/claude-sonnet-4` | default; strong general coding model |
-| `anthropic/claude-opus-4-1` | most capable Anthropic model |
-| `openai/gpt-5` | OpenAI's flagship reasoning model |
-| `google/gemini-2.5-pro` | long context (1M) |
-| `deepseek/deepseek-chat` | DeepSeek V3 chat via OpenRouter |
-| `deepseek/deepseek-r1` | DeepSeek's reasoning model via OpenRouter |
+session model selector offers `openrouter/free` (OpenRouter's free-tier
+routing model); arbitrary slugs can be set via `ZEN_AGENT_OPENROUTER_MODEL`
+or `session/set_config_option`.
 
 Pricing (USD), context windows, and balance verification come from
 OpenRouter's `/models` and `/auth/key` endpoints (fetched once and cached),
@@ -286,7 +278,7 @@ When a session is created or loaded, Zed can display three configuration selecto
 | Option | Values |
 | --- | --- |
 | Provider | `deepseek`, `openrouter` |
-| Model | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: curated model list (see above) |
+| Model | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug via env/`set_config_option`) |
 | Thinking Effort | `off`, `high`, `max` |
 
 These are exposed as ACP session config options and can be changed with `session/set_config_option`.
@@ -319,7 +311,7 @@ settings).
 | `ZEN_AGENT_LLM_PROVIDER` | `deepseek` | Default provider for NEW sessions: `deepseek` or `openrouter`. Sessions can switch provider per-session via the `provider` config option until their first message |
 | `ZEN_AGENT_OPENROUTER_API_KEY` | — | OpenRouter API key (required when the provider is `openrouter`) |
 | `ZEN_AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
-| `ZEN_AGENT_OPENROUTER_MODEL` | `anthropic/claude-sonnet-4` | Default OpenRouter model when no session config is present; any model slug works |
+| `ZEN_AGENT_OPENROUTER_MODEL` | `openrouter/free` | Default OpenRouter model when no session config is present; any model slug works |
 | `ZEN_AGENT_OPENROUTER_SITE_URL` | — | Sent as the `HTTP-Referer` header (app attribution on OpenRouter) |
 | `ZEN_AGENT_OPENROUTER_APP_NAME` | — | Sent as the `X-Title` header (app attribution on OpenRouter) |
 

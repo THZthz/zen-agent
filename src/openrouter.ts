@@ -7,7 +7,7 @@ import {
 } from "./llm-client.js";
 
 /** Default OpenRouter model used when ZEN_AGENT_OPENROUTER_MODEL is unset. */
-export const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4";
+export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 function getOpenRouterApiKey(): string {
   const apiKey = process.env.ZEN_AGENT_OPENROUTER_API_KEY;
@@ -27,9 +27,9 @@ function getOpenRouterBaseUrl(): string {
  * Per-model metadata (USD per 1M tokens, context window).
  *
  * The live `GET /models` endpoint is the source of truth (fetched once and
- * cached); the curated fallbacks below only apply when that fetch fails
- * (offline start, invalid key, ...) or for models that left the catalog.
- * The values are indicative snapshots, not guaranteed current.
+ * cached); the fallbacks below only apply when that fetch fails (offline
+ * start, invalid key, ...) or for models that left the catalog. The values
+ * are indicative snapshots, not guaranteed current.
  */
 export interface OpenRouterModelInfo {
   /** USD per 1M input tokens. */
@@ -40,12 +40,8 @@ export interface OpenRouterModelInfo {
 }
 
 const MODEL_FALLBACKS: Record<string, OpenRouterModelInfo> = {
-  "anthropic/claude-sonnet-4": { inputPerM: 3, outputPerM: 15, contextLength: 200_000 },
-  "anthropic/claude-opus-4-1": { inputPerM: 15, outputPerM: 75, contextLength: 200_000 },
-  "openai/gpt-5": { inputPerM: 1.25, outputPerM: 10, contextLength: 400_000 },
-  "google/gemini-2.5-pro": { inputPerM: 1.25, outputPerM: 10, contextLength: 1_000_000 },
-  "deepseek/deepseek-chat": { inputPerM: 0.28, outputPerM: 0.42, contextLength: 128_000 },
-  "deepseek/deepseek-r1": { inputPerM: 0.55, outputPerM: 2.19, contextLength: 160_000 },
+  // `openrouter/free` routes to free models, billed at $0.
+  "openrouter/free": { inputPerM: 0, outputPerM: 0, contextLength: 128_000 },
 };
 
 /** Conservative default for models unknown to both the live catalog and the fallback table. */
@@ -117,7 +113,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, OpenRouterModelInfo>
 
 /**
  * Effective pricing/context info for an OpenRouter model id. Prefers the
- * live catalog; falls back to the curated table, then to generic defaults.
+ * live catalog; falls back to the static table, then to generic defaults.
  */
 export async function getOpenRouterModelInfo(model: string): Promise<OpenRouterModelInfo> {
   try {
