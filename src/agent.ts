@@ -8,6 +8,7 @@ import { Sonyflake } from 'sonyflake';
 import {
   createStoredSession,
   DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
   DEFAULT_THINKING_EFFORT,
   deleteStoredSession,
   findSessionCwd,
@@ -103,6 +104,33 @@ function parseMaxTurnSteps(): number {
   }
   return parsed;
 }
+
+/**
+ * Per-session provider selector. DeepSeek and OpenRouter can be used side by
+ * side: each session picks its provider here (locked once the user sent the
+ * first message, like model and thinking effort). ZEN_AGENT_LLM_PROVIDER
+ * only seeds new sessions.
+ */
+const PROVIDER_CONFIG_OPTION = {
+  id: "provider",
+  name: "Provider",
+  description: "LLM provider used for this session (locked after the first message)",
+  category: "model",
+  type: "select",
+  currentValue: DEFAULT_PROVIDER,
+  options: [
+    {
+      value: "deepseek",
+      name: "DeepSeek",
+      description: "DeepSeek's own API, billed in CNY",
+    },
+    {
+      value: "openrouter",
+      name: "OpenRouter",
+      description: "OpenRouter model aggregator, billed in USD",
+    },
+  ],
+};
 
 const DEEPSEEK_MODEL_CONFIG_OPTION = {
   id: "model",
@@ -456,7 +484,28 @@ export class ZenAgent {
 
     const value = String(params.value);
 
+    // Provider, model and thinking effort are fixed once the user sent their
+    // first message: changing them mid-conversation would mix model
+    // behaviors and billing currencies within one thread.
+    if (this.sessionHasStarted(active.session)) {
+      throw new Error(
+        `${params.configId} cannot be changed after the first message of a session`,
+      );
+    }
+
     switch (params.configId) {
+      case "provider": {
+        if (value !== "deepseek" && value !== "openrouter") {
+          throw new Error(`Unknown provider: ${value}`);
+        }
+        if (value !== active.session.config.provider) {
+          active.session.config.provider = value as ProviderId;
+          // The previous provider's model likely does not exist on the new
+          // one; reset to the provider's default so the selector stays valid.
+          active.session.config.model = getDefaultModel(value as ProviderId);
+        }
+        break;
+      }
       case "model": {
         if (active.session.config.provider === "openrouter") {
           // OpenRouter accepts any model slug; only the curated list is
@@ -483,6 +532,19 @@ export class ZenAgent {
 
     await this.save(active);
     return { configOptions: this.getConfigOptions(active.session) };
+  }
+
+  /**
+   * Whether the user has sent their first message to this session: the
+   * conversation contains a user message that is not an auto-generated
+   * environment snapshot. Skill invocations are injected as environment-named
+   * messages, so only real user prompts (and their follow-ups) lock the
+   * provider/model/thinking settings.
+   */
+  private sessionHasStarted(session: StoredSession): boolean {
+    return session.llmMessages.some(
+      (message) => message.role === "user" && !isEnvironmentMessage(message),
+    );
   }
 
   /**
@@ -664,7 +726,7 @@ export class ZenAgent {
         }
       });
 
-      const llmResult = await runLlmStep({
+      const llmResult = await runLlmStep(active.session.config.provider, {
         messages: active.session.llmMessages,
         signal,
         model: active.session.config.model,
@@ -1441,6 +1503,10 @@ Usage: /sandbox on | off`,
 
   private getConfigOptions(session: StoredSession): acp.SessionConfigOption[] {
     return [
+      {
+        ...PROVIDER_CONFIG_OPTION,
+        currentValue: session.config.provider,
+      } as acp.SessionConfigOption,
       {
         ...modelConfigOption(session.config.provider),
         currentValue: session.config.model,

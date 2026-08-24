@@ -95,6 +95,100 @@ describe("newSession provider wiring", () => {
   });
 });
 
+describe("setSessionConfigOption", () => {
+  const originalEnv = { ...process.env };
+
+  function register(agent: ZenAgent, session: StoredSession): void {
+    (agent as unknown as TestAgent).sessions.set(session.sessionId, {
+      session,
+      abortController: null,
+      gracefulCancel: false,
+      cancelTimer: null,
+    });
+  }
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("switches provider before the first message and resets the model to the provider default", async () => {
+    delete process.env.ZEN_AGENT_OPENROUTER_MODEL;
+    const agent = new ZenAgent();
+    const session = makeSession();
+    register(agent, session);
+
+    const res = await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: "provider",
+      value: "openrouter",
+    });
+
+    expect(session.config.provider).toBe("openrouter");
+    expect(session.config.model).toBe("anthropic/claude-sonnet-4");
+    const providerOption = res.configOptions?.find((o) => o.id === "provider") as
+      | { currentValue?: string }
+      | undefined;
+    expect(providerOption?.currentValue).toBe("openrouter");
+    const modelOption = res.configOptions?.find((o) => o.id === "model") as
+      | { options?: Array<{ value: string }> }
+      | undefined;
+    expect(modelOption?.options?.some((o) => o.value === "deepseek-v4-flash")).toBe(false);
+    expect(modelOption?.options?.some((o) => o.value === "anthropic/claude-sonnet-4")).toBe(true);
+  });
+
+  it("rejects unknown providers", async () => {
+    const agent = new ZenAgent();
+    const session = makeSession();
+    register(agent, session);
+
+    await expect(
+      agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: "provider",
+        value: "anthropic",
+      }),
+    ).rejects.toThrow(/Unknown provider/);
+  });
+
+  it("locks provider, model and thinking effort after the first user message", async () => {
+    const agent = new ZenAgent();
+    const session = makeSession();
+    session.llmMessages = [{ role: "user", content: "hi", name: "Amias" }];
+    register(agent, session);
+
+    const base = { sessionId: session.sessionId };
+    await expect(
+      agent.setSessionConfigOption({ ...base, configId: "provider", value: "openrouter" }),
+    ).rejects.toThrow(/after the first message/);
+    await expect(
+      agent.setSessionConfigOption({ ...base, configId: "model", value: "deepseek-v4-pro" }),
+    ).rejects.toThrow(/after the first message/);
+    await expect(
+      agent.setSessionConfigOption({ ...base, configId: "thinking_effort", value: "high" }),
+    ).rejects.toThrow(/after the first message/);
+    // Nothing was applied.
+    expect(session.config.provider).toBe("deepseek");
+    expect(session.config.model).toBe("deepseek-v4-flash");
+    expect(session.config.thinkingEffort).toBe("off");
+  });
+
+  it("still allows changes when only environment messages exist", async () => {
+    const agent = new ZenAgent();
+    const session = makeSession();
+    session.llmMessages = [{ role: "user", content: "<environment>...", name: "Environment" }];
+    register(agent, session);
+
+    const res = await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: "thinking_effort",
+      value: "max",
+    });
+
+    expect(session.config.thinkingEffort).toBe("max");
+    expect(res.configOptions?.find((o) => o.id === "thinking_effort")).toBeDefined();
+  });
+});
+
 describe("prepareReplayEvents", () => {
   it("synthesizes a display-only terminal for legacy bash calls so output stays visible", () => {
     const events: ReplayEvent[] = [

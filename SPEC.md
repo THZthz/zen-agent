@@ -242,18 +242,24 @@ OpenRouter:
 
 | Variable | Purpose |
 | --- | --- |
-| `ZEN_AGENT_LLM_PROVIDER` | `openrouter` selects OpenRouter (default `deepseek`). |
+| `ZEN_AGENT_LLM_PROVIDER` | Default provider for new sessions: `deepseek` (default) or `openrouter`. |
 | `ZEN_AGENT_OPENROUTER_API_KEY` | OpenRouter API key (required). |
 | `ZEN_AGENT_OPENROUTER_BASE_URL` | Base URL (default: `https://openrouter.ai/api/v1`). |
 | `ZEN_AGENT_OPENROUTER_MODEL` | Fallback model slug (default: `anthropic/claude-sonnet-4`). |
 | `ZEN_AGENT_OPENROUTER_SITE_URL` / `ZEN_AGENT_OPENROUTER_APP_NAME` | Optional `HTTP-Referer` / `X-Title` headers. |
 
-Sessions expose two ACP config options:
+Sessions expose three ACP config options:
 
 | Option | Values |
 | --- | --- |
+| `provider` | `deepseek`, `openrouter` (switching resets the model to the provider default) |
 | `model` | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: curated slugs (any slug accepted via `set_config_option`) |
 | `thinking_effort` | `off`, `high`, `max` |
+
+`provider`, `model` and `thinking_effort` are locked once the session has
+received its first user message (changing them mid-conversation would mix
+model behaviors and billing currencies); `set_config_option` rejects changes
+after that point. `ZEN_AGENT_LLM_PROVIDER` only seeds new sessions.
 
 `off` omits the provider reasoning effort parameter. DeepSeek maps `high`/`max`
 to its `reasoning_effort`; OpenRouter maps both to `high` (its OpenAI-compatible
@@ -267,6 +273,9 @@ vocabulary only knows `low`/`medium`/`high`).
   buffers the entire reasoning phase (DeepSeek's `reasoning_content`), breaking
   live thinking streaming; the raw parse also preserves provider-specific usage
   fields (cache tokens) that the SDK's zod schema strips.
+- Both providers run in the same agent process; the session's `config.provider`
+  selects the endpoint per step (`runLlmStep(provider, options)` in
+  `src/provider.ts`), so DeepSeek and OpenRouter sessions coexist.
 - DeepSeek streams reasoning as `delta.reasoning_content`; OpenRouter as
   `delta.reasoning` (with `reasoning_content` accepted as passthrough). Stored
   reasoning is sent back in history using the provider's field.

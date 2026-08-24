@@ -39,10 +39,10 @@ export interface BalanceSnapshot {
 }
 
 /**
- * Active LLM provider, from ZEN_AGENT_LLM_PROVIDER (default "deepseek").
- * One provider applies per agent process (each Zed agent server is its own
- * process); sessions persist the provider they were created with so cost and
- * currency stay consistent across restarts.
+ * Default provider for NEW sessions, from ZEN_AGENT_LLM_PROVIDER (default
+ * "deepseek"). Sessions can switch provider per-session via the `provider`
+ * config option (until their first message); the process-wide value only
+ * seeds newly created sessions.
  */
 export function getProvider(): ProviderId {
   const raw = process.env.ZEN_AGENT_LLM_PROVIDER;
@@ -65,9 +65,12 @@ export function getDefaultModel(provider: ProviderId): ModelId {
   return DEFAULT_MODEL;
 }
 
-/** Run one LLM step with the active provider. */
-export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult> {
-  if (getProvider() === "openrouter") {
+/** Run one LLM step with the session's provider (per-session, not process-wide). */
+export async function runLlmStep(
+  provider: ProviderId,
+  options: LlmStepOptions,
+): Promise<LlmStepResult> {
+  if (provider === "openrouter") {
     return runOpenRouterStep(options);
   }
   return runDeepSeekStep(options);

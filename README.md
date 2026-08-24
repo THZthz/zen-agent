@@ -89,14 +89,16 @@ Without the sandbox, point the command at `node` directly:
 ### OpenRouter
 
 Set `ZEN_AGENT_LLM_PROVIDER=openrouter` and an OpenRouter key to route the
-agent through OpenRouter instead of DeepSeek (per-process: each agent server
-gets one provider):
+agent through OpenRouter instead of DeepSeek. Both providers can also be
+used side by side: pick the provider per session in the AI settings (the
+`provider` config option) or with `default_config_options` as shown below:
 
 ```json
 {
   "agent_servers": {
     "Zen Agent": {
       "default_config_options": {
+        "provider": "openrouter",
         "model": "anthropic/claude-sonnet-4",
         "thinking_effort": "max"
       },
@@ -104,7 +106,7 @@ gets one provider):
       "command": "node",
       "args": ["/home/amias/projects/zen-agent/dist/index.js"],
       "env": {
-        "ZEN_AGENT_LLM_PROVIDER": "openrouter",
+        "DEEPSEEK_API_KEY": "your-deepseek-api-key",
         "ZEN_AGENT_OPENROUTER_API_KEY": "sk-or-v1-...",
         "ZEN_AGENT_OPENROUTER_MODEL": "anthropic/claude-sonnet-4",
         "ZEN_AGENT_OPENROUTER_SITE_URL": "https://zed.dev",
@@ -116,6 +118,10 @@ gets one provider):
   }
 }
 ```
+
+(One agent server can hold keys for both providers; sessions created without
+an explicit `provider` config option use `ZEN_AGENT_LLM_PROVIDER`, which
+defaults to `deepseek`.)
 
 The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
 
@@ -251,7 +257,8 @@ Both models support JSON output, tool calls, the Responses API, and the Anthropi
 
 ### OpenRouter
 
-With `ZEN_AGENT_LLM_PROVIDER=openrouter`, the agent talks to
+With the session `provider` set to `openrouter` (or `ZEN_AGENT_LLM_PROVIDER`
+as the default for new sessions), the agent talks to
 `https://openrouter.ai/api/v1` and any OpenRouter model slug works. The
 session model selector offers a curated list; arbitrary slugs can be set via
 `ZEN_AGENT_OPENROUTER_MODEL` or `session/set_config_option`:
@@ -274,14 +281,21 @@ OpenRouter's normalized `reasoning` field; `thinking_effort: max` maps to
 
 ## Session Configuration
 
-When a session is created or loaded, Zed can display two configuration selectors:
+When a session is created or loaded, Zed can display three configuration selectors:
 
 | Option | Values |
 | --- | --- |
+| Provider | `deepseek`, `openrouter` |
 | Model | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: curated model list (see above) |
 | Thinking Effort | `off`, `high`, `max` |
 
 These are exposed as ACP session config options and can be changed with `session/set_config_option`.
+
+Provider, model and thinking effort are **locked once the user sends the
+first message** of a session: changing them mid-conversation would mix model
+behaviors and billing currencies within one thread. Configure them before
+the first prompt (or via `default_config_options` in the agent server
+settings).
 
 ## Environment Variables
 
@@ -302,7 +316,7 @@ These are exposed as ACP session config options and can be changed with `session
 | `ZEN_AGENT_SANDBOX` | — | Set to `1` to run every bash tool call inside `bwrap` with `/mnt` mounted read-only (see [Sandboxing](#sandboxing-with-bubblewrap)) |
 | `ZEN_AGENT_SANDBOX_CMD` | default bwrap policy | Override the exact bwrap command used for sandboxed bash tool calls |
 | `ZEN_AGENT_SANDBOX_BLOCK_SHIM` | repo `bin/zen-agent-sandbox-block.sh` | Shim mounted (read-only) over `rm`/`grep`/`find` inside the bash-tool sandbox; refuses to run and suggests `trash`/`rg`/`fdfind` |
-| `ZEN_AGENT_LLM_PROVIDER` | `deepseek` | LLM provider: `deepseek` or `openrouter` |
+| `ZEN_AGENT_LLM_PROVIDER` | `deepseek` | Default provider for NEW sessions: `deepseek` or `openrouter`. Sessions can switch provider per-session via the `provider` config option until their first message |
 | `ZEN_AGENT_OPENROUTER_API_KEY` | — | OpenRouter API key (required when the provider is `openrouter`) |
 | `ZEN_AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
 | `ZEN_AGENT_OPENROUTER_MODEL` | `anthropic/claude-sonnet-4` | Default OpenRouter model when no session config is present; any model slug works |

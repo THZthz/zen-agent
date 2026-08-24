@@ -5,6 +5,7 @@ import {
   getDefaultModel,
   getModelPricing,
   getProvider,
+  runLlmStep,
 } from "./provider.js";
 import { DEFAULT_OPENROUTER_MODEL } from "./openrouter.js";
 import { resetOpenRouterModelsCache } from "./openrouter.js";
@@ -29,6 +30,25 @@ describe("getProvider", () => {
   it("throws on an unknown value", () => {
     process.env.ZEN_AGENT_LLM_PROVIDER = "nope";
     expect(() => getProvider()).toThrow(/ZEN_AGENT_LLM_PROVIDER/);
+  });
+});
+
+describe("runLlmStep", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("dispatches to the requested provider (key checks prove routing)", async () => {
+    delete process.env.DEEPSEEK_API_KEY;
+    await expect(runLlmStep("deepseek", { messages: [] })).rejects.toThrow(
+      /DEEPSEEK_API_KEY/,
+    );
+    delete process.env.ZEN_AGENT_OPENROUTER_API_KEY;
+    await expect(runLlmStep("openrouter", { messages: [] })).rejects.toThrow(
+      /ZEN_AGENT_OPENROUTER_API_KEY/,
+    );
   });
 });
 

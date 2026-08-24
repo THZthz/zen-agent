@@ -77,9 +77,7 @@ function bashStep(overrides: Partial<LlmStepResult> = {}): LlmStepResult {
  * agent_message_chunk notifications).
  */
 function streamingStepMock(resultPromise: Promise<LlmStepResult>) {
-  mockedRunLlmStep.mockImplementationOnce(async (options: {
-    onTextDelta?: (delta: string) => void | Promise<void>;
-  }) => {
+  mockedRunLlmStep.mockImplementationOnce(async (_provider, options) => {
     const result = await resultPromise;
     if (result.text.length > 0) {
       await options.onTextDelta?.(result.text);
