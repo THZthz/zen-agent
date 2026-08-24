@@ -51,15 +51,8 @@ type TestAgent = {
   cancel(params: { sessionId: string }): void;
 };
 
-describe("newSession provider wiring", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("persists the provider and advertises OpenRouter model options when ZEN_AGENT_LLM_PROVIDER=openrouter", async () => {
-    process.env.ZEN_AGENT_LLM_PROVIDER = "openrouter";
+describe("newSession default provider", () => {
+  it("creates sessions on deepseek with DeepSeek model options", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
     try {
       const agent = new ZenAgent();
@@ -77,18 +70,18 @@ describe("newSession provider wiring", () => {
         { cwd, mcpServers: [] } as acp.NewSessionRequest,
         cx,
       );
+      const providerOption = created.configOptions?.find((o) => o.id === "provider") as
+        | { currentValue?: string }
+        | undefined;
+      expect(providerOption?.currentValue).toBe("deepseek");
       const modelOption = created.configOptions?.find((o) => o.id === "model") as
         | { options?: Array<{ value: string }> }
         | undefined;
-      expect(modelOption?.options).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ value: "openrouter/free" }),
-        ]),
-      );
+      expect(modelOption?.options?.some((o) => o.value === "deepseek-v4-flash")).toBe(true);
       const active = (agent as unknown as {
         sessions: Map<string, { session: StoredSession }>;
       }).sessions.get(created.sessionId);
-      expect(active?.session.config.provider).toBe("openrouter");
+      expect(active?.session.config.provider).toBe("deepseek");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

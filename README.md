@@ -88,10 +88,9 @@ Without the sandbox, point the command at `node` directly:
 
 ### OpenRouter
 
-Set `ZEN_AGENT_LLM_PROVIDER=openrouter` and an OpenRouter key to route the
-agent through OpenRouter instead of DeepSeek. Both providers can also be
-used side by side: pick the provider per session in the AI settings (the
-`provider` config option) or with `default_config_options` as shown below:
+Set an OpenRouter key and pick the `openrouter` provider per session in the
+AI settings (the `provider` config option) or with `default_config_options`
+as shown below. DeepSeek and OpenRouter sessions coexist in one agent server:
 
 ```json
 {
@@ -119,9 +118,8 @@ used side by side: pick the provider per session in the AI settings (the
 }
 ```
 
-(One agent server can hold keys for both providers; sessions created without
-an explicit `provider` config option use `ZEN_AGENT_LLM_PROVIDER`, which
-defaults to `deepseek`.)
+(One agent server can hold keys for both providers; sessions without an
+explicit `provider` config option default to `deepseek`.)
 
 The agent reads newline-delimited JSON-RPC from stdin and writes responses to stdout.
 
@@ -257,8 +255,7 @@ Both models support JSON output, tool calls, the Responses API, and the Anthropi
 
 ### OpenRouter
 
-With the session `provider` set to `openrouter` (or `ZEN_AGENT_LLM_PROVIDER`
-as the default for new sessions), the agent talks to
+With the session `provider` set to `openrouter`, the agent talks to
 `https://openrouter.ai/api/v1` and any OpenRouter model slug works. The
 session model selector offers `openrouter/free` (OpenRouter's free-tier
 routing model); arbitrary slugs can be set via `ZEN_AGENT_OPENROUTER_MODEL`
@@ -308,7 +305,6 @@ settings).
 | `ZEN_AGENT_SANDBOX` | — | Set to `1` to run every bash tool call inside `bwrap` with `/mnt` mounted read-only (see [Sandboxing](#sandboxing-with-bubblewrap)) |
 | `ZEN_AGENT_SANDBOX_CMD` | default bwrap policy | Override the exact bwrap command used for sandboxed bash tool calls |
 | `ZEN_AGENT_SANDBOX_BLOCK_SHIM` | repo `bin/zen-agent-sandbox-block.sh` | Shim mounted (read-only) over `rm`/`grep`/`find` inside the bash-tool sandbox; refuses to run and suggests `trash`/`rg`/`fdfind` |
-| `ZEN_AGENT_LLM_PROVIDER` | `deepseek` | Default provider for NEW sessions: `deepseek` or `openrouter`. Sessions can switch provider per-session via the `provider` config option until their first message |
 | `ZEN_AGENT_OPENROUTER_API_KEY` | — | OpenRouter API key (required when the provider is `openrouter`) |
 | `ZEN_AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
 | `ZEN_AGENT_OPENROUTER_MODEL` | `openrouter/free` | Default OpenRouter model when no session config is present; any model slug works |

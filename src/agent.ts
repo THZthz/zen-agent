@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Sonyflake } from 'sonyflake';
 import {
   createStoredSession,
-  DEFAULT_MODEL,
+  DEFAULT_DEEPSEEK_MODEL,
   DEFAULT_PROVIDER,
   DEFAULT_THINKING_EFFORT,
   deleteStoredSession,
@@ -32,7 +32,6 @@ import {
   getContextWindowTokens,
   getDefaultModel,
   getModelPricing,
-  getProvider,
   runLlmStep,
   type LlmToolCall,
   type LlmUsage,
@@ -108,8 +107,8 @@ function parseMaxTurnSteps(): number {
 /**
  * Per-session provider selector. DeepSeek and OpenRouter can be used side by
  * side: each session picks its provider here (locked once the user sent the
- * first message, like model and thinking effort). ZEN_AGENT_LLM_PROVIDER
- * only seeds new sessions.
+ * first message, like model and thinking effort). New sessions default to
+ * deepseek.
  */
 const PROVIDER_CONFIG_OPTION = {
   id: "provider",
@@ -138,7 +137,7 @@ const DEEPSEEK_MODEL_CONFIG_OPTION = {
   description: "Deepseek model used for this session",
   category: "model",
   type: "select",
-  currentValue: DEFAULT_MODEL,
+  currentValue: DEFAULT_DEEPSEEK_MODEL,
   options: [
     {
       value: "deepseek-v4-flash",
@@ -185,7 +184,7 @@ function modelConfigOption(provider: ProviderId) {
   }
   return {
     ...DEEPSEEK_MODEL_CONFIG_OPTION,
-    currentValue: DEFAULT_MODEL,
+    currentValue: DEFAULT_DEEPSEEK_MODEL,
   };
 }
 
@@ -353,7 +352,7 @@ export class ZenAgent {
     if (!isAbsolute(params.cwd)) {
       throw new Error("cwd must be an absolute path");
     }
-    const session = await createStoredSession(params.cwd, getProvider());
+    const session = await createStoredSession(params.cwd);
     // Freeze the environment snapshot into the persisted conversation at
     // session creation. It sits right after the system prompt, so it must
     // stay byte-identical for the provider's context cache to keep hitting

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { TurnStats } from "./turn-stats.js";
+import { DEFAULT_OPENROUTER_MODEL } from "./openrouter.js";
 
 /**
  * A user message that may carry a `name` (the OpenAI wire `name` field,
@@ -30,15 +31,15 @@ export type ProviderId = "deepseek" | "openrouter";
 export type ModelId = string;
 export type ThinkingEffort = "off" | "high" | "max";
 
-export const DEFAULT_MODEL: ModelId = "deepseek-v4-flash";
+export const DEFAULT_DEEPSEEK_MODEL: ModelId = "deepseek-v4-flash";
 export const DEFAULT_PROVIDER: ProviderId = "deepseek";
 export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "off";
 
 export interface SessionConfig {
   /**
    * LLM provider backing this session (persisted so cost and currency stay
-   * consistent across restarts). Set from ZEN_AGENT_LLM_PROVIDER at session
-   * creation; sessions created before providers existed default to
+   * consistent across restarts). Chosen per session via the `provider`
+   * config option; sessions created before providers existed default to
    * "deepseek" on load.
    */
   provider: ProviderId;
@@ -242,7 +243,7 @@ export async function createStoredSession(
     llmMessages: [],
     config: {
       provider,
-      model: DEFAULT_MODEL,
+      model: provider == "openrouter" ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: "",
       sandbox: false,

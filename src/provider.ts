@@ -19,8 +19,7 @@ import {
   runOpenRouterStep,
 } from "./openrouter.js";
 import {
-  DEFAULT_MODEL,
-  DEFAULT_PROVIDER,
+  DEFAULT_DEEPSEEK_MODEL,
   type ModelId,
   type ProviderId,
 } from "./storage.js";
@@ -38,31 +37,12 @@ export interface BalanceSnapshot {
   details: Record<string, unknown>;
 }
 
-/**
- * Default provider for NEW sessions, from ZEN_AGENT_LLM_PROVIDER (default
- * "deepseek"). Sessions can switch provider per-session via the `provider`
- * config option (until their first message); the process-wide value only
- * seeds newly created sessions.
- */
-export function getProvider(): ProviderId {
-  const raw = process.env.ZEN_AGENT_LLM_PROVIDER;
-  if (raw === undefined || raw === "" || raw === DEFAULT_PROVIDER) {
-    return DEFAULT_PROVIDER;
-  }
-  if (raw === "openrouter") {
-    return "openrouter";
-  }
-  throw new Error(
-    `Unknown ZEN_AGENT_LLM_PROVIDER: ${raw} (expected "deepseek" or "openrouter")`,
-  );
-}
-
 /** Default model for a provider: DeepSeek's fallback or ZEN_AGENT_OPENROUTER_MODEL. */
 export function getDefaultModel(provider: ProviderId): ModelId {
   if (provider === "openrouter") {
     return process.env.ZEN_AGENT_OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
   }
-  return DEFAULT_MODEL;
+  return DEFAULT_DEEPSEEK_MODEL;
 }
 
 /** Run one LLM step with the session's provider (per-session, not process-wide). */

@@ -224,8 +224,8 @@ Every installed Agent Skill is also advertised as a slash command: `/grill-me <g
 Zen Agent talks to OpenAI-compatible chat completions endpoints through a
 single shared SSE client (`src/llm-client.ts`) that streams text, reasoning
 tokens, and tool calls live. Two providers use it: **DeepSeek** (default) and
-**OpenRouter**; the active one is selected with `ZEN_AGENT_LLM_PROVIDER` and
-persisted per session (`config.provider`) so cost/currency stay consistent
+**OpenRouter**; the provider is chosen per session via the `provider` config
+option and persisted in `config.provider` so cost/currency stay consistent
 across restarts.
 
 ### 7.1 Provider Configuration
@@ -242,7 +242,6 @@ OpenRouter:
 
 | Variable | Purpose |
 | --- | --- |
-| `ZEN_AGENT_LLM_PROVIDER` | Default provider for new sessions: `deepseek` (default) or `openrouter`. |
 | `ZEN_AGENT_OPENROUTER_API_KEY` | OpenRouter API key (required). |
 | `ZEN_AGENT_OPENROUTER_BASE_URL` | Base URL (default: `https://openrouter.ai/api/v1`). |
 | `ZEN_AGENT_OPENROUTER_MODEL` | Fallback model slug (default: `openrouter/free`). |
@@ -259,7 +258,7 @@ Sessions expose three ACP config options:
 `provider`, `model` and `thinking_effort` are locked once the session has
 received its first user message (changing them mid-conversation would mix
 model behaviors and billing currencies); `set_config_option` rejects changes
-after that point. `ZEN_AGENT_LLM_PROVIDER` only seeds new sessions.
+after that point. Sessions default to `deepseek`.
 
 `off` omits the provider reasoning effort parameter. DeepSeek maps `high`/`max`
 to its `reasoning_effort`; OpenRouter maps both to `high` (its OpenAI-compatible
@@ -312,7 +311,7 @@ zen-agent/
     llm-client.ts     # shared OpenAI-compatible SSE client + bash tool schema
     deepseek.ts       # DeepSeek provider: pricing, usage, balance
     openrouter.ts     # OpenRouter provider: models catalog, usage, balance
-    provider.ts       # provider selection (ZEN_AGENT_LLM_PROVIDER) and dispatch
+    provider.ts       # provider dispatch and pricing/balance facade
 ```
 
 ## 10. Dependencies
@@ -331,8 +330,8 @@ zen-agent/
 
 ## 12. Decisions
 
-1. **LLM provider**: DeepSeek by default, OpenRouter opt-in via
-   `ZEN_AGENT_LLM_PROVIDER=openrouter`; both share one hand-rolled
+1. **LLM provider**: DeepSeek by default, OpenRouter opt-in per session via
+   the `provider` config option; both share one hand-rolled
    OpenAI-compatible SSE client (`llm-client.ts`). The AI SDK was dropped
    because it buffers reasoning-phase streaming (see §7.2).
 2. **ACP SDK**: Use the official `@agentclientprotocol/sdk`.
