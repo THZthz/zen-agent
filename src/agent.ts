@@ -1,6 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Sonyflake } from 'sonyflake';
@@ -153,9 +154,23 @@ const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
   },
 ];
 
-const sonyflake = new Sonyflake({
-  machineId: 0x0d000721 // Unique per server/container
-});
+/**
+ * Sonyflake's default machine-id space is 16 bits (max 0xFFFF); the old fixed
+ * constant 0x0d000721 overflowed it and made the constructor throw. Deriving
+ * the id from hostname:pid keeps ids unique across containers on one host and
+ * across processes in one container. FNV-1a keeps this dependency-free.
+ */
+function sonyflakeMachineId(): number {
+  let hash = 0x811c9dc5;
+  const input = `${hostname()}:${process.pid}`;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) & 0xffff;
+}
+
+const sonyflake = new Sonyflake({ machineId: sonyflakeMachineId() });
 
 const BASE62_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
