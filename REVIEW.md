@@ -29,7 +29,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 7. **Unbounded `state.json` growth / redundant storage** — every bash call persists the full output **three times**: `rawOutput.output`, `_meta.terminal_output.data` (same text again), and the on-disk log; media payloads are stored both in `events` and in `llmMessages`. And `save()` rewrites the entire JSON document on every step. Long multimodal sessions make each save multi-MB and turn I/O effectively quadratic.
 
-- [ ] 8. **`deleteStoredSession` leaks artifacts** — it removes only `state.json`; `terminals/*.log|sh` and `llm.jsonl` stay on disk forever, and the index forgets the cwd so nothing can find them later. Remove `sessionRootDirectory` recursively.
+- [x] 8. **`deleteStoredSession` leaks artifacts** — it removes only `state.json`; `terminals/*.log|sh` and `llm.jsonl` stay on disk forever, and the index forgets the cwd so nothing can find them later. Remove `sessionRootDirectory` recursively.
 
 - [ ] 9. **Any prompt starting with `/` is hijacked** — `parseSlashCommand()` treats e.g. `/etc/hosts permissions?` as a slash command and replies "Unknown slash command" instead of sending the message to the model. Require a known command/skill match, or fall through to a normal prompt otherwise.
 

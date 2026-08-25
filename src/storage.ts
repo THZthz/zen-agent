@@ -452,6 +452,9 @@ export async function deleteStoredSession(
   cwd: string,
   sessionId: string,
 ): Promise<void> {
-  await rm(sessionPath(cwd, sessionId), { force: true });
+  // Remove the whole per-session tree: state.json plus the terminal
+  // artifacts (input-*.sh / output-*.log) and llm.jsonl that would otherwise
+  // be orphaned forever (the index forgets the cwd right after).
+  await rm(sessionRootDirectory(cwd, sessionId), { recursive: true, force: true });
   await forgetSession(sessionId);
 }

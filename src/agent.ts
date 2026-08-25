@@ -556,6 +556,9 @@ export class ZenAgent {
     await this.settlePreviousTurn(active);
     this.sessions.delete(params.sessionId);
     await deleteStoredSession(cwd, params.sessionId);
+    void this.logRuntime(cwd, "info", "session deleted", {
+      sessionId: params.sessionId,
+    });
     return {};
   }
 
