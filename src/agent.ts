@@ -312,13 +312,16 @@ export class ZenAgent {
   private sessions = new Map<string, ActiveSession>();
   private clientCapabilities: acp.ClientCapabilities = {};
   /**
-   * Most recent balance snapshot for the session's provider (CNY for
-   * DeepSeek, USD for OpenRouter), captured at the end of each turn. The
-   * delta to the next turn's snapshot is compared against the locally
-   * estimated cost to verify token accounting (see verifyTurnCost). Null
-   * until the first turn completes.
+   * Most recent balance snapshot per PROVIDER (CNY for DeepSeek, USD for
+   * OpenRouter), captured at the end of each turn. The delta to the next
+   * turn's snapshot is compared against the locally estimated cost to verify
+   * token accounting (see verifyTurnCost). Keyed by provider so concurrent
+   * sessions on different providers never compare each other's deltas.
    */
-  private lastObservedBalance: { currency: string; total: number } | null = null;
+  private readonly lastBalanceByProvider = new Map<
+    ProviderId,
+    { currency: string; total: number }
+  >();
   /**
    * Per-startup debug log identity: "YYYY-MM-DD-HH-mm-ss_<uuid>", e.g.
    * 2026-08-21-23-06-04_<uuid>. Created once per agent process; all runtime
@@ -1324,14 +1327,17 @@ export class ZenAgent {
         balanceTotal: snapshot.total,
         ...snapshot.details,
       };
-      const before = this.lastObservedBalance;
+      const before = this.lastBalanceByProvider.get(provider) ?? null;
       if (before !== null && before.currency === snapshot.currency) {
         const balanceDelta = before.total - snapshot.total;
         details.balanceBefore = before.total;
         details.balanceDelta = roundCost(balanceDelta);
         details.deltaVsEstimated = roundCost(balanceDelta - turn.cost);
       }
-      this.lastObservedBalance = { currency: snapshot.currency, total: snapshot.total };
+      this.lastBalanceByProvider.set(provider, {
+        currency: snapshot.currency,
+        total: snapshot.total,
+      });
       await this.logRuntime(active.session.cwd, "info", "turn stats balance verify", details);
     } catch (error) {
       await this.logRuntime(active.session.cwd, "warn", "turn stats balance verify failed", {

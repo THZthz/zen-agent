@@ -45,7 +45,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 14. **Misleading currency naming** — `costYuan` / `formatYuan` / `roundYuan` hold **USD** for OpenRouter sessions (`turn-stats.ts`, `storage.ts` SessionUsage, agent logging). Anyone reading `usage.costYuan` will assume CNY. Rename to currency-neutral (`cost`, `formatCost`) now while the persisted-shape compat story is already being managed.
 
-- [ ] 15. **Module-global state with hidden coupling**:
+- [x] 15. **Module-global state with hidden coupling**:
     - `rate-limit.ts`: `nextChatRequestAt` is process-global, shared across all sessions/providers, and a request aborted while waiting still consumes its reserved slot.
     - `verifyTurnCost()` keeps one `lastObservedBalance` per process; with two concurrent DeepSeek sessions the balance delta of one session is compared against another's estimated cost (currency guard only separates providers).
     - `openrouter.ts` `modelsPersistedCwd` is a process-global keyed on one cwd.

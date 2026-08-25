@@ -236,7 +236,11 @@ interface ModelsCacheFile {
   models: CatalogEntry[];
 }
 
-/** Avoid rewriting the file on every session in one process. */
+/**
+ * Process-global write-once guard: avoid rewriting the catalog file on every
+ * session in one process. Keyed on a single cwd — switching between projects
+ * in one agent process writes once per project switch, which is fine.
+ */
 let modelsPersistedCwd: string | null = null;
 
 /** Best-effort: persist the fetched catalog so offline restarts can use it. */

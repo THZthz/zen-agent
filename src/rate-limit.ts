@@ -5,6 +5,14 @@
  * is set (0 disables it explicitly).
  */
 
+// Process-global on purpose: the throttle exists to keep THIS process from
+// bursting the provider's request-per-minute budget, regardless of how many
+// sessions share it. Known tradeoffs:
+// - a request aborted while waiting still consumes its reserved slot (the
+//   reservation happens up front so queued bursts spread out); harmless,
+//   since an aborted caller frees its real budget slot anyway.
+// - providers are not keyed separately; with ZEN_AGENT_CHAT_RPM set and two
+//   providers in use, both draw from one shared spacing budget.
 let nextChatRequestAt = 0;
 
 export async function waitForChatRateLimit(signal?: AbortSignal): Promise<void> {
