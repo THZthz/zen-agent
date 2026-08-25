@@ -214,8 +214,7 @@ export const READ_MEDIA_TOOL_SCHEMA = {
   type: 'function',
   function: {
     name: 'read_media',
-    description:
-      'Load a local image or audio file so you can see/hear its content yourself (no user description needed). Use for screenshots, photos, diagrams, recordings, or any media file the user references by path. Returns the media attached to the conversation; a short metadata line confirms what was loaded.',
+    description: 'Read a local image or audio file.',
     parameters: {
       type: 'object',
       properties: {

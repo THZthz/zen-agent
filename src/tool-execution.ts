@@ -474,9 +474,9 @@ export async function executeLlmToolCall(
       (status === 'completed' ? '(no output)' : `exit code ${exit.exitCode ?? 'unknown'}`);
     const modelOutput = truncateTerminalOutput(outputText, terminalOutputByteLimit());
     const outputForModel = modelOutput.truncated
-      ? `${modelOutput.text}\n\n[Terminal output truncated: showing the last ${modelOutput.keptBytes} of ${modelOutput.originalBytes} bytes; full output saved to ${logPath}]`
-      : `${outputText}\n\n[Full output saved to ${logPath}]`;
-    const displayText = `${outputText}\n\n⏱ ${formatMs(durationMs)}`;
+      ? `${modelOutput.text}[Terminal output truncated: showing the last ${modelOutput.keptBytes} of ${modelOutput.originalBytes} bytes; full output saved to ${logPath}]`
+      : `${outputText}`;
+    const displayText = `${outputText}\n\n${formatMs(durationMs)}`;
 
     await emit({
       sessionUpdate: 'tool_call_update',
@@ -537,7 +537,7 @@ export async function executeLlmToolCall(
           type: 'content',
           content: {
             type: 'text',
-            text: `${message}\n\n⏱ ${formatMs(durationMs)}`,
+            text: `${message}\n\n${formatMs(durationMs)}`,
           },
         },
       ],
