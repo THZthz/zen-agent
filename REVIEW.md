@@ -55,7 +55,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 17. **`healMessages` silent data loss is only console.warn'd** — dropped assistant/tool messages go to stdout, not the session debug log (`logRuntime`). When healing kicks in after a crash you'll want it in `llm.jsonl`/`log.jsonl` correlated with the session, not on a stdout Zed may swallow.
 
-- [ ] 18. **`listStoredSessions(cwd)` reads and JSON-parses every `state.json` in full** (including base64 media) just to produce id/title/date. Store title/updatedAt in the index or sidecar and listing stays O(entries) cheap.
+- [x] 18. **`listStoredSessions(cwd)` reads and JSON-parses every `state.json` in full** (including base64 media) just to produce id/title/date. Store title/updatedAt in the index or sidecar and listing stays O(entries) cheap.
 
 - [ ] 19. **Shutdown is abrupt** — `index.ts` exits on SIGTERM/SIGHUP without letting `runTurn` finish, killing/releasing client terminals, or flushing pending `void`-ed log writes. At least abort controllers and give the connection a moment to close.
 

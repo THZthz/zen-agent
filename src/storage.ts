@@ -195,6 +195,11 @@ interface SessionIndex {
   [sessionId: string]: {
     cwd: string;
     updatedAt: string;
+    /**
+     * Session title, mirrored here so listings do not have to parse the
+     * (potentially multi-MB) state.json.
+     */
+    title?: string | null;
   };
 }
 
@@ -305,6 +310,7 @@ async function rememberSession(session: StoredSession): Promise<void> {
   index[session.sessionId] = {
     cwd: session.cwd,
     updatedAt: session.updatedAt,
+    title: session.title,
   };
   await writeIndex(index);
 }
@@ -489,11 +495,27 @@ export async function findSessionCwd(sessionId: string): Promise<string | undefi
 }
 
 export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
-  if (cwd) {
-    const seen = new Set<string>();
-    const sessions: SessionInfo[] = [];
+  const index = await readIndex();
 
-    // Current layout: <project>/.sessions/<sessionId>/state.json
+  if (cwd) {
+    const sessions: SessionInfo[] = [];
+    const indexed = new Set<string>();
+
+    // Fast path: indexed sessions resolve from the small index file without
+    // parsing every state.json (which can carry base64 media payloads).
+    for (const [sessionId, entry] of Object.entries(index)) {
+      if (entry.cwd !== cwd) continue;
+      indexed.add(sessionId);
+      sessions.push({
+        sessionId,
+        cwd,
+        title: entry.title ?? null,
+        updatedAt: entry.updatedAt,
+      });
+    }
+
+    // Fallback: pick up on-disk sessions the index does not know about
+    // (hand-copied .sessions directories, wiped indexes).
     let entries: string[];
     try {
       entries = await readdir(sessionDirectory(cwd));
@@ -501,7 +523,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
       entries = [];
     }
     for (const entry of entries) {
-      if (seen.has(entry)) continue;
+      if (indexed.has(entry)) continue;
       let raw: string;
       try {
         raw = await readFile(
@@ -512,7 +534,6 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
         // Not a per-session directory (client/, llm/, logs/, ...).
         continue;
       }
-      seen.add(entry);
       try {
         const parsed = JSON.parse(raw) as StoredSession;
         sessions.push({
@@ -530,7 +551,6 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
     return sessions;
   }
 
-  const index = await readIndex();
   const sessions: SessionInfo[] = [];
   for (const [sessionId, entry] of Object.entries(index)) {
     try {
