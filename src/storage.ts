@@ -2,25 +2,81 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ModelMessage } from "ai";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { CacheDiagnosticEntry } from "./cache-diagnostics.js";
 import type { TurnStats } from "./turn-stats.js";
 
 /**
+ * One part of a multi-part user message. Media parts carry base64 payloads
+ * attached by the client (Zed paste / drag & drop / @-mention all arrive as
+ * ACP image blocks) and are sent to multimodal models as OpenAI-compatible
+ * `image_url` (data URI) / `input_audio` content parts.
+ */
+export type UserContentPart =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      /** MIME type, e.g. "image/png". */
+      mimeType: string;
+      /** Base64-encoded payload. */
+      data: string;
+      /**
+       * Source URI when known (`file://...` for @-mentioned files). Display
+       * and logging only - never sent to the LLM.
+       */
+      uri?: string;
+    }
+  | {
+      type: "audio";
+      /** MIME type, e.g. "audio/wav". */
+      mimeType: string;
+      /** Base64-encoded payload. */
+      data: string;
+    };
+
+/**
  * A user message that may carry a `name` (the OpenAI wire `name` field,
  * e.g. the git user name for the human's prompts, or "environment" for the
- * auto-generated environment message). The AI SDK's `UserModelMessage` has
- * no `name` field, hence this local extension.
+ * auto-generated environment message) and either plain text or multi-part
+ * content (text + attached media).
  */
 export interface NamedUserMessage {
   role: "user";
-  content: string;
+  content: string | UserContentPart[];
   name?: string;
 }
 
-/** Every message we can persist in a session and send to the LLM. */
-export type LlmMessage = ModelMessage | NamedUserMessage;
+export interface AssistantMessage {
+  role: "assistant";
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "reasoning"; text: string }
+    | {
+        type: "tool-call";
+        toolCallId: string;
+        toolName: string;
+        input: unknown;
+      }
+  >;
+}
+
+export interface ToolMessage {
+  role: "tool";
+  content: Array<{
+    type: "tool-result";
+    toolCallId: string;
+    toolName?: string;
+    output: unknown;
+  }>;
+}
+
+/**
+ * Every message we can persist in a session and send to the LLM.
+ *
+ * These are our own structural types (the AI SDK was dropped - see SPEC section 6.1); they intentionally match the shapes historically persisted in
+ * state.json so old sessions keep loading.
+ */
+export type LlmMessage = NamedUserMessage | AssistantMessage | ToolMessage;
 
 export type ProviderId = "deepseek" | "openrouter";
 

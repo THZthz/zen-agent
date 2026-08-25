@@ -178,13 +178,6 @@ export function toOpenAiMessages(
         }
         break;
       }
-      case "system": {
-        out.push({
-          role: "system",
-          content: typeof message.content === "string" ? message.content : JSON.stringify(message.content),
-        });
-        break;
-      }
     }
   }
 

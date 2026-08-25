@@ -16,6 +16,7 @@ import {
   DEFAULT_OPENROUTER_MODEL,
   fetchOpenRouterBalance,
   getOpenRouterModelInfo,
+  getOpenRouterModelModalities,
   runOpenRouterStep,
 } from "./openrouter.js";
 import {
@@ -94,6 +95,25 @@ export async function getContextWindowTokens(
     return (await getOpenRouterModelInfo(model)).contextLength;
   }
   return getDeepSeekContextWindow();
+}
+
+/**
+ * Input modalities accepted by the session's model. Conservative: unknown
+ * catalog entries (offline, unknown slug) and DeepSeek (text-only models)
+ * report neither image nor audio support.
+ */
+export async function getModelModalities(
+  provider: ProviderId,
+  model: ModelId,
+): Promise<{ image: boolean; audio: boolean }> {
+  if (provider === "openrouter") {
+    const modalities = await getOpenRouterModelModalities(model);
+    if (modalities === null) {
+      return { image: false, audio: false };
+    }
+    return { image: modalities.includes("image"), audio: modalities.includes("audio") };
+  }
+  return { image: false, audio: false };
 }
 
 /** Balance/credit snapshot for the active provider. */

@@ -448,7 +448,7 @@ describe("getOpenRouterModelOptions", () => {
       version: number;
       models: Array<{ id: string }>;
     };
-    expect(file.version).toBe(1);
+    expect(file.version).toBe(2);
     expect(file.models.map((m) => m.id)).toEqual([
       "vendor/zeta",
       "vendor/alpha",
@@ -462,7 +462,7 @@ describe("getOpenRouterModelOptions", () => {
     await writeFile(
       join(dir, ".sessions", "client", "models.openrouter.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         fetchedAt: new Date().toISOString(),
         baseUrl: "https://openrouter.ai/api/v1",
         models: [

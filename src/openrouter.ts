@@ -68,6 +68,11 @@ interface CatalogEntry extends OpenRouterModelInfo {
   name: string | null;
   /** Whether the model supports tool calling (the agent requires it). */
   supportsTools: boolean;
+  /**
+   * Accepted input modalities from `architecture.input_modalities` (e.g.
+   * ["text", "image"]), or null when unknown; "text" is implicit.
+   */
+  inputModalities: string[] | null;
 }
 
 const MODEL_FALLBACKS: Record<string, OpenRouterModelInfo> = {
@@ -85,7 +90,7 @@ const UNKNOWN_MODEL_FALLBACK: OpenRouterModelInfo = {
 /** Live catalog fetch timeout: config options must not block session creation forever. */
 const MODELS_FETCH_TIMEOUT_MS = 5_000;
 /** Bumped whenever the persisted catalog file shape changes. */
-const MODELS_CACHE_VERSION = 1;
+const MODELS_CACHE_VERSION = 2;
 
 function parsePrice(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? "");
@@ -134,6 +139,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
         context_length?: number;
         pricing?: { prompt?: string; completion?: string; request?: string };
         supported_parameters?: string[];
+        architecture?: { input_modalities?: unknown };
       }>;
     };
     const models = new Map<string, CatalogEntry>();
@@ -151,12 +157,46 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
             ? model.context_length
             : 200_000,
         supportsTools: supportsTools(model.supported_parameters),
+        inputModalities: parseInputModalities(model.architecture?.input_modalities),
       });
     }
     return models;
   })();
   modelsCache = { key, promise };
   return promise;
+}
+
+/**
+ * Parse `architecture.input_modalities` into a string list; null when absent
+ * or malformed (callers treat unknown as text-only).
+ */
+export function parseInputModalities(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const modalities = raw.filter(
+    (entry): entry is string => typeof entry === "string" && entry.length > 0,
+  );
+  return modalities.length > 0 ? modalities : null;
+}
+
+/**
+ * Input modalities accepted by an OpenRouter model ("image"/"audio"
+ * membership matters); null when unknown (no catalog / unknown slug), empty
+ * for known text-only fallback models like `openrouter/free`.
+ */
+export async function getOpenRouterModelModalities(
+  model: string,
+): Promise<string[] | null> {
+  try {
+    const entry = (await fetchOpenRouterModels()).get(model);
+    if (entry) {
+      return entry.inputModalities;
+    }
+  } catch {
+    // Offline start, bad key, ... - unknown modalities.
+  }
+  return MODEL_FALLBACKS[model] ? [] : null;
 }
 
 /**
