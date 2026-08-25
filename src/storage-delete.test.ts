@@ -107,7 +107,7 @@ describe("listStoredSessions", () => {
     expect(byId.get(a.sessionId)?.title).toBe("Indexed session");
     expect(byId.get("sess_manual")?.title).toBe("Manual session");
     expect(listed.map((e) => e.sessionId)).toEqual(
-      [...listed].sort((x, y) => Date.parse(y.updatedAt) - Date.parse(x.updatedAt)).map((e) => e.sessionId),
+      [...listed].sort((x, y) => Date.parse(y.updatedAt ?? "") - Date.parse(x.updatedAt ?? "")).map((e) => e.sessionId),
     );
   });
 });

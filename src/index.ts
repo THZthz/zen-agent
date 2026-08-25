@@ -24,7 +24,22 @@ const connection = acp
   .onNotification("session/cancel", (ctx) => agent.cancel(ctx.params))
   .connect(stream);
 
+// Graceful shutdown: abort running turns and give them a bounded window to
+// unwind (killing/releasing client terminals, finishing state.json saves)
+// instead of dropping everything on the floor mid-write.
+let shuttingDown = false;
+async function shutdown(code: number): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    await agent.dispose();
+  } catch {
+    // Exit regardless; the abort already happened inside dispose().
+  }
+  process.exit(code);
+}
+
 void connection.closed.then(() => process.exit(0)).catch(() => process.exit(1));
-process.stdin.on("end", () => process.exit(0));
-process.on("SIGHUP", () => process.exit(0));
-process.on("SIGTERM", () => process.exit(0));
+process.stdin.on("end", () => void shutdown(0));
+process.on("SIGHUP", () => void shutdown(0));
+process.on("SIGTERM", () => void shutdown(0));

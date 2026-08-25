@@ -1896,6 +1896,31 @@ Usage: /sandbox on | off`,
     } as acp.SessionUpdate;
   }
 
+  /**
+   * Shutdown path: hard-abort every active turn and wait (bounded) for them
+   * to unwind. Aborting kills any in-flight client terminal via the abort
+   * listeners in executeLlmToolCall and ends the LLM streams, so the process
+   * can exit without leaving terminals running in Zed or state.json writes
+   * half-done.
+   */
+  async dispose(timeoutMs = 5_000): Promise<void> {
+    const actives = [...this.sessions.values()];
+    for (const active of actives) {
+      void this.logRuntime(active.session.cwd, "info", "shutdown: aborting session turn", {
+        sessionId: active.session.sessionId,
+        hadRunningTurn: active.turnPromise !== null,
+      });
+      this.abortActiveSession(active.session.sessionId);
+    }
+    await Promise.race([
+      Promise.allSettled(actives.map((active) => active.turnPromise ?? Promise.resolve())),
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  }
+
   private async save(active: ActiveSession): Promise<void> {
     active.session.updatedAt = new Date().toISOString();
     await writeSession(active.session);
