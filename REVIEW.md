@@ -14,7 +14,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 - [x] 2. OpenRouter model catalog caches a rejected promise forever
 `src/openrouter.ts` — `fetchOpenRouterModels()` stores `{ key, promise }` and returns the cached promise whenever the key matches. If the first fetch fails (offline start, transient 5xx, bad key), the **rejected promise stays cached for the entire process lifetime**. Every later call — pricing (`getOpenRouterModelInfo`), modalities, model selector — silently falls back to static tables even long after the network recovers. Only `resetOpenRouterModelsCache()` (a test hook) clears it. Fix: on rejection, null out `modelsCache` so the next call retries.
 
-- [ ] 3. Negative modalities memoized per session
+- [x] 3. Negative modalities memoized per session
 `src/agent.ts` `mediaModalities()` does `active.mediaModalities ??= await getModelModalities(...)`. Combined with issue 2 (and plain transient failures), a single failed lookup at the first message pins `{ image: false, audio: false }` for the whole session: `read_media` is never offered and attached images/audio degrade to placeholder notes, permanently. Consider retrying on failure instead of caching a negative result.
 
 - [ ] 4. Race: a new `prompt` mutates history while the aborted turn is still draining

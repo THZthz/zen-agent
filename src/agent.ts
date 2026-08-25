@@ -95,6 +95,8 @@ interface ActiveSession {
   gracefulCancel: boolean;
   /** Hard-abort escape hatch scheduled when a graceful cancel is requested. */
   cancelTimer: NodeJS.Timeout | null;
+  /** Set while modality lookups keep failing, so the warn is logged once. */
+  mediaModalitiesUnknownLogged: boolean;
 }
 
 /** Safety valve for graceful cancel: hard-abort after this long. 0 = wait forever. */
@@ -325,6 +327,7 @@ export class ZenAgent {
       gracefulCancel: false,
       cancelTimer: null,
       mediaModalities: null,
+      mediaModalitiesUnknownLogged: false,
     };
   }
 
@@ -332,12 +335,54 @@ export class ZenAgent {
    * Input modalities of the session's model (memoized on the active session:
    * provider and model are locked after the first message).
    */
-  private async mediaModalities(active: ActiveSession) {
-    active.mediaModalities ??= await getModelModalities(
+  private async mediaModalities(
+    active: ActiveSession,
+  ): Promise<{ image: boolean; audio: boolean }> {
+    if (active.mediaModalities) {
+      return active.mediaModalities;
+    }
+    // Only DEFINITIVE answers are memoized: an unknown lookup (OpenRouter
+    // catalog fetch failed, slug not in any table) returns null and is
+    // retried on every later call, so a transient offline start cannot pin a
+    // wrong text-only answer — and hide read_media / media passthrough — for
+    // the rest of the session.
+    const resolved = await getModelModalities(
       active.session.config.provider,
       active.session.config.model,
     );
-    return active.mediaModalities;
+    if (!resolved) {
+      if (!active.mediaModalitiesUnknownLogged) {
+        active.mediaModalitiesUnknownLogged = true;
+        void this.logRuntime(
+          active.session.cwd,
+          "warn",
+          "model input modalities unknown; assuming text-only until lookup succeeds",
+          {
+            sessionId: active.session.sessionId,
+            provider: active.session.config.provider,
+            model: active.session.config.model,
+          },
+        );
+      }
+      return { image: false, audio: false };
+    }
+    if (active.mediaModalitiesUnknownLogged) {
+      active.mediaModalitiesUnknownLogged = false;
+      void this.logRuntime(
+        active.session.cwd,
+        "info",
+        "model input modalities resolved after earlier unknown",
+        {
+          sessionId: active.session.sessionId,
+          provider: active.session.config.provider,
+          model: active.session.config.model,
+          image: resolved.image,
+          audio: resolved.audio,
+        },
+      );
+    }
+    active.mediaModalities = resolved;
+    return resolved;
   }
 
   /**
@@ -695,10 +740,7 @@ export class ZenAgent {
         // and the provider's prefix cache.
         llmContent = userText;
       } else {
-        const modalities = await getModelModalities(
-          active.session.config.provider,
-          active.session.config.model,
-        );
+        const modalities = await this.mediaModalities(active);
         llmContent = [];
         const rawText = parts
           .filter((part): part is Extract<UserContentPart, { type: "text" }> => part.type === "text")

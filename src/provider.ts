@@ -98,22 +98,40 @@ export async function getContextWindowTokens(
 }
 
 /**
- * Input modalities accepted by the session's model. Conservative: unknown
- * catalog entries (offline, unknown slug) and DeepSeek (text-only models)
- * report neither image nor audio support.
+ * Input modalities accepted by the session's model.
+ *
+ * Returns `null` when the answer is TEMPORARILY unknown — the OpenRouter
+ * catalog fetch failed or the slug is not in any table — so callers can
+ * retry later instead of caching a wrong "text-only" answer for the whole
+ * session (a memoized negative would permanently hide read_media from the
+ * model). DeepSeek models are text-only by definition, so that branch is
+ * always definitive.
  */
 export async function getModelModalities(
   provider: ProviderId,
   model: ModelId,
-): Promise<{ image: boolean; audio: boolean }> {
+): Promise<{ image: boolean; audio: boolean } | null> {
   if (provider === "openrouter") {
     const modalities = await getOpenRouterModelModalities(model);
     if (modalities === null) {
-      return { image: false, audio: false };
+      return null;
     }
     return { image: modalities.includes("image"), audio: modalities.includes("audio") };
   }
   return { image: false, audio: false };
+}
+
+/**
+ * Conservative boolean view of {@link getModelModalities}: an unknown lookup
+ * degrades to "no media support" instead of null. Use this where a decision
+ * cannot wait for a retry (e.g. degrading attached media in a prompt); use
+ * getModelModalities directly where the result may be cached per session.
+ */
+export async function resolveModelModalities(
+  provider: ProviderId,
+  model: ModelId,
+): Promise<{ image: boolean; audio: boolean }> {
+  return (await getModelModalities(provider, model)) ?? { image: false, audio: false };
 }
 
 /** Balance/credit snapshot for the active provider. */
