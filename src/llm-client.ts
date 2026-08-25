@@ -3,6 +3,7 @@ import { healMessages } from "./heal.js";
 import { waitForChatRateLimit } from "./rate-limit.js";
 import { fetchWithRetry, type RetryOptions } from "./retry.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
+import { envPositiveInt } from "./env.js";
 
 export interface LlmToolCall {
   id: string;
@@ -23,6 +24,47 @@ export interface LlmUsage {
   thinkingMs: number;
   /** Time spent streaming answer text in ms. */
   answeringMs: number;
+}
+
+/**
+ * Shared LlmUsage assembly for the provider-specific usage parsers: fills in
+ * timing, derives totalTokens, and treats an all-zero report as "the
+ * provider sent no usable usage" (null).
+ */
+export function buildLlmUsage(
+  totals: {
+    inputTokens: number;
+    outputTokens: number;
+    /** Provider-reported total; falls back to input+output. */
+    totalTokens?: number;
+    cacheReadTokens: number;
+    cacheMissTokens: number;
+    reasoningTokens: number;
+  },
+  timing: { llmMs: number; thinkingMs: number; answeringMs: number },
+): LlmUsage | null {
+  if (
+    totals.inputTokens === 0 &&
+    totals.outputTokens === 0 &&
+    totals.cacheReadTokens === 0 &&
+    totals.cacheMissTokens === 0
+  ) {
+    return null;
+  }
+  return {
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens,
+    totalTokens:
+      totals.totalTokens && totals.totalTokens > 0
+        ? totals.totalTokens
+        : totals.inputTokens + totals.outputTokens,
+    cacheReadTokens: totals.cacheReadTokens,
+    cacheMissTokens: totals.cacheMissTokens,
+    reasoningTokens: totals.reasoningTokens,
+    llmMs: timing.llmMs,
+    thinkingMs: timing.thinkingMs,
+    answeringMs: timing.answeringMs,
+  };
 }
 
 export interface LlmStepResult {
@@ -379,10 +421,7 @@ export interface ChatCompletionsOptions {
 const RATE_LIMIT_WAIT_LOG_THRESHOLD_MS = 1_000;
 
 function parseChatTimeoutMs(): number {
-  const raw = process.env.ZEN_AGENT_CHAT_TIMEOUT_MS;
-  if (!raw) return 660_000;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 660_000;
+  return envPositiveInt("ZEN_AGENT_CHAT_TIMEOUT_MS", 660_000);
 }
 
 /**

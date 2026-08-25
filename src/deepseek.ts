@@ -1,5 +1,7 @@
 import type { ModelId } from "./storage.js";
+import { envNonNegativeFloat, envPositiveInt } from "./env.js";
 import {
+  buildLlmUsage,
   costFromUsage,
   runChatCompletions,
   type LlmStepOptions,
@@ -48,15 +50,6 @@ const MODEL_RATE_TABLE: Record<string, ModelRateTable> = {
   },
 };
 
-function parseEnvNumber(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) {
-    return fallback;
-  }
-  const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
 /**
  * Whether `now` (UTC) falls in DeepSeek's peak pricing window.
  * Peak hours are Beijing time (UTC+8) 09:00-12:00 and 14:00-18:00;
@@ -74,15 +67,15 @@ export function getModelPricing(model: ModelId, now: Date = new Date()): ModelPr
   const base = MODEL_RATE_TABLE[model] ?? MODEL_RATE_TABLE["deepseek-v4-flash"];
   const peak = isPeakTime(now);
   return {
-    cacheHitCnyPerM: parseEnvNumber(
+    cacheHitCnyPerM: envNonNegativeFloat(
       "DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK",
       peak ? base.cacheHit.peak : base.cacheHit.offPeak,
     ),
-    cacheMissCnyPerM: parseEnvNumber(
+    cacheMissCnyPerM: envNonNegativeFloat(
       "DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK",
       peak ? base.cacheMiss.peak : base.cacheMiss.offPeak,
     ),
-    outputCnyPerM: parseEnvNumber(
+    outputCnyPerM: envNonNegativeFloat(
       "DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK",
       peak ? base.output.peak : base.output.offPeak,
     ),
@@ -91,12 +84,7 @@ export function getModelPricing(model: ModelId, now: Date = new Date()): ModelPr
 
 /** Session context window size in tokens, used for usage_update.size. */
 export function getContextWindowTokens(): number {
-  const raw = process.env.DEEPSEEK_CONTEXT_WINDOW;
-  if (!raw) {
-    return 1_000_000;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1_000_000;
+  return envPositiveInt("DEEPSEEK_CONTEXT_WINDOW", 1_000_000);
 }
 
 /** Cost in CNY for a single LLM step's token usage. */
@@ -210,21 +198,17 @@ export function parseDeepSeekUsage(
       : Math.max(0, inputTokens - cacheReadTokens);
   const reasoningTokens = toNumber(usage.completion_tokens_details?.reasoning_tokens);
 
-  if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheMissTokens === 0) {
-    return null;
-  }
-
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: toNumber(usage.total_tokens) || inputTokens + outputTokens,
-    cacheReadTokens,
-    cacheMissTokens,
-    reasoningTokens,
-    llmMs: timing.llmMs,
-    thinkingMs: timing.thinkingMs,
-    answeringMs: timing.answeringMs,
-  };
+  return buildLlmUsage(
+    {
+      inputTokens,
+      outputTokens,
+      totalTokens: toNumber(usage.total_tokens),
+      cacheReadTokens,
+      cacheMissTokens,
+      reasoningTokens,
+    },
+    timing,
+  );
 }
 
 /**

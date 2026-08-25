@@ -59,7 +59,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 19. **Shutdown is abrupt** — `index.ts` exits on SIGTERM/SIGHUP without letting `runTurn` finish, killing/releasing client terminals, or flushing pending `void`-ed log writes. At least abort controllers and give the connection a moment to close.
 
-- [ ] 20. **Duplication worth consolidating**: env-number parsing (`parseEnvNumber` in deepseek.ts, `parseChatRpm`, `maxMediaBytes`, `parseGracefulCancelTimeoutMs`, `parseMaxTurnSteps`, `terminalOutputByteLimit`, `parseChatTimeoutMs` — seven hand-rolled variants of "int from env with fallback"); usage parsing between `parseDeepSeekUsage`/`parseOpenRouterUsage` (near-identical); provider option objects (`DEEPSEEK_MODEL_CONFIG_OPTION` vs `modelConfigOption` openrouter branch).
+- [x] 20. **Duplication worth consolidating**: env-number parsing (`parseEnvNumber` in deepseek.ts, `parseChatRpm`, `maxMediaBytes`, `parseGracefulCancelTimeoutMs`, `parseMaxTurnSteps`, `terminalOutputByteLimit`, `parseChatTimeoutMs` — seven hand-rolled variants of "int from env with fallback"); usage parsing between `parseDeepSeekUsage`/`parseOpenRouterUsage` (near-identical); provider option objects (`DEEPSEEK_MODEL_CONFIG_OPTION` vs `modelConfigOption` openrouter branch).
 
 ## Minor / nits
 

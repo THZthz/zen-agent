@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { LlmToolCall } from "./deepseek.js";
 import { resolveMedia, type ResolvedMedia } from "./media.js";
 import { terminalDirectory, type StoredSession } from "./storage.js";
+import { envPositiveInt } from "./env.js";
 import { formatMs } from "./turn-stats.js";
 
 export interface ToolExecutionResult {
@@ -96,14 +97,10 @@ export function truncateTerminalOutput(
  * `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` (bytes; must be > 0).
  */
 function terminalOutputByteLimit(): number {
-  const raw = process.env.ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT;
-  if (!raw) {
-    return DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT;
+  return envPositiveInt(
+    "ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT",
+    DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT,
+  );
 }
 
 /**

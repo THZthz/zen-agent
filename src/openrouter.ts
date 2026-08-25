@@ -6,6 +6,7 @@ import {
   type ThinkingEffort,
 } from "./storage.js";
 import {
+  buildLlmUsage,
   runChatCompletions,
   type LlmStepOptions,
   type LlmStepResult,
@@ -394,24 +395,17 @@ export function parseOpenRouterUsage(
     usage.prompt_cache_hit_tokens !== undefined
       ? toNumber(usage.prompt_cache_hit_tokens)
       : toNumber(usage.prompt_tokens_details?.cached_tokens);
-  const cacheMissTokens = Math.max(0, inputTokens - cacheReadTokens);
-  const reasoningTokens = toNumber(usage.completion_tokens_details?.reasoning_tokens);
-
-  if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0) {
-    return null;
-  }
-
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: toNumber(usage.total_tokens) || inputTokens + outputTokens,
-    cacheReadTokens,
-    cacheMissTokens,
-    reasoningTokens,
-    llmMs: timing.llmMs,
-    thinkingMs: timing.thinkingMs,
-    answeringMs: timing.answeringMs,
-  };
+  return buildLlmUsage(
+    {
+      inputTokens,
+      outputTokens,
+      totalTokens: toNumber(usage.total_tokens),
+      cacheReadTokens,
+      cacheMissTokens: Math.max(0, inputTokens - cacheReadTokens),
+      reasoningTokens: toNumber(usage.completion_tokens_details?.reasoning_tokens),
+    },
+    timing,
+  );
 }
 
 /** OpenRouter key info from `GET /auth/key`, in USD credits. */

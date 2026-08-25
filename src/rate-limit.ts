@@ -1,3 +1,5 @@
+import { envPositiveInt } from "./env.js";
+
 /**
  * Client-side spacing of chat requests, ported from Reasonix's
  * waitForChatRateLimit. Throttles to at most one request per 60000/rpm ms so
@@ -45,9 +47,7 @@ export function resetChatRateLimit(): void {
   nextChatRequestAt = 0;
 }
 
+/** Requests per minute cap; unset/invalid/0 disables the throttle. */
 function parseChatRpm(): number {
-  const raw = process.env.ZEN_AGENT_CHAT_RPM;
-  if (!raw) return 0;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  return envPositiveInt("ZEN_AGENT_CHAT_RPM", 0);
 }

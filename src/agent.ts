@@ -21,6 +21,7 @@ import {
   type ThinkingEffort,
   type UserContentPart,
 } from "./storage.js";
+import { envPositiveInt } from "./env.js";
 import { appendJsonLine, makeLogEntry } from "./logger.js";
 import { promptBlocksToPromptContent } from "./prompt-content.js";
 import { executeLlmToolCall, type ToolExecutionResult } from "./tool-execution.js";
@@ -105,31 +106,10 @@ interface ActiveSession {
   mediaModalitiesUnknownLogged: boolean;
 }
 
-/** Safety valve for graceful cancel: hard-abort after this long. 0 = wait forever. */
-const GRACEFUL_CANCEL_TIMEOUT_MS = parseGracefulCancelTimeoutMs();
+/** Safety valve for graceful cancel: hard-abort after this long. Unset/0 = wait forever. */
+const GRACEFUL_CANCEL_TIMEOUT_MS = envPositiveInt("ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS", 0);
 
-function parseGracefulCancelTimeoutMs(): number {
-  const raw = process.env.ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS;
-  if (!raw) {
-    return 0;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-const MAX_TURN_STEPS = parseMaxTurnSteps();
-
-function parseMaxTurnSteps(): number {
-  const raw = process.env.ZEN_AGENT_MAX_TURN_STEPS;
-  if (!raw) {
-    return 25;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 25;
-  }
-  return parsed;
-}
+const MAX_TURN_STEPS = envPositiveInt("ZEN_AGENT_MAX_TURN_STEPS", 25);
 
 /**
  * Per-session provider selector. DeepSeek and OpenRouter can be used side by
