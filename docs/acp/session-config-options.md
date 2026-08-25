@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -190,17 +191,17 @@ The order of the `configOptions` array is significant. Agents **SHOULD** place h
 
 Clients **SHOULD**:
 
-* Display options in the order provided by the Agent
-* Use ordering to resolve ties when multiple options share the same category
-* If displaying a limited number of options, prefer those at the beginning of the list
+- Display options in the order provided by the Agent
+- Use ordering to resolve ties when multiple options share the same category
+- If displaying a limited number of options, prefer those at the beginning of the list
 
 ## Default Values and Graceful Degradation
 
 Agents **MUST** always provide a default value for every configuration option. This ensures the Agent can operate correctly even if:
 
-* The Client doesn't support configuration options
-* The Client chooses not to display certain options
-* The Client receives an option type it doesn't recognize
+- The Client doesn't support configuration options
+- The Client chooses not to display certain options
+- The Client receives an option type it doesn't recognize
 
 If a Client receives an option with an unrecognized `type`, it **SHOULD** ignore that option. The Agent will continue using its default value.
 
@@ -324,22 +325,22 @@ The Agent can also change configuration options and notify the Client by sending
 
 This notification also contains the complete configuration state. Common reasons an Agent might update configuration options include:
 
-* Switching modes after completing a planning phase
-* Falling back to a different model due to rate limits or errors
-* Adjusting available options based on context discovered during execution
+- Switching modes after completing a planning phase
+- Falling back to a different model due to rate limits or errors
+- Adjusting available options based on context discovered during execution
 
 ## Relationship to Session Modes
 
 Session Config Options supersede the older [Session Modes](/protocol/v1/session-modes) API. However, during the transition period, Agents that provide mode-like configuration **SHOULD** send both:
 
-* `configOptions` with a `category: "mode"` option for Clients that support config options
-* `modes` for Clients that only support the older API
+- `configOptions` with a `category: "mode"` option for Clients that support config options
+- `modes` for Clients that only support the older API
 
 If an Agent provides both `configOptions` and `modes` in the session response:
 
-* Clients that support config options **SHOULD** use `configOptions` exclusively and ignore `modes`
-* Clients that don't support config options **SHOULD** fall back to `modes`
-* Agents **SHOULD** keep both in sync to ensure consistent behavior regardless of which field the Client uses
+- Clients that support config options **SHOULD** use `configOptions` exclusively and ignore `modes`
+- Clients that don't support config options **SHOULD** fall back to `modes`
+- Agents **SHOULD** keep both in sync to ensure consistent behavior regardless of which field the Client uses
 
 <Card icon="gears" horizontal href="/protocol/v1/session-modes">
   Learn about the Session Modes API

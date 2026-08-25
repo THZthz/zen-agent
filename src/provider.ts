@@ -1,29 +1,21 @@
-import {
-  type GenericPricing,
-  type LlmStepOptions,
-  type LlmStepResult,
-} from "./llm-client.js";
+import { type GenericPricing, type LlmStepOptions, type LlmStepResult } from './llm-client.js';
 import {
   fetchDeepSeekBalance,
   getContextWindowTokens as getDeepSeekContextWindow,
   getModelPricing as getDeepSeekPricing,
   runLlmStep as runDeepSeekStep,
-} from "./deepseek.js";
+} from './deepseek.js';
 import {
   DEFAULT_OPENROUTER_MODEL,
   fetchOpenRouterBalance,
   getOpenRouterModelInfo,
   getOpenRouterModelModalities,
   runOpenRouterStep,
-} from "./openrouter.js";
-import {
-  DEFAULT_DEEPSEEK_MODEL,
-  type ModelId,
-  type ProviderId,
-} from "./storage.js";
+} from './openrouter.js';
+import { DEFAULT_DEEPSEEK_MODEL, type ModelId, type ProviderId } from './storage.js';
 
-export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from "./llm-client.js";
-export { costFromUsage } from "./llm-client.js";
+export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from './llm-client.js';
+export { costFromUsage } from './llm-client.js';
 
 /** Balance/credit snapshot for the active provider, in its billing currency. */
 export interface BalanceSnapshot {
@@ -37,7 +29,7 @@ export interface BalanceSnapshot {
 
 /** Default model for a provider: DeepSeek's fallback or OPENROUTER_MODEL. */
 export function getDefaultModel(provider: ProviderId): ModelId {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     return process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
   }
   return DEFAULT_DEEPSEEK_MODEL;
@@ -48,7 +40,7 @@ export async function runLlmStep(
   provider: ProviderId,
   options: LlmStepOptions,
 ): Promise<LlmStepResult> {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     return runOpenRouterStep(options);
   }
   return runDeepSeekStep(options);
@@ -63,12 +55,12 @@ export async function getModelPricing(
   model: ModelId,
   now: Date = new Date(),
 ): Promise<GenericPricing> {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     // OpenRouter bills cached input at the same rate as regular input (no
     // separate cache price), so both input rates are the model's prompt price.
     const info = await getOpenRouterModelInfo(model);
     return {
-      currency: "USD",
+      currency: 'USD',
       cacheHitPerM: info.inputPerM,
       cacheMissPerM: info.inputPerM,
       outputPerM: info.outputPerM,
@@ -76,7 +68,7 @@ export async function getModelPricing(
   }
   const pricing = getDeepSeekPricing(model, now);
   return {
-    currency: "CNY",
+    currency: 'CNY',
     cacheHitPerM: pricing.cacheHitCnyPerM,
     cacheMissPerM: pricing.cacheMissCnyPerM,
     outputPerM: pricing.outputCnyPerM,
@@ -88,7 +80,7 @@ export async function getContextWindowTokens(
   provider: ProviderId,
   model: ModelId,
 ): Promise<number> {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     return (await getOpenRouterModelInfo(model)).contextLength;
   }
   return getDeepSeekContextWindow();
@@ -108,12 +100,12 @@ export async function getModelModalities(
   provider: ProviderId,
   model: ModelId,
 ): Promise<{ image: boolean; audio: boolean } | null> {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     const modalities = await getOpenRouterModelModalities(model);
     if (modalities === null) {
       return null;
     }
-    return { image: modalities.includes("image"), audio: modalities.includes("audio") };
+    return { image: modalities.includes('image'), audio: modalities.includes('audio') };
   }
   return { image: false, audio: false };
 }
@@ -133,7 +125,7 @@ export async function resolveModelModalities(
 
 /** Balance/credit snapshot for the active provider. */
 export async function fetchBalanceSnapshot(provider: ProviderId): Promise<BalanceSnapshot> {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     const balance = await fetchOpenRouterBalance();
     return {
       isAvailable: balance.isAvailable,

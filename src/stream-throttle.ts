@@ -1,4 +1,4 @@
-export type StreamKind = "thought" | "message";
+export type StreamKind = 'thought' | 'message';
 
 /**
  * Batches streamed LLM deltas into small, throttled chunks.

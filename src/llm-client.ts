@@ -1,9 +1,9 @@
-import type { LlmMessage, ModelId, ThinkingEffort, UserContentPart } from "./storage.js";
-import { healMessages } from "./heal.js";
-import { waitForChatRateLimit } from "./rate-limit.js";
-import { fetchWithRetry, type RetryOptions } from "./retry.js";
-import { SYSTEM_PROMPT } from "./system-prompt.js";
-import { envPositiveInt } from "./env.js";
+import type { LlmMessage, ModelId, ThinkingEffort, UserContentPart } from './storage.js';
+import { healMessages } from './heal.js';
+import { waitForChatRateLimit } from './rate-limit.js';
+import { fetchWithRetry, type RetryOptions } from './retry.js';
+import { SYSTEM_PROMPT } from './system-prompt.js';
+import { envPositiveInt } from './env.js';
 
 export interface LlmToolCall {
   id: string;
@@ -85,7 +85,7 @@ export interface LlmStepOptions {
    * rate-limit waits. Fire-and-forget from the caller's perspective.
    */
   logRuntime?: (
-    level: "debug" | "info" | "warn" | "error",
+    level: 'debug' | 'info' | 'warn' | 'error',
     message: string,
     details?: Record<string, unknown>,
   ) => void;
@@ -105,7 +105,7 @@ export interface LlmStepOptions {
 
 /** Provider-neutral pricing in the provider's billing currency. */
 export interface GenericPricing {
-  currency: "CNY" | "USD";
+  currency: 'CNY' | 'USD';
   /** Price per 1M input tokens served from cache. */
   cacheHitPerM: number;
   /** Price per 1M input tokens not served from cache. */
@@ -131,20 +131,20 @@ export function costFromUsage(usage: LlmUsage, pricing: GenericPricing): number 
  * does not change across providers.
  */
 export const BASH_TOOL_SCHEMA = {
-  type: "function",
+  type: 'function',
   function: {
-    name: "bash",
+    name: 'bash',
     description:
       'Execute a bash command in current OS. The command is completely unrestricted. Your command will be wrapped inside `script -q -e -c "bash <script file containing your command>" "<log path>"`. If output is large, this tool will tell you to check the log file instead of showing all.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         command: {
-          type: "string",
-          description: "The bash command to execute.",
+          type: 'string',
+          description: 'The bash command to execute.',
         },
       },
-      required: ["command"],
+      required: ['command'],
       additionalProperties: false,
     },
   },
@@ -152,13 +152,13 @@ export const BASH_TOOL_SCHEMA = {
 
 /** Audio formats accepted by OpenAI-compatible `input_audio` parts. */
 const INPUT_AUDIO_FORMATS: Record<string, string> = {
-  "audio/wav": "wav",
-  "audio/x-wav": "wav",
-  "audio/wave": "wav",
-  "audio/vnd.wave": "wav",
-  "audio/mpeg": "mp3",
-  "audio/mp3": "mp3",
-  "audio/mpeg3": "mp3",
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/vnd.wave': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mpeg3': 'mp3',
 };
 
 function inputAudioFormat(mimeType: string): string | null {
@@ -174,27 +174,27 @@ export function userPartsToOpenAi(parts: UserContentPart[]): unknown[] {
   const out: unknown[] = [];
   for (const part of parts) {
     switch (part.type) {
-      case "text":
-        out.push({ type: "text", text: part.text });
+      case 'text':
+        out.push({ type: 'text', text: part.text });
         break;
-      case "image":
+      case 'image':
         out.push({
-          type: "image_url",
+          type: 'image_url',
           image_url: { url: `data:${part.mimeType};base64,${part.data}` },
         });
         break;
-      case "audio": {
+      case 'audio': {
         const format = inputAudioFormat(part.mimeType);
         if (format === null) {
           // Unsupported container: degrade instead of failing the request.
           out.push({
-            type: "text",
+            type: 'text',
             text: `[audio attached (${part.mimeType}) omitted: unsupported format]`,
           });
           break;
         }
         out.push({
-          type: "input_audio",
+          type: 'input_audio',
           input_audio: { data: part.data, format },
         });
         break;
@@ -211,21 +211,21 @@ export function userPartsToOpenAi(parts: UserContentPart[]): unknown[] {
  * message (the OpenAI tool role only allows text content).
  */
 export const READ_MEDIA_TOOL_SCHEMA = {
-  type: "function",
+  type: 'function',
   function: {
-    name: "read_media",
+    name: 'read_media',
     description:
-      "Load a local image or audio file so you can see/hear its content yourself (no user description needed). Use for screenshots, photos, diagrams, recordings, or any media file the user references by path. Returns the media attached to the conversation; a short metadata line confirms what was loaded.",
+      'Load a local image or audio file so you can see/hear its content yourself (no user description needed). Use for screenshots, photos, diagrams, recordings, or any media file the user references by path. Returns the media attached to the conversation; a short metadata line confirms what was loaded.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         path: {
-          type: "string",
+          type: 'string',
           description:
-            "Path to the media file (absolute, or relative to the working directory). Must be an image (png/jpeg/webp/gif) or audio (wav/mp3) file.",
+            'Path to the media file (absolute, or relative to the working directory). Must be an image (png/jpeg/webp/gif) or audio (wav/mp3) file.',
         },
       },
-      required: ["path"],
+      required: ['path'],
       additionalProperties: false,
     },
   },
@@ -237,48 +237,45 @@ export const READ_MEDIA_TOOL_SCHEMA = {
  * reasoning back in assistant history messages ("reasoning_content" for
  * DeepSeek, "reasoning" for OpenRouter).
  */
-export function toOpenAiMessages(
-  messages: LlmMessage[],
-  reasoningMessageField: string,
-): unknown[] {
+export function toOpenAiMessages(messages: LlmMessage[], reasoningMessageField: string): unknown[] {
   const out: unknown[] = [];
 
   for (const message of messages) {
     switch (message.role) {
-      case "user": {
+      case 'user': {
         const content =
-          typeof message.content === "string"
+          typeof message.content === 'string'
             ? message.content
             : userPartsToOpenAi(message.content);
-        const userMessage: Record<string, unknown> = { role: "user", content };
-        if ("name" in message && typeof message.name === "string" && message.name.length > 0) {
+        const userMessage: Record<string, unknown> = { role: 'user', content };
+        if ('name' in message && typeof message.name === 'string' && message.name.length > 0) {
           userMessage.name = message.name;
         }
         out.push(userMessage);
         break;
       }
-      case "assistant": {
+      case 'assistant': {
         const parts = Array.isArray(message.content) ? message.content : [];
         const text = parts
-          .filter((part) => part.type === "text")
+          .filter((part) => part.type === 'text')
           .map((part) => (part as { text: string }).text)
-          .join("");
+          .join('');
         const reasoning = parts
-          .filter((part) => part.type === "reasoning")
+          .filter((part) => part.type === 'reasoning')
           .map((part) => (part as { text: string }).text)
-          .join("");
+          .join('');
         const toolCalls = parts
-          .filter((part) => part.type === "tool-call")
+          .filter((part) => part.type === 'tool-call')
           .map((part) => ({
             id: (part as { toolCallId: string }).toolCallId,
-            type: "function",
+            type: 'function',
             function: {
               name: (part as { toolName: string }).toolName,
               arguments: JSON.stringify((part as { input: unknown }).input),
             },
           }));
         const assistantMessage: Record<string, unknown> = {
-          role: "assistant",
+          role: 'assistant',
           content: text || null,
         };
         // Reasoning is replayed only alongside tool-call continuations:
@@ -286,7 +283,7 @@ export function toOpenAiMessages(
         // while they continue a tool exchange. Final-answer assistants omit
         // it here; runChatCompletions backfills an empty reasoning field for
         // thinking-mode sessions so the wire shape stays valid either way.
-        if (toolCalls.length > 0 && parts.some((part) => part.type === "reasoning")) {
+        if (toolCalls.length > 0 && parts.some((part) => part.type === 'reasoning')) {
           assistantMessage[reasoningMessageField] = reasoning;
         }
         if (toolCalls.length > 0) {
@@ -295,24 +292,24 @@ export function toOpenAiMessages(
         out.push(assistantMessage);
         break;
       }
-      case "tool": {
+      case 'tool': {
         const parts = Array.isArray(message.content) ? message.content : [];
         for (const part of parts) {
-          if (part.type !== "tool-result") {
+          if (part.type !== 'tool-result') {
             continue;
           }
           const output = (part as { output: unknown }).output;
           const text =
-            typeof output === "string"
+            typeof output === 'string'
               ? output
-              : typeof output === "object" &&
+              : typeof output === 'object' &&
                   output !== null &&
-                  "value" in (output as Record<string, unknown>) &&
-                  typeof (output as Record<string, unknown>).value === "string"
+                  'value' in (output as Record<string, unknown>) &&
+                  typeof (output as Record<string, unknown>).value === 'string'
                 ? ((output as Record<string, unknown>).value as string)
                 : JSON.stringify(output);
           out.push({
-            role: "tool",
+            role: 'tool',
             tool_call_id: (part as { toolCallId: string }).toolCallId,
             content: text,
           });
@@ -327,18 +324,18 @@ export function toOpenAiMessages(
 
 function mapFinishReason(raw: string | null | undefined): string {
   switch (raw) {
-    case "stop":
-      return "stop";
-    case "length":
-      return "length";
-    case "tool_calls":
-      return "tool-calls";
-    case "content_filter":
-      return "content-filter";
-    case "insufficient_system_resource":
-      return "error";
+    case 'stop':
+      return 'stop';
+    case 'length':
+      return 'length';
+    case 'tool_calls':
+      return 'tool-calls';
+    case 'content_filter':
+      return 'content-filter';
+    case 'insufficient_system_resource':
+      return 'error';
     default:
-      return raw ? "other" : "unknown";
+      return raw ? 'other' : 'unknown';
   }
 }
 
@@ -397,7 +394,7 @@ export interface ChatCompletionsOptions {
   retry?: RetryOptions;
   /** Debug-log sink for provider-internal diagnostics (see LlmStepOptions). */
   logRuntime?: (
-    level: "debug" | "info" | "warn" | "error",
+    level: 'debug' | 'info' | 'warn' | 'error',
     message: string,
     details?: Record<string, unknown>,
   ) => void;
@@ -426,7 +423,7 @@ export interface ChatCompletionsOptions {
 const RATE_LIMIT_WAIT_LOG_THRESHOLD_MS = 1_000;
 
 function parseChatTimeoutMs(): number {
-  return envPositiveInt("ZEN_AGENT_CHAT_TIMEOUT_MS", 660_000);
+  return envPositiveInt('ZEN_AGENT_CHAT_TIMEOUT_MS', 660_000);
 }
 
 /**
@@ -436,8 +433,8 @@ function parseChatTimeoutMs(): number {
  * reads, which would glue consecutive events together.
  */
 function findEventSeparator(buffer: string): { index: number; length: number } | null {
-  const lf = buffer.indexOf("\n\n");
-  const crlf = buffer.indexOf("\r\n\r\n");
+  const lf = buffer.indexOf('\n\n');
+  const crlf = buffer.indexOf('\r\n\r\n');
   if (crlf !== -1 && (lf === -1 || crlf < lf)) {
     return { index: crlf, length: 4 };
   }
@@ -463,9 +460,7 @@ function findEventSeparator(buffer: string): { index: number; length: number } |
  * This also lets us read provider-specific raw usage fields (cache tokens,
  * reasoning tokens) which the SDK's zod schema strips.
  */
-export async function runChatCompletions(
-  options: ChatCompletionsOptions,
-): Promise<LlmStepResult> {
+export async function runChatCompletions(options: ChatCompletionsOptions): Promise<LlmStepResult> {
   // Heal the history before sending: drop unpaired assistant tool calls and
   // stray tool results (DeepSeek 400s on either shape) without mutating the
   // session's stored messages.
@@ -474,7 +469,7 @@ export async function runChatCompletions(
     // Healing silently loses history by design; the drop must be visible in
     // the session's log.jsonl (via the agent's logRuntime sink) rather than
     // on stdout/stderr, which Zed swallows.
-    void options.logRuntime?.("warn", "healed message history before LLM request", {
+    void options.logRuntime?.('warn', 'healed message history before LLM request', {
       label: options.label,
       model: options.model,
       droppedAssistants: healed.droppedAssistants,
@@ -487,28 +482,28 @@ export async function runChatCompletions(
   // `reasoning_content`. Back-fill "" — thinking-mode sessions only, because
   // on non-thinking sessions the extra field would churn the prefix cache.
   if (
-    (options.thinkingEffort ?? "off") !== "off" &&
-    options.reasoningMessageField === "reasoning_content"
+    (options.thinkingEffort ?? 'off') !== 'off' &&
+    options.reasoningMessageField === 'reasoning_content'
   ) {
     for (const message of wireMessages) {
       const wire = message as { role?: string; [key: string]: unknown };
-      if (wire.role === "assistant" && typeof wire[options.reasoningMessageField] !== "string") {
-        wire[options.reasoningMessageField] = "";
+      if (wire.role === 'assistant' && typeof wire[options.reasoningMessageField] !== 'string') {
+        wire[options.reasoningMessageField] = '';
       }
     }
   }
   const body: Record<string, unknown> = {
     model: options.model,
     messages: [
-      { role: "system", content: options.system ?? SYSTEM_PROMPT },
+      { role: 'system', content: options.system ?? SYSTEM_PROMPT },
       ...(wireMessages.filter(
-        (message) => (message as { role?: string }).role !== "system",
+        (message) => (message as { role?: string }).role !== 'system',
       ) as Array<Record<string, unknown>>),
     ],
     tools: options.tools ?? [BASH_TOOL_SCHEMA],
     stream: true,
     ...options.extraBody,
-    ...(options.effortBody?.(options.thinkingEffort ?? "off") ?? {}),
+    ...(options.effortBody?.(options.thinkingEffort ?? 'off') ?? {}),
   };
 
   // Timing: "thinking" is the wall time from request start until the first
@@ -521,9 +516,9 @@ export async function runChatCompletions(
   let firstTextAt: number | null = null;
   let lastReasoningAt: number | null = null;
 
-  let text = "";
-  let reasoning = "";
-  let finishReason = "unknown";
+  let text = '';
+  let reasoning = '';
+  let finishReason = 'unknown';
   let sawFinishReason = false;
   let sawOutput = false;
   let rawUsage: unknown;
@@ -550,11 +545,11 @@ export async function runChatCompletions(
     await waitForChatRateLimit(options.signal);
     const rateLimitedMs = Date.now() - rateLimitStart;
     if (rateLimitedMs >= RATE_LIMIT_WAIT_LOG_THRESHOLD_MS) {
-      void options.logRuntime?.(
-        "info",
-        "chat request delayed by client-side rate limit",
-        { label: options.label, model: options.model, waitedMs: rateLimitedMs },
-      );
+      void options.logRuntime?.('info', 'chat request delayed by client-side rate limit', {
+        label: options.label,
+        model: options.model,
+        waitedMs: rateLimitedMs,
+      });
     }
     timer = setTimeout(() => {
       timeoutCtrl.abort(new Error(`${options.label} request timed out after ${timeoutMs}ms`));
@@ -565,9 +560,9 @@ export async function runChatCompletions(
       fetch,
       `${options.baseUrl}/chat/completions`,
       {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "content-type": "application/json",
+          'content-type': 'application/json',
           authorization: `Bearer ${options.apiKey}`,
           ...options.extraHeaders,
         },
@@ -579,10 +574,8 @@ export async function runChatCompletions(
     if (!response.ok) {
       // Only the initial fetch is retried (see fetchWithRetry); a non-2xx here
       // means the status is non-retryable or attempts ran out — surface it.
-      const errorBody = await response.text().catch(() => "");
-      throw new Error(
-        `${options.label} API error ${response.status}: ${errorBody.slice(0, 500)}`,
-      );
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(`${options.label} API error ${response.status}: ${errorBody.slice(0, 500)}`);
     }
     if (!response.body) {
       throw new Error(`${options.label} response has no body`);
@@ -590,22 +583,22 @@ export async function runChatCompletions(
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    let buffer = '';
 
     const processEvent = async (rawEvent: string): Promise<boolean> => {
       // SSE spec: consecutive `data:` lines are joined with \n. Some servers
       // emit one data line per event; DeepSeek and OpenRouter use single lines.
       const dataLines: string[] = [];
       for (const line of rawEvent.split(/\r?\n/)) {
-        if (line.startsWith("data:")) {
+        if (line.startsWith('data:')) {
           dataLines.push(line.slice(5).trimStart());
         }
       }
       if (dataLines.length === 0) {
         return false;
       }
-      const data = dataLines.join("\n");
-      if (data === "[DONE]") {
+      const data = dataLines.join('\n');
+      if (data === '[DONE]') {
         return true;
       }
 
@@ -617,7 +610,7 @@ export async function runChatCompletions(
       }
 
       if (chunk.error) {
-        throw new Error(`${options.label} stream error: ${chunk.error.message ?? "unknown"}`);
+        throw new Error(`${options.label} stream error: ${chunk.error.message ?? 'unknown'}`);
       }
       if (chunk.usage) {
         rawUsage = chunk.usage;
@@ -643,7 +636,7 @@ export async function runChatCompletions(
       // the AI SDK here.
       for (const field of options.reasoningDeltaFields) {
         const reasoningDelta = delta[field];
-        if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
+        if (typeof reasoningDelta === 'string' && reasoningDelta.length > 0) {
           reasoning += reasoningDelta;
           lastReasoningAt = Date.now();
           sawOutput = true;
@@ -653,7 +646,7 @@ export async function runChatCompletions(
       }
 
       // Answer text.
-      if (typeof delta.content === "string" && delta.content.length > 0) {
+      if (typeof delta.content === 'string' && delta.content.length > 0) {
         if (firstTextAt === null) {
           firstTextAt = Date.now();
         }
@@ -667,9 +660,9 @@ export async function runChatCompletions(
         for (const toolCallDelta of delta.tool_calls) {
           const index = toolCallDelta.index ?? 0;
           const partial = toolCallsByIndex.get(index) ?? {
-            id: "",
-            name: "",
-            arguments: "",
+            id: '',
+            name: '',
+            arguments: '',
           };
           if (toolCallDelta.id) {
             partial.id = toolCallDelta.id;
@@ -695,7 +688,7 @@ export async function runChatCompletions(
         // Flush any trailing event without a closing blank line.
         if (buffer.trim().length > 0) {
           done = await processEvent(buffer);
-          buffer = "";
+          buffer = '';
         }
         break;
       }
@@ -718,7 +711,7 @@ export async function runChatCompletions(
     }
 
     if (!sawOutput && !sawFinishReason) {
-      throw new Error("No output generated. The model stream ended without a finish chunk.");
+      throw new Error('No output generated. The model stream ended without a finish chunk.');
     }
 
     const toolCalls: LlmToolCall[] = [];
@@ -728,7 +721,7 @@ export async function runChatCompletions(
       }
       let input: unknown;
       try {
-        input = JSON.parse(partial.arguments || "{}");
+        input = JSON.parse(partial.arguments || '{}');
       } catch {
         // Never parsed: keep the raw string under an explicit marker instead
         // of guessing the tool's shape (executeLlmToolCall reports it).
@@ -736,7 +729,7 @@ export async function runChatCompletions(
       }
       toolCalls.push({
         id: partial.id,
-        name: partial.name || "bash",
+        name: partial.name || 'bash',
         input,
       });
     }
@@ -749,7 +742,8 @@ export async function runChatCompletions(
       text,
       reasoning,
       toolCalls,
-      finishReason: finishReason === "unknown" && toolCalls.length > 0 ? "tool-calls" : finishReason,
+      finishReason:
+        finishReason === 'unknown' && toolCalls.length > 0 ? 'tool-calls' : finishReason,
       usage: options.parseUsage(rawUsage, { llmMs, thinkingMs, answeringMs }),
     };
   } finally {

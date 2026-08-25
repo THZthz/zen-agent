@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -10,9 +11,9 @@ Content blocks represent displayable information that flows through the Agent Cl
 
 Content blocks appear in:
 
-* User prompts sent via [`session/prompt`](/protocol/v1/prompt-turn#1-user-message)
-* Language model output streamed through [`session/update`](/protocol/v1/prompt-turn#3-agent-reports-output) notifications
-* Progress updates and results from [tool calls](/protocol/v1/tool-calls)
+- User prompts sent via [`session/prompt`](/protocol/v1/prompt-turn#1-user-message)
+- Language model output streamed through [`session/update`](/protocol/v1/prompt-turn#3-agent-reports-output) notifications
+- Progress updates and results from [tool calls](/protocol/v1/tool-calls)
 
 ## Content Types
 
@@ -142,6 +143,7 @@ prompts.
     <ParamField path="mimeType" type="string">
       Optional MIME type of the text content
     </ParamField>
+
   </Expandable>
 
   <Expandable title="Blob Resource">
@@ -156,6 +158,7 @@ prompts.
     <ParamField path="mimeType" type="string">
       Optional MIME type of the blob
     </ParamField>
+
   </Expandable>
 </ParamField>
 

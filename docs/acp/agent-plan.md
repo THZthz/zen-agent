@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -60,17 +61,17 @@ Each plan entry represents a specific task or goal within the overall execution 
 <ParamField path="priority" type="PlanEntryPriority" required>
   The relative importance of this task.
 
-  * `high`
-  * `medium`
-  * `low`
+- `high`
+- `medium`
+- `low`
 </ParamField>
 
 <ParamField path="status" type="PlanEntryStatus" required>
   The current [execution status](#status) of this task
 
-  * `pending`
-  * `in_progress`
-  * `completed`
+- `pending`
+- `in_progress`
+- `completed`
 </ParamField>
 
 ## Updating Plans

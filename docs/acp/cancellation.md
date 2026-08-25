@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -18,11 +19,11 @@ Cancellation remains optional as it might not be implementable in all clients or
 
 When a `$/cancel_request` notification is received by a supporting implementation, the implementation:
 
-* **MAY** cancel the corresponding request activity and all nested activities related to that request
-* **MAY** finish sending any pending notifications before responding
-* **MUST** send one of these responses for the original request:
-  * A valid response with appropriate data (such as partial results or cancellation marker)
-  * An error response with code [`-32800` (Request Cancelled)](/protocol/v1/schema#errorcode)
+- **MAY** cancel the corresponding request activity and all nested activities related to that request
+- **MAY** finish sending any pending notifications before responding
+- **MUST** send one of these responses for the original request:
+  - A valid response with appropriate data (such as partial results or cancellation marker)
+  - An error response with code [`-32800` (Request Cancelled)](/protocol/v1/schema#errorcode)
 
 The calling side **MAY** implement graceful cancellation processing by waiting for the response from the remote side.
 
@@ -32,13 +33,13 @@ Cancellation **MAY** also be done explicitly on a per-feature basis within the p
 
 Requests can also be cancelled internally by the executing party without receiving `$/cancel_request`:
 
-* **Client-side examples**: User closes IDE, switches to different project, file becomes unavailable
-* **Agent-side examples**: LLM context limit reached, internal timeout, resource constraints
+- **Client-side examples**: User closes IDE, switches to different project, file becomes unavailable
+- **Agent-side examples**: LLM context limit reached, internal timeout, resource constraints
 
 When internal cancellation occurs, the executing party **SHOULD**:
 
-* Send the same `-32800` (Cancelled) error response as if `$/cancel_request` was received
-* Ensure consistent behavior regardless of cancellation source
+- Send the same `-32800` (Cancelled) error response as if `$/cancel_request` was received
+- Ensure consistent behavior regardless of cancellation source
 
 ## Example: Cascading Cancellation Flow
 

@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -11,7 +12,7 @@ ACP uses JSON-RPC to encode messages. JSON-RPC messages **MUST** be UTF-8 encode
 The protocol currently defines the following transport mechanisms for agent-client communication:
 
 1. [stdio](#stdio), communication over standard in and standard out
-2. *[Streamable HTTP](#streamable-http) (draft proposal in progress)*
+2. _[Streamable HTTP](#streamable-http) (draft proposal in progress)_
 
 Agents and clients **SHOULD** support stdio whenever possible.
 
@@ -21,13 +22,13 @@ It is also possible for agents and clients to implement [custom transports](#cus
 
 In the **stdio** transport:
 
-* The client launches the agent as a subprocess.
-* The agent reads JSON-RPC messages from its standard input (`stdin`) and sends messages to its standard output (`stdout`).
-* Messages are individual JSON-RPC requests, notifications, or responses.
-* Messages are delimited by newlines (`\n`), and **MUST NOT** contain embedded newlines.
-* The agent **MAY** write UTF-8 strings to its standard error (`stderr`) for logging purposes. Clients **MAY** capture, forward, or ignore this logging.
-* The agent **MUST NOT** write anything to its `stdout` that is not a valid ACP message.
-* The client **MUST NOT** write anything to the agent's `stdin` that is not a valid ACP message.
+- The client launches the agent as a subprocess.
+- The agent reads JSON-RPC messages from its standard input (`stdin`) and sends messages to its standard output (`stdout`).
+- Messages are individual JSON-RPC requests, notifications, or responses.
+- Messages are delimited by newlines (`\n`), and **MUST NOT** contain embedded newlines.
+- The agent **MAY** write UTF-8 strings to its standard error (`stderr`) for logging purposes. Clients **MAY** capture, forward, or ignore this logging.
+- The agent **MUST NOT** write anything to its `stdout` that is not a valid ACP message.
+- The client **MUST NOT** write anything to the agent's `stdin` that is not a valid ACP message.
 
 ```mermaid theme={null}
 sequenceDiagram
@@ -44,9 +45,9 @@ sequenceDiagram
     deactivate Agent Process
 ```
 
-## *Streamable HTTP*
+## _Streamable HTTP_
 
-*In discussion, draft proposal in progress.*
+_In discussion, draft proposal in progress._
 
 ## Custom Transports
 

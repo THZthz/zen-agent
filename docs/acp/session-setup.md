@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -49,8 +50,8 @@ sequenceDiagram
 
 Clients create a new session by calling the `session/new` method with:
 
-* The [working directory](#working-directory) for the session
-* A list of [MCP servers](#mcp-servers) the Agent should connect to
+- The [working directory](#working-directory) for the session
+- A list of [MCP servers](#mcp-servers) the Agent should connect to
 
 ```json theme={null}
 {
@@ -110,9 +111,9 @@ If `loadSession` is `false` or not present, the Agent does not support loading s
 
 To load an existing session, Clients **MUST** call the `session/load` method with:
 
-* The [Session ID](#session-id) to resume
-* [MCP servers](#mcp-servers) to connect to
-* The [working directory](#working-directory)
+- The [Session ID](#session-id) to resume
+- [MCP servers](#mcp-servers) to connect to
+- The [working directory](#working-directory)
 
 ```json theme={null}
 {
@@ -219,9 +220,9 @@ If `sessionCapabilities.resume` is not present, the Agent does not support resum
 
 To resume an existing session without replaying prior messages, Clients **MUST** call the `session/resume` method with:
 
-* The [Session ID](#session-id) to resume
-* [MCP servers](#mcp-servers) to connect to
-* The [working directory](#working-directory)
+- The [Session ID](#session-id) to resume
+- [MCP servers](#mcp-servers) to connect to
+- The [working directory](#working-directory)
 
 ```json theme={null}
 {
@@ -328,10 +329,7 @@ requests include `session/new`, `session/load`, and `session/resume`.
   "params": {
     "sessionId": "sess_789xyz",
     "cwd": "/home/user/project",
-    "additionalDirectories": [
-      "/home/user/shared-lib",
-      "/home/user/product-docs"
-    ],
+    "additionalDirectories": ["/home/user/shared-lib", "/home/user/product-docs"],
     "mcpServers": []
   }
 }
@@ -339,10 +337,10 @@ requests include `session/new`, `session/load`, and `session/resume`.
 
 When present, `additionalDirectories` has the following behavior:
 
-* `cwd` remains the primary working directory and the base for relative paths
-* each `additionalDirectories` entry **MUST** be an absolute path
-* omitting the field or providing an empty array activates no additional roots for the resulting session
-* on `session/load` and `session/resume`, Clients must send the full intended additional-root list again; that list may differ from any previous or reported list as long as the request `cwd` matches the session's `cwd`, and omitting the field or providing an empty array does not restore stored roots implicitly
+- `cwd` remains the primary working directory and the base for relative paths
+- each `additionalDirectories` entry **MUST** be an absolute path
+- omitting the field or providing an empty array activates no additional roots for the resulting session
+- on `session/load` and `session/resume`, Clients must send the full intended additional-root list again; that list may differ from any previous or reported list as long as the request `cwd` matches the session's `cwd`, and omitting the field or providing an empty array does not restore stored roots implicitly
 
 Clients **MUST** only send `additionalDirectories` when the Agent advertises `sessionCapabilities.additionalDirectories`.
 
@@ -352,20 +350,20 @@ The session ID returned by `session/new` is a unique identifier for the conversa
 
 Clients use this ID to:
 
-* Send prompt requests via `session/prompt`
-* Cancel ongoing operations via `session/cancel`
-* Load previous sessions via `session/load` (if the Agent supports the `loadSession` capability)
-* Resume previous sessions via `session/resume` (if the Agent supports the `sessionCapabilities.resume` capability)
-* Close active sessions via `session/close` (if the Agent supports the `sessionCapabilities.close` capability)
+- Send prompt requests via `session/prompt`
+- Cancel ongoing operations via `session/cancel`
+- Load previous sessions via `session/load` (if the Agent supports the `loadSession` capability)
+- Resume previous sessions via `session/resume` (if the Agent supports the `sessionCapabilities.resume` capability)
+- Close active sessions via `session/close` (if the Agent supports the `sessionCapabilities.close` capability)
 
 ## Working Directory
 
 The `cwd` (current working directory) parameter establishes the primary file system context for the session. This directory:
 
-* **MUST** be an absolute path
-* **MUST** be used for the session regardless of where the Agent subprocess was spawned
-* **MUST** remain the base for relative-path resolution
-* **MUST** be part of the session's effective root set
+- **MUST** be an absolute path
+- **MUST** be used for the session regardless of where the Agent subprocess was spawned
+- **MUST** remain the base for relative-path resolution
+- **MUST** be part of the session's effective root set
 
 When `sessionCapabilities.additionalDirectories` is in use, the session's effective root set is `[cwd, ...additionalDirectories]`. This root set **SHOULD** serve as a boundary for tool operations on the file system.
 
@@ -406,6 +404,7 @@ All Agents **MUST** support connecting to MCP servers via stdio (standard input/
     <ParamField path="value" type="string">
       The value of the environment variable.
     </ParamField>
+
   </Expandable>
 </ParamField>
 
@@ -452,6 +451,7 @@ When the Agent supports `mcpCapabilities.http`, Clients can specify MCP servers 
     <ParamField path="value" type="string">
       The value to set for the HTTP header.
     </ParamField>
+
   </Expandable>
 </ParamField>
 
@@ -504,6 +504,7 @@ When the Agent supports `mcpCapabilities.sse`, Clients can specify MCP servers c
     <ParamField path="value" type="string">
       The value to set for the HTTP header.
     </ParamField>
+
   </Expandable>
 </ParamField>
 

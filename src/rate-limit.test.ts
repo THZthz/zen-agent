@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { waitForChatRateLimit } from "./rate-limit.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitForChatRateLimit } from './rate-limit.js';
 
 const originalEnv = { ...process.env };
 
-describe("waitForChatRateLimit", () => {
+describe('waitForChatRateLimit', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -13,13 +13,13 @@ describe("waitForChatRateLimit", () => {
     vi.useRealTimers();
   });
 
-  it("returns immediately when ZEN_AGENT_CHAT_RPM is unset", async () => {
+  it('returns immediately when ZEN_AGENT_CHAT_RPM is unset', async () => {
     delete process.env.ZEN_AGENT_CHAT_RPM;
     await expect(waitForChatRateLimit()).resolves.toBeUndefined();
   });
 
-  it("spaces requests to one per 60000/rpm ms", async () => {
-    process.env.ZEN_AGENT_CHAT_RPM = "120"; // one request per 500ms
+  it('spaces requests to one per 60000/rpm ms', async () => {
+    process.env.ZEN_AGENT_CHAT_RPM = '120'; // one request per 500ms
 
     await waitForChatRateLimit(); // immediate — no prior reservation
     const second = waitForChatRateLimit();
@@ -31,8 +31,8 @@ describe("waitForChatRateLimit", () => {
     await expect(third).resolves.toBeUndefined();
   });
 
-  it("rejects with the abort reason while waiting", async () => {
-    process.env.ZEN_AGENT_CHAT_RPM = "120";
+  it('rejects with the abort reason while waiting', async () => {
+    process.env.ZEN_AGENT_CHAT_RPM = '120';
     const controller = new AbortController();
 
     // Flush reservations left by previous tests, then occupy the immediate slot.
@@ -40,7 +40,7 @@ describe("waitForChatRateLimit", () => {
     await waitForChatRateLimit();
     const waiting = waitForChatRateLimit(controller.signal);
 
-    controller.abort(new Error("user cancelled"));
-    await expect(waiting).rejects.toThrow("user cancelled");
+    controller.abort(new Error('user cancelled'));
+    await expect(waiting).rejects.toThrow('user cancelled');
   });
 });

@@ -1,8 +1,8 @@
-import * as acp from "@agentclientprotocol/sdk";
-import { open } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import type { UserContentPart } from "./storage.js";
-import { maxMediaBytes } from "./media-limit.js";
+import * as acp from '@agentclientprotocol/sdk';
+import { open } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import type { UserContentPart } from './storage.js';
+import { maxMediaBytes } from './media-limit.js';
 
 /** Base64 length to decoded-byte estimate (no padding round-trip needed). */
 function base64Bytes(data: string): number {
@@ -61,48 +61,48 @@ export async function promptBlocksToPromptContent(
 
   for (const block of blocks) {
     switch (block.type) {
-      case "text":
-        parts.push({ type: "text", text: block.text });
+      case 'text':
+        parts.push({ type: 'text', text: block.text });
         break;
-      case "image": {
+      case 'image': {
         if (base64Bytes(block.data) > maxMediaBytes()) {
-          parts.push(oversizedMediaNote("image", block.mimeType, block.data.length));
+          parts.push(oversizedMediaNote('image', block.mimeType, block.data.length));
           break;
         }
         parts.push({
-          type: "image",
+          type: 'image',
           mimeType: block.mimeType,
           data: block.data,
           ...(block.uri ? { uri: block.uri } : {}),
         });
         break;
       }
-      case "audio": {
+      case 'audio': {
         if (base64Bytes(block.data) > maxMediaBytes()) {
-          parts.push(oversizedMediaNote("audio", block.mimeType, block.data.length));
+          parts.push(oversizedMediaNote('audio', block.mimeType, block.data.length));
           break;
         }
         parts.push({
-          type: "audio",
+          type: 'audio',
           mimeType: block.mimeType,
           data: block.data,
         });
         break;
       }
-      case "resource_link":
-        parts.push({ type: "text", text: await readResourceLink(block) });
+      case 'resource_link':
+        parts.push({ type: 'text', text: await readResourceLink(block) });
         break;
-      case "resource": {
+      case 'resource': {
         const resource = block.resource;
-        if ("text" in resource && typeof resource.text === "string") {
-          parts.push({ type: "text", text: resource.text });
-        } else if ("blob" in resource && typeof resource.blob === "string") {
+        if ('text' in resource && typeof resource.text === 'string') {
+          parts.push({ type: 'text', text: resource.text });
+        } else if ('blob' in resource && typeof resource.blob === 'string') {
           parts.push({
-            type: "text",
+            type: 'text',
             text: `[Embedded binary resource ${resource.uri} (base64, ${resource.blob.length} chars)]`,
           });
         } else {
-          parts.push({ type: "text", text: `[Embedded resource ${resource.uri}]` });
+          parts.push({ type: 'text', text: `[Embedded resource ${resource.uri}]` });
         }
         break;
       }
@@ -115,15 +115,15 @@ export async function promptBlocksToPromptContent(
   const text = parts
     .map((part) => {
       switch (part.type) {
-        case "text":
+        case 'text':
           return part.text;
-        case "image":
-          return `[image attached${part.uri ? `: ${part.uri}` : ""} (${part.mimeType})]`;
-        case "audio":
+        case 'image':
+          return `[image attached${part.uri ? `: ${part.uri}` : ''} (${part.mimeType})]`;
+        case 'audio':
           return `[audio attached (${part.mimeType})]`;
       }
     })
-    .join("\n\n");
+    .join('\n\n');
 
   return { text, parts };
 }
@@ -134,23 +134,23 @@ export async function promptBlocksToText(blocks: acp.ContentBlock[]): Promise<st
 }
 
 function oversizedMediaNote(
-  kind: "image" | "audio",
+  kind: 'image' | 'audio',
   mimeType: string,
   base64Length: number,
 ): UserContentPart {
   return {
-    type: "text",
+    type: 'text',
     text: `[${kind} attached (${mimeType}, base64 ${base64Length} chars) omitted: exceeds ZEN_AGENT_MAX_MEDIA_BYTES]`,
   };
 }
 
 async function readResourceLink(block: {
-  type: "resource_link";
+  type: 'resource_link';
   uri: string;
   name?: string;
   mimeType?: string | null;
 }): Promise<string> {
-  if (!block.uri.startsWith("file://")) {
+  if (!block.uri.startsWith('file://')) {
     return block.name ?? block.uri;
   }
 
@@ -160,7 +160,7 @@ async function readResourceLink(block: {
     // Read at most limit+1 bytes directly: a huge file must neither land in
     // memory nor in the context in full.
     const limit = maxResourceBytes();
-    handle = await open(path, "r");
+    handle = await open(path, 'r');
     const buf = Buffer.alloc(limit + 1);
     const { bytesRead } = await handle.read(buf, 0, limit + 1, 0);
     const data = buf.subarray(0, bytesRead);
@@ -169,13 +169,16 @@ async function readResourceLink(block: {
       return `[File: ${path} omitted: binary content is not readable as text]`;
     }
     if (bytesRead > limit) {
-      const totalBytes = await handle.stat().then((st) => st.size, () => bytesRead);
+      const totalBytes = await handle.stat().then(
+        (st) => st.size,
+        () => bytesRead,
+      );
       return (
-        `File: ${path}\n${data.subarray(0, limit).toString("utf8")}\n\n` +
+        `File: ${path}\n${data.subarray(0, limit).toString('utf8')}\n\n` +
         `[File truncated: showing ${limit} of ${totalBytes} bytes (ZEN_AGENT_MAX_RESOURCE_BYTES). Read the rest with bash.]`
       );
     }
-    return `File: ${path}\n${data.toString("utf8")}`;
+    return `File: ${path}\n${data.toString('utf8')}`;
   } catch {
     return block.name ?? block.uri;
   } finally {

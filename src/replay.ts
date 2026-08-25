@@ -1,4 +1,4 @@
-import type { SessionUpdate } from "@agentclientprotocol/sdk";
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 
 /*
  * WHY THIS FILE EXISTS (bash tool cards after a Zed restart)
@@ -45,21 +45,21 @@ import type { SessionUpdate } from "@agentclientprotocol/sdk";
  * mechanism existed, the same metadata is synthesized from the persisted raw
  * output so old bash cards render identically.
  */
-const TERMINAL_INFO_META = "terminal_info";
+const TERMINAL_INFO_META = 'terminal_info';
 
 function readMeta(event: SessionUpdate): Record<string, unknown> | undefined {
   return (event as { _meta?: Record<string, unknown> | null })._meta ?? undefined;
 }
 
 function displayTerminalIdFromMeta(event: SessionUpdate): string | undefined {
-  if (event.sessionUpdate !== "tool_call") {
+  if (event.sessionUpdate !== 'tool_call') {
     return undefined;
   }
   const info = readMeta(event)?.[TERMINAL_INFO_META];
   if (
-    typeof info === "object" &&
+    typeof info === 'object' &&
     info !== null &&
-    typeof (info as { terminal_id?: unknown }).terminal_id === "string"
+    typeof (info as { terminal_id?: unknown }).terminal_id === 'string'
   ) {
     return (info as { terminal_id: string }).terminal_id;
   }
@@ -76,19 +76,17 @@ type ToolCallUpdateLike = SessionUpdate & {
 };
 
 function hasTerminalContent(event: SessionUpdate): boolean {
-  return ((event as ToolCallUpdateLike).content ?? []).some(
-    (item) => item.type === "terminal",
-  );
+  return ((event as ToolCallUpdateLike).content ?? []).some((item) => item.type === 'terminal');
 }
 
 function textContentOf(event: SessionUpdate): string | undefined {
   const item = ((event as ToolCallUpdateLike).content ?? []).find(
     (candidate) =>
-      candidate.type === "content" &&
-      candidate.content?.type === "text" &&
-      typeof candidate.content.text === "string",
+      candidate.type === 'content' &&
+      candidate.content?.type === 'text' &&
+      typeof candidate.content.text === 'string',
   );
-  if (!item || item.type !== "content" || item.content?.type !== "text") {
+  if (!item || item.type !== 'content' || item.content?.type !== 'text') {
     return undefined;
   }
   return item.content.text as string;
@@ -128,10 +126,7 @@ function synthesizedDisplayId(toolCallId: string): string {
  * The replayed card then auto-expands (`ViewEvent::NewTerminal`,
  * `expand_terminal_card` defaults to true) and shows the output.
  */
-export function prepareReplayEvents(
-  events: SessionUpdate[],
-  cwd?: string,
-): SessionUpdate[] {
+export function prepareReplayEvents(events: SessionUpdate[], cwd?: string): SessionUpdate[] {
   // Only replay tool calls that have BOTH an initial `tool_call` event and a
   // final (completed/failed) `tool_call_update`. Calls interrupted mid-run
   // (e.g. hard-aborted) have no result worth showing, and replaying them as
@@ -149,30 +144,28 @@ export function prepareReplayEvents(
   const rawOutputs = new Map<string, Record<string, unknown>>();
 
   for (const event of events) {
-    if (event.sessionUpdate === "tool_call") {
+    if (event.sessionUpdate === 'tool_call') {
       initialCallIds.add(event.toolCallId);
       const displayId = displayTerminalIdFromMeta(event);
       if (displayId) {
         displayTerminalIds.set(event.toolCallId, displayId);
       }
     } else if (
-      event.sessionUpdate === "tool_call_update" &&
-      (event.status === "completed" || event.status === "failed")
+      event.sessionUpdate === 'tool_call_update' &&
+      (event.status === 'completed' || event.status === 'failed')
     ) {
       finalizedCallIds.add(event.toolCallId);
       if (hasTerminalContent(event)) {
         callsWithTerminal.add(event.toolCallId);
       }
       const rawOutput = event.rawOutput as Record<string, unknown> | undefined;
-      if (rawOutput && typeof rawOutput === "object") {
+      if (rawOutput && typeof rawOutput === 'object') {
         rawOutputs.set(event.toolCallId, rawOutput);
       }
     }
   }
 
-  const replayableCallIds = new Set(
-    [...initialCallIds].filter((id) => finalizedCallIds.has(id)),
-  );
+  const replayableCallIds = new Set([...initialCallIds].filter((id) => finalizedCallIds.has(id)));
 
   // Legacy sessions: give bash calls that had terminal cards a synthesized
   // display-only terminal id so they render with a toggle and visible output.
@@ -184,7 +177,7 @@ export function prepareReplayEvents(
 
   const result: SessionUpdate[] = [];
   for (const event of events) {
-    if (event.sessionUpdate === "tool_call") {
+    if (event.sessionUpdate === 'tool_call') {
       if (!replayableCallIds.has(event.toolCallId)) {
         continue;
       }
@@ -207,11 +200,8 @@ export function prepareReplayEvents(
       }
       continue;
     }
-    if (event.sessionUpdate === "tool_call_update") {
-      if (
-        !replayableCallIds.has(event.toolCallId) ||
-        event.status === "in_progress"
-      ) {
+    if (event.sessionUpdate === 'tool_call_update') {
+      if (!replayableCallIds.has(event.toolCallId) || event.status === 'in_progress') {
         // Drop transient in-progress updates. The final update carries the
         // full status and content, so replaying the intermediate one would
         // only cause extra work (and fail on stale terminal references).
@@ -243,14 +233,14 @@ function remapTerminalContent(
   displayTerminalId: string | undefined,
   rawOutput: Record<string, unknown> | undefined,
 ): SessionUpdate {
-  if (event.sessionUpdate !== "tool_call_update" || !event.content) {
+  if (event.sessionUpdate !== 'tool_call_update' || !event.content) {
     return event;
   }
 
   let changed = false;
   const content: typeof event.content = [];
   for (const item of event.content) {
-    if (item.type !== "terminal") {
+    if (item.type !== 'terminal') {
       content.push(item);
       continue;
     }
@@ -269,12 +259,9 @@ function remapTerminalContent(
   }
 
   const meta = readMeta(event) ?? {};
-  if (displayTerminalId && typeof meta.terminal_output !== "object") {
+  if (displayTerminalId && typeof meta.terminal_output !== 'object') {
     const raw = rawOutput as { output?: unknown; exitCode?: unknown; signal?: unknown } | undefined;
-    const data =
-      typeof raw?.output === "string"
-        ? raw.output
-        : textContentOf(event);
+    const data = typeof raw?.output === 'string' ? raw.output : textContentOf(event);
     if (data !== undefined) {
       changed = true;
       meta.terminal_output = {
@@ -283,8 +270,8 @@ function remapTerminalContent(
       };
       meta.terminal_exit = {
         terminal_id: displayTerminalId,
-        exit_code: typeof raw?.exitCode === "number" ? raw.exitCode : null,
-        signal: typeof raw?.signal === "string" ? raw.signal : null,
+        exit_code: typeof raw?.exitCode === 'number' ? raw.exitCode : null,
+        signal: typeof raw?.signal === 'string' ? raw.signal : null,
       };
     }
   }
@@ -308,19 +295,19 @@ export function coalesceReplayEvents(events: SessionUpdate[]): SessionUpdate[] {
 
     if (
       last &&
-      (enriched.sessionUpdate === "agent_thought_chunk" ||
-        enriched.sessionUpdate === "agent_message_chunk") &&
+      (enriched.sessionUpdate === 'agent_thought_chunk' ||
+        enriched.sessionUpdate === 'agent_message_chunk') &&
       last.sessionUpdate === enriched.sessionUpdate &&
-      "messageId" in last &&
-      "messageId" in enriched &&
+      'messageId' in last &&
+      'messageId' in enriched &&
       last.messageId === enriched.messageId &&
-      last.content.type === "text" &&
-      enriched.content.type === "text"
+      last.content.type === 'text' &&
+      enriched.content.type === 'text'
     ) {
       result[result.length - 1] = {
         ...last,
         content: {
-          type: "text",
+          type: 'text',
           text: last.content.text + enriched.content.text,
         },
       } as SessionUpdate;
@@ -333,19 +320,19 @@ export function coalesceReplayEvents(events: SessionUpdate[]): SessionUpdate[] {
 }
 
 export function enrichReplayEvent(event: SessionUpdate): SessionUpdate {
-  if (event.sessionUpdate !== "tool_call_update") {
+  if (event.sessionUpdate !== 'tool_call_update') {
     return event;
   }
   const rawOutput = event.rawOutput as { output?: unknown } | undefined;
-  if (!rawOutput || typeof rawOutput.output !== "string") {
+  if (!rawOutput || typeof rawOutput.output !== 'string') {
     return event;
   }
 
   const hasTextContent = (event.content ?? []).some(
     (item) =>
-      item.type === "content" &&
-      item.content.type === "text" &&
-      typeof item.content.text === "string",
+      item.type === 'content' &&
+      item.content.type === 'text' &&
+      typeof item.content.text === 'string',
   );
   if (hasTextContent) {
     return event;
@@ -356,8 +343,8 @@ export function enrichReplayEvent(event: SessionUpdate): SessionUpdate {
     content: [
       ...(event.content ?? []),
       {
-        type: "content",
-        content: { type: "text", text: rawOutput.output },
+        type: 'content',
+        content: { type: 'text', text: rawOutput.output },
       },
     ],
   } as SessionUpdate;

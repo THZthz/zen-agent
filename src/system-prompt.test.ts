@@ -1,16 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   buildEnvironmentMessage,
   buildSessionContinuedMessage,
   buildSystemPrompt,
   getUserMessageName,
   isEnvironmentMessage,
-} from "./system-prompt.js";
-import { emptySessionUsage, type StoredSession } from "./storage.js";
+} from './system-prompt.js';
+import { emptySessionUsage, type StoredSession } from './storage.js';
 
 let dir: string;
 let configDir: string;
@@ -18,18 +18,18 @@ let homeDir: string;
 let subDir: string | undefined;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "zen-agent-git-"));
+  dir = mkdtempSync(join(tmpdir(), 'zen-agent-git-'));
   // Isolate git from the machine's global/system config so tests are
   // deterministic regardless of the host's git user.name. The config file
   // lives OUTSIDE the repo so it never shows up in `git status`.
-  configDir = mkdtempSync(join(tmpdir(), "zen-agent-gitcfg-"));
-  writeFileSync(join(configDir, "gitconfig"), "");
-  process.env.GIT_CONFIG_GLOBAL = join(configDir, "gitconfig");
-  process.env.GIT_CONFIG_SYSTEM = "/dev/null";
+  configDir = mkdtempSync(join(tmpdir(), 'zen-agent-gitcfg-'));
+  writeFileSync(join(configDir, 'gitconfig'), '');
+  process.env.GIT_CONFIG_GLOBAL = join(configDir, 'gitconfig');
+  process.env.GIT_CONFIG_SYSTEM = '/dev/null';
   // Isolate HOME too: buildEnvironmentMessage discovers skills under
   // ~/.agents/skills, so a real HOME would leak the developer's skills
   // into these assertions.
-  homeDir = mkdtempSync(join(tmpdir(), "zen-agent-home-"));
+  homeDir = mkdtempSync(join(tmpdir(), 'zen-agent-home-'));
   process.env.HOME = homeDir;
 });
 
@@ -48,198 +48,196 @@ afterEach(() => {
 
 function makeSession(cwd: string): StoredSession {
   return {
-    sessionId: "s1",
+    sessionId: 's1',
     cwd,
-    createdAt: "2026-08-20T02:00:00.000Z",
-    updatedAt: "2026-08-20T02:00:00.000Z",
+    createdAt: '2026-08-20T02:00:00.000Z',
+    updatedAt: '2026-08-20T02:00:00.000Z',
     title: null,
     events: [],
     llmMessages: [],
-    config: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "", sandbox: false },
+    config: {
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      thinkingEffort: 'off',
+      systemPrompt: '',
+      sandbox: false,
+    },
     usage: emptySessionUsage(),
     turnStats: [],
   };
 }
 
 function git(args: string[]): void {
-  execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
 }
 
-describe("getUserMessageName", () => {
-  it("returns the git user name, sanitized to the OpenAI name charset", async () => {
-    git(["init", "-b", "main"]);
-    git(["config", "user.name", "John Doe"]);
-    git(["config", "user.email", "john@example.com"]);
-    expect(await getUserMessageName(dir)).toBe("John_Doe");
+describe('getUserMessageName', () => {
+  it('returns the git user name, sanitized to the OpenAI name charset', async () => {
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'John Doe']);
+    git(['config', 'user.email', 'john@example.com']);
+    expect(await getUserMessageName(dir)).toBe('John_Doe');
   });
 
   it("falls back to 'User' when git has no user.name", async () => {
-    git(["init", "-b", "main"]);
+    git(['init', '-b', 'main']);
     // No user.name configured anywhere.
-    expect(await getUserMessageName(dir)).toBe("User");
+    expect(await getUserMessageName(dir)).toBe('User');
   });
 
   it("falls back to 'User' outside a git repository", async () => {
-    expect(await getUserMessageName(dir)).toBe("User");
+    expect(await getUserMessageName(dir)).toBe('User');
   });
 });
 
-describe("buildEnvironmentMessage", () => {
-  it("includes working directory and date even without git", async () => {
+describe('buildEnvironmentMessage', () => {
+  it('includes working directory and date even without git', async () => {
     const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toContain("<environment>");
+    expect(text).toContain('<environment>');
     expect(text).toContain(`<working-directory>${dir}</working-directory>`);
-    expect(text).toContain("<current-time>2026-08-20T02:00:00.000Z</current-time>");
-    expect(text).toContain("</environment>");
+    expect(text).toContain('<current-time>2026-08-20T02:00:00.000Z</current-time>');
+    expect(text).toContain('</environment>');
   });
 
-  it("adds branch and clean status inside a git repository", async () => {
-    git(["init", "-b", "feature/test"]);
-    git(["config", "user.name", "Tester"]);
-    git(["config", "user.email", "tester@example.com"]);
-    writeFileSync(join(dir, "a.txt"), "hello\n");
-    git(["add", "a.txt"]);
-    git(["commit", "-m", "init"]);
+  it('adds branch and clean status inside a git repository', async () => {
+    git(['init', '-b', 'feature/test']);
+    git(['config', 'user.name', 'Tester']);
+    git(['config', 'user.email', 'tester@example.com']);
+    writeFileSync(join(dir, 'a.txt'), 'hello\n');
+    git(['add', 'a.txt']);
+    git(['commit', '-m', 'init']);
 
     const text = await buildEnvironmentMessage(makeSession(dir));
     expect(text).toContain(`<working-directory>${dir}</working-directory>`);
-    expect(text).toContain("<git-branch>feature/test</git-branch>");
-    expect(text).toContain("<git-status>clean</git-status>");
-    expect(text).not.toContain("submodule");
+    expect(text).toContain('<git-branch>feature/test</git-branch>');
+    expect(text).toContain('<git-status>clean</git-status>');
+    expect(text).not.toContain('submodule');
   });
 
-  it("reports the number of changed files when the tree is dirty", async () => {
-    git(["init", "-b", "main"]);
-    git(["config", "user.name", "Tester"]);
-    git(["config", "user.email", "tester@example.com"]);
-    writeFileSync(join(dir, "a.txt"), "hello\n");
-    git(["add", "a.txt"]);
-    git(["commit", "-m", "init"]);
-    writeFileSync(join(dir, "a.txt"), "hello, world\n");
-    writeFileSync(join(dir, "b.txt"), "new\n");
+  it('reports the number of changed files when the tree is dirty', async () => {
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'Tester']);
+    git(['config', 'user.email', 'tester@example.com']);
+    writeFileSync(join(dir, 'a.txt'), 'hello\n');
+    git(['add', 'a.txt']);
+    git(['commit', '-m', 'init']);
+    writeFileSync(join(dir, 'a.txt'), 'hello, world\n');
+    writeFileSync(join(dir, 'b.txt'), 'new\n');
 
     const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toContain("<git-branch>main</git-branch>");
-    expect(text).toContain("<git-status>2 changed files</git-status>");
+    expect(text).toContain('<git-branch>main</git-branch>');
+    expect(text).toContain('<git-status>2 changed files</git-status>');
   });
 
-  it("reminds the agent to follow Conventional Commits with a concise body", async () => {
-    git(["init", "-b", "main"]);
-    git(["config", "user.name", "Tester"]);
-    git(["config", "user.email", "tester@example.com"]);
-    writeFileSync(join(dir, "a.txt"), "hello\n");
-    git(["add", "a.txt"]);
-    git(["commit", "-m", "init"]);
+  it('reminds the agent to follow Conventional Commits with a concise body', async () => {
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'Tester']);
+    git(['config', 'user.email', 'tester@example.com']);
+    writeFileSync(join(dir, 'a.txt'), 'hello\n');
+    git(['add', 'a.txt']);
+    git(['commit', '-m', 'init']);
+
+    const text = await buildEnvironmentMessage(makeSession(dir));
+    expect(text).toContain('> Follow Conventional Commits; keep the commit message body concise.');
+  });
+
+  it('reminds the agent to split work into focused commits while working', async () => {
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'Tester']);
+    git(['config', 'user.email', 'tester@example.com']);
+    writeFileSync(join(dir, 'a.txt'), 'hello\n');
+    git(['add', 'a.txt']);
+    git(['commit', '-m', 'init']);
 
     const text = await buildEnvironmentMessage(makeSession(dir));
     expect(text).toContain(
-      "> Follow Conventional Commits; keep the commit message body concise.",
+      '> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.',
     );
   });
 
-  it("reminds the agent to split work into focused commits while working", async () => {
-    git(["init", "-b", "main"]);
-    git(["config", "user.name", "Tester"]);
-    git(["config", "user.email", "tester@example.com"]);
-    writeFileSync(join(dir, "a.txt"), "hello\n");
-    git(["add", "a.txt"]);
-    git(["commit", "-m", "init"]);
-
-    const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toContain(
-      "> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.",
-    );
-  });
-
-  it("notifies the agent about submodules and not to bump the pointer", async () => {
-    git(["init", "-b", "main"]);
-    git(["config", "user.name", "Tester"]);
-    git(["config", "user.email", "tester@example.com"]);
-    writeFileSync(join(dir, "a.txt"), "hello\n");
-    git(["add", "a.txt"]);
-    git(["commit", "-m", "init"]);
+  it('notifies the agent about submodules and not to bump the pointer', async () => {
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'Tester']);
+    git(['config', 'user.email', 'tester@example.com']);
+    writeFileSync(join(dir, 'a.txt'), 'hello\n');
+    git(['add', 'a.txt']);
+    git(['commit', '-m', 'init']);
 
     // A real submodule: source repo lives outside `dir` so it is not
     // picked up as an embedded repository by `git add`.
-    subDir = mkdtempSync(join(tmpdir(), "zen-agent-sub-"));
-    execFileSync("git", ["init", "-b", "main"], {
+    subDir = mkdtempSync(join(tmpdir(), 'zen-agent-sub-'));
+    execFileSync('git', ['init', '-b', 'main'], {
       cwd: subDir,
-      stdio: "ignore",
+      stdio: 'ignore',
     });
-    execFileSync("git", ["config", "user.name", "Tester"], {
+    execFileSync('git', ['config', 'user.name', 'Tester'], {
       cwd: subDir,
-      stdio: "ignore",
+      stdio: 'ignore',
     });
-    execFileSync("git", ["config", "user.email", "tester@example.com"], {
+    execFileSync('git', ['config', 'user.email', 'tester@example.com'], {
       cwd: subDir,
-      stdio: "ignore",
+      stdio: 'ignore',
     });
-    writeFileSync(join(subDir, "f.txt"), "hello\n");
-    execFileSync("git", ["add", "f.txt"], { cwd: subDir, stdio: "ignore" });
-    execFileSync("git", ["commit", "-m", "init"], {
+    writeFileSync(join(subDir, 'f.txt'), 'hello\n');
+    execFileSync('git', ['add', 'f.txt'], { cwd: subDir, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'init'], {
       cwd: subDir,
-      stdio: "ignore",
+      stdio: 'ignore',
     });
 
-    git(["-c", "protocol.file.allow=always", "submodule", "add", subDir, "submod"]);
-    git(["commit", "-am", "add submodule"]);
+    git(['-c', 'protocol.file.allow=always', 'submodule', 'add', subDir, 'submod']);
+    git(['commit', '-am', 'add submodule']);
 
     const text = await buildEnvironmentMessage(makeSession(dir));
-    expect(text).toContain(
-      "> This project contains git submodules: submod.",
-    );
+    expect(text).toContain('> This project contains git submodules: submod.');
   });
 });
 
-describe("buildSessionContinuedMessage", () => {
-  it("marks the continuation and includes fresh git state", async () => {
-    git(["init", "-b", "main"]);
-    git(["config", "user.name", "Tester"]);
-    git(["config", "user.email", "tester@example.com"]);
-    writeFileSync(join(dir, "a.txt"), "hello\n");
-    git(["add", "a.txt"]);
-    git(["commit", "-m", "init"]);
-    writeFileSync(join(dir, "a.txt"), "changed\n");
+describe('buildSessionContinuedMessage', () => {
+  it('marks the continuation and includes fresh git state', async () => {
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'Tester']);
+    git(['config', 'user.email', 'tester@example.com']);
+    writeFileSync(join(dir, 'a.txt'), 'hello\n');
+    git(['add', 'a.txt']);
+    git(['commit', '-m', 'init']);
+    writeFileSync(join(dir, 'a.txt'), 'changed\n');
 
     const text = await buildSessionContinuedMessage(makeSession(dir));
-    expect(text).toContain("<environment>");
-    expect(text).toContain("<session-state>resumed</session-state>");
-    expect(text).toContain("<current-time>");
-    expect(text).toContain("<git-branch>main</git-branch>");
-    expect(text).toContain("<git-status>1 changed file</git-status>");
+    expect(text).toContain('<environment>');
+    expect(text).toContain('<session-state>resumed</session-state>');
+    expect(text).toContain('<current-time>');
+    expect(text).toContain('<git-branch>main</git-branch>');
+    expect(text).toContain('<git-status>1 changed file</git-status>');
     // Workflow guidance lives in the initial environment message, not here,
     // so the frozen cached prefix stays byte-identical across restarts.
-    expect(text).not.toContain("Follow Conventional Commits");
+    expect(text).not.toContain('Follow Conventional Commits');
   });
 });
 
-describe("isEnvironmentMessage", () => {
-  it("detects only auto-generated environment user messages", () => {
-    expect(
-      isEnvironmentMessage({ role: "user", content: "x", name: "Environment" }),
-    ).toBe(true);
-    expect(
-      isEnvironmentMessage({ role: "user", content: "x", name: "Amias" }),
-    ).toBe(false);
-    expect(isEnvironmentMessage({ role: "user", content: "x" })).toBe(false);
-    expect(isEnvironmentMessage({ role: "assistant", content: [] })).toBe(false);
+describe('isEnvironmentMessage', () => {
+  it('detects only auto-generated environment user messages', () => {
+    expect(isEnvironmentMessage({ role: 'user', content: 'x', name: 'Environment' })).toBe(true);
+    expect(isEnvironmentMessage({ role: 'user', content: 'x', name: 'Amias' })).toBe(false);
+    expect(isEnvironmentMessage({ role: 'user', content: 'x' })).toBe(false);
+    expect(isEnvironmentMessage({ role: 'assistant', content: [] })).toBe(false);
   });
 });
 
-describe("buildSystemPrompt media guidance", () => {
-  function makeSession(systemPrompt = ""): StoredSession {
+describe('buildSystemPrompt media guidance', () => {
+  function makeSession(systemPrompt = ''): StoredSession {
     return {
-      sessionId: "s",
-      cwd: "/tmp",
+      sessionId: 's',
+      cwd: '/tmp',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       title: null,
       events: [],
       llmMessages: [],
       config: {
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        thinkingEffort: "off",
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        thinkingEffort: 'off',
         systemPrompt,
         sandbox: false,
       },
@@ -248,20 +246,20 @@ describe("buildSystemPrompt media guidance", () => {
     };
   }
 
-  it("omits media guidance by default (byte-stable for existing sessions)", () => {
-    expect(buildSystemPrompt(makeSession())).not.toContain("read_media");
-    expect(buildSystemPrompt(makeSession(), {})).not.toContain("read_media");
-    expect(buildSystemPrompt(makeSession(), { media: false })).not.toContain("read_media");
+  it('omits media guidance by default (byte-stable for existing sessions)', () => {
+    expect(buildSystemPrompt(makeSession())).not.toContain('read_media');
+    expect(buildSystemPrompt(makeSession(), {})).not.toContain('read_media');
+    expect(buildSystemPrompt(makeSession(), { media: false })).not.toContain('read_media');
   });
 
-  it("appends media guidance for multimodal models", () => {
+  it('appends media guidance for multimodal models', () => {
     const prompt = buildSystemPrompt(makeSession(), { media: true });
-    expect(prompt).toContain("read_media");
-    expect(prompt).toContain("Media handling:");
+    expect(prompt).toContain('read_media');
+    expect(prompt).toContain('Media handling:');
   });
 
-  it("appends guidance after a custom system prompt", () => {
-    const session = makeSession("custom prompt");
-    expect(buildSystemPrompt(session, { media: true }).startsWith("custom prompt\n\n")).toBe(true);
+  it('appends guidance after a custom system prompt', () => {
+    const session = makeSession('custom prompt');
+    expect(buildSystemPrompt(session, { media: true }).startsWith('custom prompt\n\n')).toBe(true);
   });
 });

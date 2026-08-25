@@ -1,5 +1,5 @@
-import type { ModelId } from "./storage.js";
-import { envNonNegativeFloat, envPositiveInt } from "./env.js";
+import type { ModelId } from './storage.js';
+import { envNonNegativeFloat, envPositiveInt } from './env.js';
 import {
   buildLlmUsage,
   costFromUsage,
@@ -7,11 +7,11 @@ import {
   type LlmStepOptions,
   type LlmStepResult,
   type LlmUsage,
-} from "./llm-client.js";
-export { SYSTEM_PROMPT } from "./system-prompt.js";
-export { BASH_TOOL_SCHEMA } from "./llm-client.js";
+} from './llm-client.js';
+export { SYSTEM_PROMPT } from './system-prompt.js';
+export { BASH_TOOL_SCHEMA } from './llm-client.js';
 
-export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from "./llm-client.js";
+export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from './llm-client.js';
 
 export interface ModelPricing {
   /** CNY per 1M input tokens served from cache. */
@@ -38,12 +38,12 @@ interface ModelRateTable {
  * Values can be overridden with DEEPSEEK_PRICE_* environment variables.
  */
 const MODEL_RATE_TABLE: Record<string, ModelRateTable> = {
-  "deepseek-v4-flash": {
+  'deepseek-v4-flash': {
     cacheHit: { peak: 0.1, offPeak: 0.05 },
     cacheMiss: { peak: 3.0, offPeak: 1.5 },
     output: { peak: 9.0, offPeak: 4.5 },
   },
-  "deepseek-v4-pro": {
+  'deepseek-v4-pro': {
     cacheHit: { peak: 0.3, offPeak: 0.15 },
     cacheMiss: { peak: 9.0, offPeak: 4.5 },
     output: { peak: 27.0, offPeak: 13.5 },
@@ -64,19 +64,19 @@ export function isPeakTime(now: Date = new Date()): boolean {
 
 /** Effective pricing for a model at `now`, including peak/off-peak selection. */
 export function getModelPricing(model: ModelId, now: Date = new Date()): ModelPricing {
-  const base = MODEL_RATE_TABLE[model] ?? MODEL_RATE_TABLE["deepseek-v4-flash"];
+  const base = MODEL_RATE_TABLE[model] ?? MODEL_RATE_TABLE['deepseek-v4-flash'];
   const peak = isPeakTime(now);
   return {
     cacheHitCnyPerM: envNonNegativeFloat(
-      "DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK",
+      'DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK',
       peak ? base.cacheHit.peak : base.cacheHit.offPeak,
     ),
     cacheMissCnyPerM: envNonNegativeFloat(
-      "DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK",
+      'DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK',
       peak ? base.cacheMiss.peak : base.cacheMiss.offPeak,
     ),
     outputCnyPerM: envNonNegativeFloat(
-      "DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK",
+      'DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK',
       peak ? base.output.peak : base.output.offPeak,
     ),
   };
@@ -84,13 +84,13 @@ export function getModelPricing(model: ModelId, now: Date = new Date()): ModelPr
 
 /** Session context window size in tokens, used for usage_update.size. */
 export function getContextWindowTokens(): number {
-  return envPositiveInt("DEEPSEEK_CONTEXT_WINDOW", 1_000_000);
+  return envPositiveInt('DEEPSEEK_CONTEXT_WINDOW', 1_000_000);
 }
 
 /** Cost in CNY for a single LLM step's token usage. */
 export function costYuan(usage: LlmUsage, pricing: ModelPricing): number {
   return costFromUsage(usage, {
-    currency: "CNY",
+    currency: 'CNY',
     cacheHitPerM: pricing.cacheHitCnyPerM,
     cacheMissPerM: pricing.cacheMissCnyPerM,
     outputPerM: pricing.outputCnyPerM,
@@ -123,18 +123,16 @@ export async function fetchDeepSeekBalance(
 ): Promise<DeepSeekBalance> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY environment variable is required");
+    throw new Error('DEEPSEEK_API_KEY environment variable is required');
   }
-  const baseURL = (
-    process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com"
-  ).replace(/\/+$/, "");
+  const baseURL = (process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com').replace(/\/+$/, '');
   const response = await fetch(`${baseURL}/user/balance`, {
     headers: { authorization: `Bearer ${apiKey}` },
     signal: opts.signal,
   });
   if (!response.ok) {
     throw new Error(
-      `DeepSeek balance API error ${response.status}: ${(await response.text().catch(() => "")).slice(0, 500)}`,
+      `DeepSeek balance API error ${response.status}: ${(await response.text().catch(() => '')).slice(0, 500)}`,
     );
   }
   const data = (await response.json()) as {
@@ -147,17 +145,16 @@ export async function fetchDeepSeekBalance(
     }>;
   };
   const info =
-    data.balance_infos?.find((entry) => entry.currency === "CNY") ??
-    data.balance_infos?.[0];
+    data.balance_infos?.find((entry) => entry.currency === 'CNY') ?? data.balance_infos?.[0];
   if (!info || info.total_balance === undefined) {
     throw new Error(`Unexpected balance API response: ${JSON.stringify(data)}`);
   }
   return {
     isAvailable: data.is_available ?? false,
-    currency: info.currency ?? "CNY",
+    currency: info.currency ?? 'CNY',
     totalBalanceCny: Number.parseFloat(info.total_balance),
-    grantedBalanceCny: Number.parseFloat(info.granted_balance ?? "0"),
-    toppedUpBalanceCny: Number.parseFloat(info.topped_up_balance ?? "0"),
+    grantedBalanceCny: Number.parseFloat(info.granted_balance ?? '0'),
+    toppedUpBalanceCny: Number.parseFloat(info.topped_up_balance ?? '0'),
   };
 }
 
@@ -177,7 +174,7 @@ interface DeepSeekUsage {
 }
 
 function toNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 export function parseDeepSeekUsage(
@@ -220,14 +217,14 @@ export function parseDeepSeekUsage(
 export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY environment variable is required");
+    throw new Error('DEEPSEEK_API_KEY environment variable is required');
   }
-  const baseURL = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, "");
-  const modelName = options.model ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+  const baseURL = (process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com').replace(/\/+$/, '');
+  const modelName = options.model ?? process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
   return runChatCompletions({
     baseUrl: baseURL,
     apiKey,
-    label: "DeepSeek",
+    label: 'DeepSeek',
     model: modelName,
     messages: options.messages,
     tools: options.tools,
@@ -237,10 +234,9 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
     onReasoningDelta: options.onReasoningDelta,
     logRuntime: options.logRuntime,
     thinkingEffort: options.thinkingEffort,
-    reasoningMessageField: "reasoning_content",
-    reasoningDeltaFields: ["reasoning_content"],
-    effortBody: (effort) =>
-      effort === "off" ? undefined : { reasoning_effort: effort },
+    reasoningMessageField: 'reasoning_content',
+    reasoningDeltaFields: ['reasoning_content'],
+    effortBody: (effort) => (effort === 'off' ? undefined : { reasoning_effort: effort }),
     parseUsage: (raw, timing) => parseDeepSeekUsage(raw as DeepSeekUsage, timing),
   });
 }

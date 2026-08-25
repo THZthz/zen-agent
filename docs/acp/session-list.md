@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -161,6 +162,7 @@ The Agent **MUST** respond with a list of sessions and optional pagination metad
     <ResponseField name="_meta" type="object">
       Agent-specific metadata. See [Extensibility](/protocol/v1/extensibility).
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -175,10 +177,10 @@ When no sessions match the criteria, the Agent **MUST** return an empty `session
 
 `session/list` uses cursor-based pagination. The request includes an optional `cursor`, and the response includes `nextCursor` when more results are available.
 
-* Clients **MUST** treat a missing `nextCursor` as the end of results
-* Clients **MUST** treat cursors as opaque tokens — do not parse, modify, or persist them
-* Agents **SHOULD** return an error if the cursor is invalid
-* Agents **SHOULD** enforce reasonable page sizes internally
+- Clients **MUST** treat a missing `nextCursor` as the end of results
+- Clients **MUST** treat cursors as opaque tokens — do not parse, modify, or persist them
+- Agents **SHOULD** return an error if the cursor is invalid
+- Agents **SHOULD** enforce reasonable page sizes internally
 
 ## Updating Session Metadata
 

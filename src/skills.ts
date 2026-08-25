@@ -1,6 +1,6 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { readFile, readdir, stat } from 'node:fs/promises';
 
 /**
  * Agent Skills (the open format behind skills.sh) support.
@@ -14,7 +14,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
  * lists them itself (see buildSkillsSection in system-prompt.ts).
  */
 
-export type SkillScope = "project" | "global";
+export type SkillScope = 'project' | 'global';
 
 export interface SkillInfo {
   /** Skill name from the SKILL.md frontmatter (falls back to folder name). */
@@ -32,16 +32,16 @@ export interface SkillInfo {
   disableModelInvocation: boolean;
 }
 
-const SKILL_FILE = "SKILL.md";
+const SKILL_FILE = 'SKILL.md';
 
 /** Global skills directory: `~/.agents/skills/` (matches Zed and skills.sh). */
 export function globalSkillsDir(): string {
-  return join(homedir(), ".agents", "skills");
+  return join(homedir(), '.agents', 'skills');
 }
 
 /** Project-local skills directory: `<cwd>/.agents/skills/`. */
 export function projectSkillsDir(cwd: string): string {
-  return join(cwd, ".agents", "skills");
+  return join(cwd, '.agents', 'skills');
 }
 
 export interface SkillFrontmatter {
@@ -59,19 +59,19 @@ export interface SkillFrontmatter {
 export function parseSkillFrontmatter(content: string): SkillFrontmatter {
   const result: SkillFrontmatter = {};
   const lines = content.split(/\r?\n/);
-  if (lines[0]?.trim() !== "---") {
+  if (lines[0]?.trim() !== '---') {
     return result;
   }
-  const end = lines.slice(1).findIndex((line) => line.trim() === "---");
+  const end = lines.slice(1).findIndex((line) => line.trim() === '---');
   if (end === -1) {
     return result;
   }
   for (const raw of lines.slice(1, 1 + end)) {
     const line = raw.trim();
-    if (line.length === 0 || line.startsWith("#")) {
+    if (line.length === 0 || line.startsWith('#')) {
       continue;
     }
-    const colon = line.indexOf(":");
+    const colon = line.indexOf(':');
     if (colon === -1) {
       continue;
     }
@@ -83,37 +83,33 @@ export function parseSkillFrontmatter(content: string): SkillFrontmatter {
     ) {
       value = value.slice(1, -1);
     }
-    if (key === "name") {
+    if (key === 'name') {
       result.name = value || undefined;
-    } else if (key === "description") {
+    } else if (key === 'description') {
       result.description = value || undefined;
-    } else if (key === "disable-model-invocation") {
-      result.disableModelInvocation =
-        value === "true" || value === "yes" || value === "1";
+    } else if (key === 'disable-model-invocation') {
+      result.disableModelInvocation = value === 'true' || value === 'yes' || value === '1';
     }
   }
   return result;
 }
 
 /** Reads one skill folder. Returns null when SKILL.md is missing/unreadable. */
-export async function readSkill(
-  dir: string,
-  scope: SkillScope,
-): Promise<SkillInfo | null> {
+export async function readSkill(dir: string, scope: SkillScope): Promise<SkillInfo | null> {
   let content: string;
   try {
-    content = await readFile(join(dir, SKILL_FILE), "utf8");
+    content = await readFile(join(dir, SKILL_FILE), 'utf8');
   } catch {
     return null;
   }
   const meta = parseSkillFrontmatter(content);
-  const name = (meta.name ?? dir.split("/").pop() ?? "").trim();
+  const name = (meta.name ?? dir.split('/').pop() ?? '').trim();
   if (name.length === 0) {
     return null;
   }
   return {
     name,
-    description: meta.description ?? "",
+    description: meta.description ?? '',
     path: dir,
     scope,
     disableModelInvocation: meta.disableModelInvocation ?? false,
@@ -140,8 +136,8 @@ export async function listSkills(
 ): Promise<SkillInfo[]> {
   const byName = new Map<string, SkillInfo>();
   const scopes = [
-    { scope: "global" as const, dir: options.globalDir ?? globalSkillsDir() },
-    { scope: "project" as const, dir: options.projectDir ?? projectSkillsDir(cwd) },
+    { scope: 'global' as const, dir: options.globalDir ?? globalSkillsDir() },
+    { scope: 'project' as const, dir: options.projectDir ?? projectSkillsDir(cwd) },
   ];
   for (const { scope, dir } of scopes) {
     let entries: string[];
@@ -178,24 +174,24 @@ export async function listSkills(
  */
 export function buildSkillsSection(skills: SkillInfo[]): string {
   const lines = [
-    "## Skills",
-    "",
-    "Skills are reusable capability packages installed from the skills.sh registry (`.agents/skills/`).",
-    "Each skill is a folder with `SKILL.md` (instructions) and optional `scripts/`, `references/`, and `assets/`.",
-    "",
+    '## Skills',
+    '',
+    'Skills are reusable capability packages installed from the skills.sh registry (`.agents/skills/`).',
+    'Each skill is a folder with `SKILL.md` (instructions) and optional `scripts/`, `references/`, and `assets/`.',
+    '',
     "Skills are invoked by hand only: load a skill's `SKILL.md` with bash (`cat <path>/SKILL.md`) ONLY when the user explicitly asks for that skill by name. Never load a skill autonomously just because it matches the task. Follow the skill's instructions, including any files it references.",
-    "",
-    "Available skills:",
-    "<skills>"
+    '',
+    'Available skills:',
+    '<skills>',
   ];
   for (const skill of skills) {
-    const description = skill.description ? ` — ${skill.description}` : "";
+    const description = skill.description ? ` — ${skill.description}` : '';
     lines.push(
       `- ${skill.name} [${skill.scope}]${description} — load with: cat ${join(skill.path, SKILL_FILE)}`,
     );
   }
-  lines.push("</skills>");
-  return lines.join("\n");
+  lines.push('</skills>');
+  return lines.join('\n');
 }
 
 /**
@@ -203,7 +199,7 @@ export function buildSkillsSection(skills: SkillInfo[]): string {
  * should be handed to the model when the skill is invoked.
  */
 export async function readSkillMarkdown(skill: SkillInfo): Promise<string> {
-  return readFile(join(skill.path, SKILL_FILE), "utf8");
+  return readFile(join(skill.path, SKILL_FILE), 'utf8');
 }
 
 /**
@@ -217,23 +213,16 @@ export async function buildSkillInvocationPrompt(
   argument: string,
 ): Promise<string> {
   const content = (await readSkillMarkdown(skill)).trim();
-  const lines = [
-    "<environment>",
-    "<skill-invoked>",
-    `<skill-name>${skill.name}</skill-name>`,
-  ];
+  const lines = ['<environment>', '<skill-invoked>', `<skill-name>${skill.name}</skill-name>`];
   if (argument.length > 0) {
     lines.push(`<skill-argument>\n${argument}\n</skill-argument>`);
   }
   lines.push(
     `<skill-path>${join(skill.path, SKILL_FILE)}</skill-path>`,
-    "<skill-instruction>",
+    '<skill-instruction>',
     content,
-    "</skill-instruction>",
+    '</skill-instruction>',
   );
-  lines.push(
-    "</skill-invoked>",
-    "</environment>",
-  );
-  return lines.join("\n");
+  lines.push('</skill-invoked>', '</environment>');
+  return lines.join('\n');
 }

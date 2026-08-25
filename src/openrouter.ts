@@ -1,32 +1,26 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import {
-  clientModelsPath,
-  DEFAULT_OPENROUTER_MODEL,
-  type ThinkingEffort,
-} from "./storage.js";
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { clientModelsPath, DEFAULT_OPENROUTER_MODEL, type ThinkingEffort } from './storage.js';
 import {
   buildLlmUsage,
   runChatCompletions,
   type LlmStepOptions,
   type LlmStepResult,
   type LlmUsage,
-} from "./llm-client.js";
+} from './llm-client.js';
 
-export { DEFAULT_OPENROUTER_MODEL } from "./storage.js";
+export { DEFAULT_OPENROUTER_MODEL } from './storage.js';
 
 function getOpenRouterApiKey(): string {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY environment variable is required");
+    throw new Error('OPENROUTER_API_KEY environment variable is required');
   }
   return apiKey;
 }
 
 function getOpenRouterBaseUrl(): string {
-  return (
-    process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1"
-  ).replace(/\/+$/, "");
+  return (process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
 }
 
 /**
@@ -35,7 +29,7 @@ function getOpenRouterBaseUrl(): string {
  * `latency` are the other supported values. Empty string opts out of sending
  * the `provider` block entirely.
  */
-const DEFAULT_OPENROUTER_PROVIDER_SORT = "price";
+const DEFAULT_OPENROUTER_PROVIDER_SORT = 'price';
 
 /** Provider sort key from OPENROUTER_PROVIDER_SORT; null disables the block. */
 function getOpenRouterProviderSort(): string | null {
@@ -78,7 +72,7 @@ interface CatalogEntry extends OpenRouterModelInfo {
 
 const MODEL_FALLBACKS: Record<string, OpenRouterModelInfo> = {
   // `openrouter/free` routes to free models, billed at $0.
-  "openrouter/free": { inputPerM: 0, outputPerM: 0, contextLength: 128_000 },
+  'openrouter/free': { inputPerM: 0, outputPerM: 0, contextLength: 128_000 },
 };
 
 /** Conservative default for models unknown to both the live catalog and the fallback table. */
@@ -94,12 +88,11 @@ const MODELS_FETCH_TIMEOUT_MS = 5_000;
 const MODELS_CACHE_VERSION = 2;
 
 function parsePrice(raw: string | undefined): number {
-  const parsed = Number.parseFloat(raw ?? "");
+  const parsed = Number.parseFloat(raw ?? '');
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-let modelsCache: { key: string; promise: Promise<Map<string, CatalogEntry>> } | null =
-  null;
+let modelsCache: { key: string; promise: Promise<Map<string, CatalogEntry>> } | null = null;
 
 /** Test hook: drop the cached /models response (env/port changes between tests). */
 export function resetOpenRouterModelsCache(): void {
@@ -108,7 +101,7 @@ export function resetOpenRouterModelsCache(): void {
 
 /** Missing `supported_parameters` metadata = assume the model supports tools. */
 function supportsTools(supportedParameters: unknown): boolean {
-  return !Array.isArray(supportedParameters) || supportedParameters.includes("tools");
+  return !Array.isArray(supportedParameters) || supportedParameters.includes('tools');
 }
 
 /**
@@ -130,7 +123,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
     });
     if (!response.ok) {
       throw new Error(
-        `OpenRouter models API error ${response.status}: ${(await response.text().catch(() => "")).slice(0, 500)}`,
+        `OpenRouter models API error ${response.status}: ${(await response.text().catch(() => '')).slice(0, 500)}`,
       );
     }
     const data = (await response.json()) as {
@@ -154,7 +147,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
         inputPerM: parsePrice(model.pricing?.prompt),
         outputPerM: parsePrice(model.pricing?.completion),
         contextLength:
-          typeof model.context_length === "number" && model.context_length > 0
+          typeof model.context_length === 'number' && model.context_length > 0
             ? model.context_length
             : 200_000,
         supportsTools: supportsTools(model.supported_parameters),
@@ -185,7 +178,7 @@ export function parseInputModalities(raw: unknown): string[] | null {
     return null;
   }
   const modalities = raw.filter(
-    (entry): entry is string => typeof entry === "string" && entry.length > 0,
+    (entry): entry is string => typeof entry === 'string' && entry.length > 0,
   );
   return modalities.length > 0 ? modalities : null;
 }
@@ -195,9 +188,7 @@ export function parseInputModalities(raw: unknown): string[] | null {
  * membership matters); null when unknown (no catalog / unknown slug), empty
  * for known text-only fallback models like `openrouter/free`.
  */
-export async function getOpenRouterModelModalities(
-  model: string,
-): Promise<string[] | null> {
+export async function getOpenRouterModelModalities(model: string): Promise<string[] | null> {
   try {
     const entry = (await fetchOpenRouterModels()).get(model);
     if (entry) {
@@ -263,7 +254,7 @@ async function writeModelsFile(cwd: string, catalog: Map<string, CatalogEntry>):
     await mkdir(dirname(target), { recursive: true });
     const tmp = `${target}.${process.pid}.tmp`;
     try {
-      await writeFile(tmp, `${JSON.stringify(payload)}\n`, "utf8");
+      await writeFile(tmp, `${JSON.stringify(payload)}\n`, 'utf8');
       await rename(tmp, target);
     } catch (error) {
       await unlink(tmp).catch(() => {});
@@ -278,14 +269,14 @@ async function writeModelsFile(cwd: string, catalog: Map<string, CatalogEntry>):
 /** Read the persisted catalog; null when absent, malformed or outdated. */
 async function readModelsFile(cwd: string): Promise<Map<string, CatalogEntry> | null> {
   try {
-    const raw = await readFile(clientModelsPath(cwd), "utf8");
+    const raw = await readFile(clientModelsPath(cwd), 'utf8');
     const parsed = JSON.parse(raw) as ModelsCacheFile;
     if (parsed.version !== MODELS_CACHE_VERSION || !Array.isArray(parsed.models)) {
       return null;
     }
     const catalog = new Map<string, CatalogEntry>();
     for (const entry of parsed.models) {
-      if (entry && typeof entry.id === "string" && entry.id.length > 0) {
+      if (entry && typeof entry.id === 'string' && entry.id.length > 0) {
         catalog.set(entry.id, entry);
       }
     }
@@ -336,12 +327,12 @@ function buildModelOptions(catalog: Map<string, CatalogEntry>): OpenRouterModelO
       description: `${entry.name ?? entry.id} · ${formatContext(entry.contextLength)}`,
     });
   }
-  options.sort((a, b) => a.value.localeCompare(b.value, "en"));
-  const freeIndex = options.findIndex((option) => option.value === "openrouter/free");
+  options.sort((a, b) => a.value.localeCompare(b.value, 'en'));
+  const freeIndex = options.findIndex((option) => option.value === 'openrouter/free');
   if (freeIndex === -1) {
     options.unshift({
-      value: "openrouter/free",
-      name: "OpenRouter Free",
+      value: 'openrouter/free',
+      name: 'OpenRouter Free',
       description: "OpenRouter's free-tier routing model",
     });
   } else if (freeIndex > 0) {
@@ -373,7 +364,7 @@ interface OpenRouterUsage {
 }
 
 function toNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 /**
@@ -432,7 +423,7 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
   });
   if (!response.ok) {
     throw new Error(
-      `OpenRouter auth/key API error ${response.status}: ${(await response.text().catch(() => "")).slice(0, 500)}`,
+      `OpenRouter auth/key API error ${response.status}: ${(await response.text().catch(() => '')).slice(0, 500)}`,
     );
   }
   const data = (await response.json()) as {
@@ -442,7 +433,7 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
   const limitUsd = toNumber(data.data?.limit);
   return {
     isAvailable: true,
-    currency: "USD",
+    currency: 'USD',
     remainingUsd: Math.max(0, limitUsd - usageUsd),
     usageUsd,
     limitUsd,
@@ -469,24 +460,23 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
 export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmStepResult> {
   const apiKey = getOpenRouterApiKey();
   const baseUrl = getOpenRouterBaseUrl();
-  const modelName =
-    options.model ?? process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+  const modelName = options.model ?? process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
 
   const extraHeaders: Record<string, string> = {};
   const siteUrl = process.env.OPENROUTER_SITE_URL;
   if (siteUrl) {
-    extraHeaders["HTTP-Referer"] = siteUrl;
+    extraHeaders['HTTP-Referer'] = siteUrl;
   }
   const appName = process.env.OPENROUTER_APP_NAME;
   if (appName) {
-    extraHeaders["X-Title"] = appName;
+    extraHeaders['X-Title'] = appName;
   }
   const providerSort = getOpenRouterProviderSort();
 
   return runChatCompletions({
     baseUrl,
     apiKey,
-    label: "OpenRouter",
+    label: 'OpenRouter',
     model: modelName,
     messages: options.messages,
     tools: options.tools,
@@ -496,12 +486,10 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     onReasoningDelta: options.onReasoningDelta,
     logRuntime: options.logRuntime,
     thinkingEffort: options.thinkingEffort,
-    reasoningMessageField: "reasoning",
-    reasoningDeltaFields: ["reasoning", "reasoning_content"],
+    reasoningMessageField: 'reasoning',
+    reasoningDeltaFields: ['reasoning', 'reasoning_content'],
     effortBody: (effort: ThinkingEffort) =>
-      effort === "off"
-        ? undefined
-        : { reasoning_effort: effort === "max" ? "high" : effort },
+      effort === 'off' ? undefined : { reasoning_effort: effort === 'max' ? 'high' : effort },
     extraBody: {
       stream_options: { include_usage: true },
       ...(providerSort ? { provider: { sort: providerSort } } : {}),

@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   DEFAULT_OPENROUTER_MODEL,
   fetchOpenRouterBalance,
@@ -11,12 +11,12 @@ import {
   parseOpenRouterUsage,
   resetOpenRouterModelsCache,
   runOpenRouterStep,
-} from "./openrouter.js";
+} from './openrouter.js';
 
 const timing = { llmMs: 5000, thinkingMs: 2000, answeringMs: 3000 };
 
-describe("parseOpenRouterUsage", () => {
-  it("reads generic OpenAI usage and passthrough cache/reasoning fields", () => {
+describe('parseOpenRouterUsage', () => {
+  it('reads generic OpenAI usage and passthrough cache/reasoning fields', () => {
     const usage = parseOpenRouterUsage(
       {
         prompt_tokens: 10000,
@@ -38,7 +38,7 @@ describe("parseOpenRouterUsage", () => {
     expect(usage?.llmMs).toBe(5000);
   });
 
-  it("reads Anthropic-style prompt_tokens_details.cached_tokens", () => {
+  it('reads Anthropic-style prompt_tokens_details.cached_tokens', () => {
     const usage = parseOpenRouterUsage(
       {
         prompt_tokens: 1000,
@@ -51,28 +51,28 @@ describe("parseOpenRouterUsage", () => {
     expect(usage?.cacheMissTokens).toBe(300);
   });
 
-  it("returns null when no token counts are reported", () => {
+  it('returns null when no token counts are reported', () => {
     expect(parseOpenRouterUsage(undefined, timing)).toBeNull();
     expect(parseOpenRouterUsage({}, timing)).toBeNull();
   });
 });
 
-describe("runOpenRouterStep (live SSE)", () => {
+describe('runOpenRouterStep (live SSE)', () => {
   const originalEnv = { ...process.env };
-  let server: import("node:http").Server | undefined;
+  let server: import('node:http').Server | undefined;
 
   const makeChunk = (delta: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
     `data: ${JSON.stringify({
-      id: "1",
-      object: "chat.completion.chunk",
+      id: '1',
+      object: 'chat.completion.chunk',
       created: 1,
-      model: "or-model",
+      model: 'or-model',
       choices: [{ index: 0, delta, finish_reason: null }],
       ...extra,
     })}\n\n`;
 
   beforeEach(() => {
-    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_API_KEY = 'test';
     delete process.env.OPENROUTER_MODEL;
     delete process.env.OPENROUTER_SITE_URL;
     delete process.env.OPENROUTER_APP_NAME;
@@ -85,25 +85,23 @@ describe("runOpenRouterStep (live SSE)", () => {
     server = undefined;
   });
 
-  it("streams reasoning (delta.reasoning) LIVE and parses the final usage chunk", async () => {
+  it('streams reasoning (delta.reasoning) LIVE and parses the final usage chunk', async () => {
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
-          res.writeHead(200, { "content-type": "text/event-stream" });
-          res.write(makeChunk({ role: "assistant", content: "" }));
+      const srv = require('node:http').createServer(
+        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          res.write(makeChunk({ role: 'assistant', content: '' }));
           setTimeout(() => {
-            res.write(makeChunk({ reasoning: "Let me think. " }));
+            res.write(makeChunk({ reasoning: 'Let me think. ' }));
           }, 150);
           setTimeout(() => {
-            res.write(makeChunk({ reasoning: "Second thought." }));
+            res.write(makeChunk({ reasoning: 'Second thought.' }));
           }, 300);
           setTimeout(() => {
-            res.write(makeChunk({ content: "The answer." }));
+            res.write(makeChunk({ content: 'The answer.' }));
           }, 450);
           setTimeout(() => {
-            res.write(
-              makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }),
-            );
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
             res.write(
               makeChunk(
                 {},
@@ -118,14 +116,14 @@ describe("runOpenRouterStep (live SSE)", () => {
                 },
               ),
             );
-            res.write("data: [DONE]\n\n");
+            res.write('data: [DONE]\n\n');
             res.end();
           }, 600);
         },
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
@@ -134,17 +132,17 @@ describe("runOpenRouterStep (live SSE)", () => {
     const t0 = Date.now();
     const reasoningArrivals: number[] = [];
     const result = await runOpenRouterStep({
-      messages: [{ role: "user", content: "hi" }],
-      system: "sys",
-      thinkingEffort: "high",
+      messages: [{ role: 'user', content: 'hi' }],
+      system: 'sys',
+      thinkingEffort: 'high',
       onReasoningDelta: async () => {
         reasoningArrivals.push(Date.now() - t0);
       },
     });
 
-    expect(result.text).toBe("The answer.");
-    expect(result.reasoning).toBe("Let me think. Second thought.");
-    expect(result.finishReason).toBe("stop");
+    expect(result.text).toBe('The answer.');
+    expect(result.reasoning).toBe('Let me think. Second thought.');
+    expect(result.finishReason).toBe('stop');
     // Reasoning arrived BEFORE the answer started (450ms) — live streaming,
     // not a buffered burst.
     expect(reasoningArrivals.length).toBe(2);
@@ -156,160 +154,160 @@ describe("runOpenRouterStep (live SSE)", () => {
     expect(result.usage?.reasoningTokens).toBe(8);
   });
 
-  it("accepts delta.reasoning_content passthrough (DeepSeek routes)", async () => {
+  it('accepts delta.reasoning_content passthrough (DeepSeek routes)', async () => {
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
-          res.writeHead(200, { "content-type": "text/event-stream" });
-          res.write(makeChunk({ reasoning_content: "thinking via passthrough" }));
-          res.write(makeChunk({ content: "done" }));
-          res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
-          res.write("data: [DONE]\n\n");
+      const srv = require('node:http').createServer(
+        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          res.write(makeChunk({ reasoning_content: 'thinking via passthrough' }));
+          res.write(makeChunk({ content: 'done' }));
+          res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+          res.write('data: [DONE]\n\n');
           res.end();
         },
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const result = await runOpenRouterStep({
-      messages: [{ role: "user", content: "hi" }],
-      thinkingEffort: "off",
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: 'off',
     });
-    expect(result.reasoning).toBe("thinking via passthrough");
-    expect(result.text).toBe("done");
+    expect(result.reasoning).toBe('thinking via passthrough');
+    expect(result.text).toBe('done');
   });
 
-  it("requests include_usage, maps max→high, and omits reasoning_effort for off", async () => {
+  it('requests include_usage, maps max→high, and omits reasoning_effort for off', async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
           const chunks: Buffer[] = [];
-          req.on("data", (c: Buffer) => chunks.push(c));
-          req.on("end", () => {
-            bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-            res.writeHead(200, { "content-type": "text/event-stream" });
-            res.write(makeChunk({ content: "ok" }));
-            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
-            res.write("data: [DONE]\n\n");
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
             res.end();
           });
         },
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
 
-    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "max" });
-    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'max' });
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]?.reasoning_effort).toBe("high");
+    expect(bodies[0]?.reasoning_effort).toBe('high');
     expect(bodies[0]?.stream_options).toEqual({ include_usage: true });
-    expect(bodies[0]?.provider).toEqual({ sort: "price" });
+    expect(bodies[0]?.provider).toEqual({ sort: 'price' });
     expect(bodies[0]?.stream).toBe(true);
     expect((bodies[0]?.tools as unknown[]).length).toBe(1);
     expect(bodies[0]?.model).toBe(DEFAULT_OPENROUTER_MODEL);
     expect(bodies[1]?.reasoning_effort).toBeUndefined();
-    expect(bodies[1]?.provider).toEqual({ sort: "price" });
+    expect(bodies[1]?.provider).toEqual({ sort: 'price' });
   });
 
-  it("sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL", async () => {
-    let headers: import("node:http").IncomingHttpHeaders | undefined;
+  it('sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL', async () => {
+    let headers: import('node:http').IncomingHttpHeaders | undefined;
     let body: Record<string, unknown> | undefined;
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
           headers = req.headers;
           const chunks: Buffer[] = [];
-          req.on("data", (c: Buffer) => chunks.push(c));
-          req.on("end", () => {
-            body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-            res.writeHead(200, { "content-type": "text/event-stream" });
-            res.write(makeChunk({ content: "ok" }));
-            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
-            res.write("data: [DONE]\n\n");
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
             res.end();
           });
         },
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
-    process.env.OPENROUTER_SITE_URL = "https://zed.dev";
-    process.env.OPENROUTER_APP_NAME = "Zen Agent";
-    process.env.OPENROUTER_MODEL = "openai/gpt-5";
+    process.env.OPENROUTER_SITE_URL = 'https://zed.dev';
+    process.env.OPENROUTER_APP_NAME = 'Zen Agent';
+    process.env.OPENROUTER_MODEL = 'openai/gpt-5';
 
-    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
-    expect(headers?.["http-referer"]).toBe("https://zed.dev");
-    expect(headers?.["x-title"]).toBe("Zen Agent");
-    expect(body?.model).toBe("openai/gpt-5");
+    expect(headers?.['http-referer']).toBe('https://zed.dev');
+    expect(headers?.['x-title']).toBe('Zen Agent');
+    expect(body?.model).toBe('openai/gpt-5');
   });
 
-  it("honors OPENROUTER_PROVIDER_SORT and allows opting out", async () => {
+  it('honors OPENROUTER_PROVIDER_SORT and allows opting out', async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
           const chunks: Buffer[] = [];
-          req.on("data", (c: Buffer) => chunks.push(c));
-          req.on("end", () => {
-            bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-            res.writeHead(200, { "content-type": "text/event-stream" });
-            res.write(makeChunk({ content: "ok" }));
-            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
-            res.write("data: [DONE]\n\n");
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
             res.end();
           });
         },
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
 
-    process.env.OPENROUTER_PROVIDER_SORT = "latency";
-    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
+    process.env.OPENROUTER_PROVIDER_SORT = 'latency';
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
-    process.env.OPENROUTER_PROVIDER_SORT = "";
-    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
+    process.env.OPENROUTER_PROVIDER_SORT = '';
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]?.provider).toEqual({ sort: "latency" });
+    expect(bodies[0]?.provider).toEqual({ sort: 'latency' });
     expect(bodies[1]?.provider).toBeUndefined();
   });
 
-  it("requires OPENROUTER_API_KEY", async () => {
+  it('requires OPENROUTER_API_KEY', async () => {
     delete process.env.OPENROUTER_API_KEY;
     await expect(
-      runOpenRouterStep({ messages: [{ role: "user", content: "hi" }] }),
+      runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }] }),
     ).rejects.toThrow(/OPENROUTER_API_KEY/);
   });
 });
 
-describe("getOpenRouterModelInfo", () => {
+describe('getOpenRouterModelInfo', () => {
   const originalEnv = { ...process.env };
-  let server: import("node:http").Server | undefined;
+  let server: import('node:http').Server | undefined;
 
   afterEach(() => {
     process.env = { ...originalEnv };
@@ -318,32 +316,32 @@ describe("getOpenRouterModelInfo", () => {
     server = undefined;
   });
 
-  it("falls back to the static table without an API key", async () => {
+  it('falls back to the static table without an API key', async () => {
     delete process.env.OPENROUTER_API_KEY;
-    const info = await getOpenRouterModelInfo("openrouter/free");
+    const info = await getOpenRouterModelInfo('openrouter/free');
     expect(info).toEqual({ inputPerM: 0, outputPerM: 0, contextLength: 128_000 });
   });
 
-  it("falls back to generic defaults for unknown models", async () => {
+  it('falls back to generic defaults for unknown models', async () => {
     delete process.env.OPENROUTER_API_KEY;
-    const info = await getOpenRouterModelInfo("some/unknown-model");
+    const info = await getOpenRouterModelInfo('some/unknown-model');
     expect(info.contextLength).toBe(200_000);
     expect(info.inputPerM).toBeGreaterThan(0);
     expect(info.outputPerM).toBeGreaterThan(0);
   });
 
-  it("prefers the live /models catalog when available", async () => {
+  it('prefers the live /models catalog when available', async () => {
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
-          res.writeHead(200, { "content-type": "application/json" });
+      const srv = require('node:http').createServer(
+        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          res.writeHead(200, { 'content-type': 'application/json' });
           res.end(
             JSON.stringify({
               data: [
                 {
-                  id: "vendor/model",
+                  id: 'vendor/model',
                   context_length: 123456,
-                  pricing: { prompt: "0.5", completion: "1.5" },
+                  pricing: { prompt: '0.5', completion: '1.5' },
                 },
               ],
             }),
@@ -352,36 +350,36 @@ describe("getOpenRouterModelInfo", () => {
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
-    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_API_KEY = 'test';
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
-    const info = await getOpenRouterModelInfo("vendor/model");
+    const info = await getOpenRouterModelInfo('vendor/model');
     expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
   });
 
-  it("retries the /models fetch after a failed attempt instead of caching the rejection", async () => {
+  it('retries the /models fetch after a failed attempt instead of caching the rejection', async () => {
     let requests = 0;
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+      const srv = require('node:http').createServer(
+        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
           requests += 1;
           if (requests === 1) {
             res.writeHead(500);
-            res.end("boom");
+            res.end('boom');
             return;
           }
-          res.writeHead(200, { "content-type": "application/json" });
+          res.writeHead(200, { 'content-type': 'application/json' });
           res.end(
             JSON.stringify({
               data: [
                 {
-                  id: "vendor/model",
+                  id: 'vendor/model',
                   context_length: 123456,
-                  pricing: { prompt: "0.5", completion: "1.5" },
+                  pricing: { prompt: '0.5', completion: '1.5' },
                 },
               ],
             }),
@@ -390,32 +388,32 @@ describe("getOpenRouterModelInfo", () => {
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
-    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_API_KEY = 'test';
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
 
     // First call hits the failure and falls back WITHOUT poisoning the cache.
-    const fallback = await getOpenRouterModelInfo("vendor/model");
+    const fallback = await getOpenRouterModelInfo('vendor/model');
     expect(fallback.contextLength).toBe(200_000);
 
     // Second call retries the live fetch and sees the catalog.
-    const info = await getOpenRouterModelInfo("vendor/model");
+    const info = await getOpenRouterModelInfo('vendor/model');
     expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
     expect(requests).toBe(2);
   });
 });
 
-describe("getOpenRouterModelOptions", () => {
+describe('getOpenRouterModelOptions', () => {
   const originalEnv = { ...process.env };
-  let server: import("node:http").Server | undefined;
+  let server: import('node:http').Server | undefined;
   let dir: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "zen-agent-models-"));
+    dir = mkdtempSync(join(tmpdir(), 'zen-agent-models-'));
   });
 
   afterEach(() => {
@@ -426,40 +424,40 @@ describe("getOpenRouterModelOptions", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("fetches the live catalog, persists it, and returns tool-capable models sorted with openrouter/free first", async () => {
+  it('fetches the live catalog, persists it, and returns tool-capable models sorted with openrouter/free first', async () => {
     const port = await new Promise<number>((resolve) => {
-      const srv = require("node:http").createServer(
-        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
-          res.writeHead(200, { "content-type": "application/json" });
+      const srv = require('node:http').createServer(
+        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          res.writeHead(200, { 'content-type': 'application/json' });
           res.end(
             JSON.stringify({
               data: [
                 {
-                  id: "vendor/zeta",
-                  name: "Zeta",
+                  id: 'vendor/zeta',
+                  name: 'Zeta',
                   context_length: 1000,
-                  pricing: { prompt: "1", completion: "2" },
-                  supported_parameters: ["tools"],
+                  pricing: { prompt: '1', completion: '2' },
+                  supported_parameters: ['tools'],
                 },
                 {
-                  id: "vendor/alpha",
-                  name: "Alpha",
+                  id: 'vendor/alpha',
+                  name: 'Alpha',
                   context_length: 200000,
-                  pricing: { prompt: "0.5", completion: "1.5" },
+                  pricing: { prompt: '0.5', completion: '1.5' },
                 },
                 {
-                  id: "vendor/no-tools",
-                  name: "No Tools",
+                  id: 'vendor/no-tools',
+                  name: 'No Tools',
                   context_length: 1000,
-                  pricing: { prompt: "1", completion: "2" },
-                  supported_parameters: ["reasoning"],
+                  pricing: { prompt: '1', completion: '2' },
+                  supported_parameters: ['reasoning'],
                 },
                 {
-                  id: "openrouter/free",
-                  name: "OpenRouter Free",
+                  id: 'openrouter/free',
+                  name: 'OpenRouter Free',
                   context_length: 128000,
-                  pricing: { prompt: "0", completion: "0" },
-                  supported_parameters: ["tools"],
+                  pricing: { prompt: '0', completion: '0' },
+                  supported_parameters: ['tools'],
                 },
               ],
             }),
@@ -468,52 +466,49 @@ describe("getOpenRouterModelOptions", () => {
       );
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
-    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_API_KEY = 'test';
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
 
     const options = await getOpenRouterModelOptions(dir);
     expect(options?.map((o) => o.value)).toEqual([
-      "openrouter/free",
-      "vendor/alpha",
-      "vendor/zeta",
+      'openrouter/free',
+      'vendor/alpha',
+      'vendor/zeta',
     ]);
-    expect(options?.[0].description).toContain("128K");
+    expect(options?.[0].description).toContain('128K');
 
     // The catalog is persisted for offline restarts.
-    const raw = await readFile(
-      join(dir, ".sessions", "client", "models.openrouter.json"),
-      "utf8",
-    );
+    const raw = await readFile(join(dir, '.sessions', 'client', 'models.openrouter.json'), 'utf8');
     const file = JSON.parse(raw) as {
       version: number;
       models: Array<{ id: string }>;
     };
     expect(file.version).toBe(2);
     expect(file.models.map((m) => m.id)).toEqual([
-      "vendor/zeta",
-      "vendor/alpha",
-      "vendor/no-tools",
-      "openrouter/free",
+      'vendor/zeta',
+      'vendor/alpha',
+      'vendor/no-tools',
+      'openrouter/free',
     ]);
   });
 
-  it("falls back to the persisted file when the live fetch fails", async () => {
-    await mkdir(join(dir, ".sessions", "client"), { recursive: true });
+  it('falls back to the persisted file when the live fetch fails', async () => {
+    await mkdir(join(dir, '.sessions', 'client'), { recursive: true });
     await writeFile(
-      join(dir, ".sessions", "client", "models.openrouter.json"),
+      join(dir, '.sessions', 'client', 'models.openrouter.json'),
       JSON.stringify({
         version: 2,
         fetchedAt: new Date().toISOString(),
-        baseUrl: "https://openrouter.ai/api/v1",
+        baseUrl: 'https://openrouter.ai/api/v1',
         models: [
           {
-            id: "cached/model",
-            name: "Cached",
+            id: 'cached/model',
+            name: 'Cached',
             inputPerM: 1,
             outputPerM: 2,
             contextLength: 1000,
@@ -521,42 +516,42 @@ describe("getOpenRouterModelOptions", () => {
           },
         ],
       }),
-      "utf8",
+      'utf8',
     );
     delete process.env.OPENROUTER_API_KEY;
 
     const options = await getOpenRouterModelOptions(dir);
-    expect(options?.map((o) => o.value)).toEqual(["openrouter/free", "cached/model"]);
+    expect(options?.map((o) => o.value)).toEqual(['openrouter/free', 'cached/model']);
   });
 
-  it("returns null when neither the live fetch nor the file is available", async () => {
+  it('returns null when neither the live fetch nor the file is available', async () => {
     delete process.env.OPENROUTER_API_KEY;
     expect(await getOpenRouterModelOptions(dir)).toBeNull();
   });
 });
 
-describe("fetchOpenRouterBalance", () => {
+describe('fetchOpenRouterBalance', () => {
   const originalEnv = { ...process.env };
-  let server: import("node:http").Server | undefined;
+  let server: import('node:http').Server | undefined;
 
   function startServer(
     handler: (
-      req: import("node:http").IncomingMessage,
-      res: import("node:http").ServerResponse,
+      req: import('node:http').IncomingMessage,
+      res: import('node:http').ServerResponse,
     ) => void,
   ): Promise<number> {
     return new Promise((resolve) => {
-      const srv = require("node:http").createServer(handler);
+      const srv = require('node:http').createServer(handler);
       server = srv;
       srv.listen(0, () => {
-        const addr = srv.address() as import("node:net").AddressInfo;
+        const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
   }
 
   beforeEach(() => {
-    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_API_KEY = 'test';
   });
 
   afterEach(() => {
@@ -565,14 +560,14 @@ describe("fetchOpenRouterBalance", () => {
     server = undefined;
   });
 
-  it("reads key usage and limit as USD credits", async () => {
+  it('reads key usage and limit as USD credits', async () => {
     let authorization: string | undefined;
     const port = await startServer((req, res) => {
       authorization = req.headers.authorization;
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
-          data: { label: "test", usage: 4.2, limit: 100, is_free_tier: false },
+          data: { label: 'test', usage: 4.2, limit: 100, is_free_tier: false },
         }),
       );
     });
@@ -580,10 +575,10 @@ describe("fetchOpenRouterBalance", () => {
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     const balance = await fetchOpenRouterBalance();
 
-    expect(authorization).toBe("Bearer test");
+    expect(authorization).toBe('Bearer test');
     expect(balance).toEqual({
       isAvailable: true,
-      currency: "USD",
+      currency: 'USD',
       remainingUsd: 95.8,
       usageUsd: 4.2,
       limitUsd: 100,
@@ -591,17 +586,17 @@ describe("fetchOpenRouterBalance", () => {
     });
   });
 
-  it("throws on a non-OK response", async () => {
+  it('throws on a non-OK response', async () => {
     const port = await startServer((_req, res) => {
       res.writeHead(401);
-      res.end("{\"error\":{\"message\":\"invalid key\"}}");
+      res.end('{"error":{"message":"invalid key"}}');
     });
 
     process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
     await expect(fetchOpenRouterBalance()).rejects.toThrow(/401/);
   });
 
-  it("throws without OPENROUTER_API_KEY", async () => {
+  it('throws without OPENROUTER_API_KEY', async () => {
     delete process.env.OPENROUTER_API_KEY;
     await expect(fetchOpenRouterBalance()).rejects.toThrow(/OPENROUTER_API_KEY/);
   });

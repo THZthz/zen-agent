@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -42,16 +43,16 @@ Specifies which authentication method to use.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="methodId" type={<a href="#authmethodid">AuthMethodId</a>} required>
-  The ID of the authentication method to use.
-  Must be one of the methods advertised in the initialize response.
+The ID of the authentication method to use.
+Must be one of the methods advertised in the initialize response.
 </ResponseField>
 
 #### <span class="font-mono">AuthenticateResponse</span>
@@ -63,11 +64,11 @@ Response to the `authenticate` method.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ### <span class="font-mono">initialize</span>
@@ -76,9 +77,9 @@ Establishes the connection with a client and negotiates protocol capabilities.
 
 This method is called once at the beginning of the connection to:
 
-* Negotiate the protocol version to use
-* Exchange capability information between client and agent
-* Determine available authentication methods
+- Negotiate the protocol version to use
+- Exchange capability information between client and agent
+- Determine available authentication methods
 
 The agent should respond with its supported protocol version and capabilities.
 
@@ -97,27 +98,27 @@ See protocol docs: [Initialization](https://agentclientprotocol.com/protocol/v1/
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="clientCapabilities" type={<a href="#clientcapabilities">ClientCapabilities</a>}>
-  Capabilities supported by the client.
+Capabilities supported by the client.
 
-  * Default: `{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}`
+- Default: `{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}`
 </ResponseField>
 
 <ResponseField name="clientInfo" type={<><span><a href="#implementation">Implementation</a></span><span> | null</span></>}>
-  Information about the Client name and version sent to the Agent.
+Information about the Client name and version sent to the Agent.
 
-  Note: in future versions of the protocol, this will be required.
+Note: in future versions of the protocol, this will be required.
 </ResponseField>
 
 <ResponseField name="protocolVersion" type={<a href="#protocolversion">ProtocolVersion</a>} required>
-  The latest protocol version supported by the client.
+The latest protocol version supported by the client.
 </ResponseField>
 
 #### <span class="font-mono">InitializeResponse</span>
@@ -133,36 +134,36 @@ See protocol docs: [Initialization](https://agentclientprotocol.com/protocol/v1/
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="agentCapabilities" type={<a href="#agentcapabilities">AgentCapabilities</a>}>
-  Capabilities supported by the agent.
+Capabilities supported by the agent.
 
-  * Default: `{"loadSession":false,"promptCapabilities":{"image":false,"audio":false,"embeddedContext":false},"mcpCapabilities":{"http":false,"sse":false},"sessionCapabilities":{},"auth":{}}`
+- Default: `{"loadSession":false,"promptCapabilities":{"image":false,"audio":false,"embeddedContext":false},"mcpCapabilities":{"http":false,"sse":false},"sessionCapabilities":{},"auth":{}}`
 </ResponseField>
 
 <ResponseField name="agentInfo" type={<><span><a href="#implementation">Implementation</a></span><span> | null</span></>}>
-  Information about the Agent name and version sent to the Client.
+Information about the Agent name and version sent to the Client.
 
-  Note: in future versions of the protocol, this will be required.
+Note: in future versions of the protocol, this will be required.
 </ResponseField>
 
 <ResponseField name="authMethods" type={<a href="#authmethod">AuthMethod[]</a>}>
-  Authentication methods supported by the agent.
+Authentication methods supported by the agent.
 
-  * Default: `[]`
+- Default: `[]`
 </ResponseField>
 
 <ResponseField name="protocolVersion" type={<a href="#protocolversion">ProtocolVersion</a>} required>
-  The protocol version the client specified if supported by the agent,
-  or the latest protocol version supported by the agent.
+The protocol version the client specified if supported by the agent,
+or the latest protocol version supported by the agent.
 
-  The client should disconnect, if it doesn't support this version.
+The client should disconnect, if it doesn't support this version.
 </ResponseField>
 
 ### <span class="font-mono">logout</span>
@@ -183,11 +184,11 @@ Terminates the current authenticated session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 #### <span class="font-mono">LogoutResponse</span>
@@ -199,11 +200,11 @@ Response to the `logout` method.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <a id="session-cancel" />
@@ -216,10 +217,10 @@ This is a notification sent by the client to cancel an ongoing prompt turn.
 
 Upon receiving this notification, the Agent SHOULD:
 
-* Stop all language model requests as soon as possible
-* Abort all tool call invocations in progress
-* Send any pending `session/update` notifications
-* Respond to the original `session/prompt` request with `StopReason::Cancelled`
+- Stop all language model requests as soon as possible
+- Abort all tool call invocations in progress
+- Send any pending `session/update` notifications
+- Respond to the original `session/prompt` request with `StopReason::Cancelled`
 
 See protocol docs: [Cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation)
 
@@ -234,15 +235,15 @@ See protocol docs: [Cancellation](https://agentclientprotocol.com/protocol/v1/pr
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to cancel operations for.
+The ID of the session to cancel operations for.
 </ResponseField>
 
 <a id="session-close" />
@@ -271,15 +272,15 @@ Only available if the Agent supports the `sessionCapabilities.close` capability.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to close.
+The ID of the session to close.
 </ResponseField>
 
 #### <span class="font-mono">CloseSessionResponse</span>
@@ -291,11 +292,11 @@ Response from closing a session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <a id="session-delete" />
@@ -317,15 +318,15 @@ Only available if the Agent supports the `sessionCapabilities.delete` capability
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to delete.
+The ID of the session to delete.
 </ResponseField>
 
 #### <span class="font-mono">DeleteSessionResponse</span>
@@ -337,11 +338,11 @@ Response from deleting a session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <a id="session-list" />
@@ -365,19 +366,19 @@ Only available if the Agent supports the `sessionCapabilities.list` capability.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="cursor" type={"string | null"}>
-  Opaque cursor token from a previous response's nextCursor field for cursor-based pagination
+Opaque cursor token from a previous response's nextCursor field for cursor-based pagination
 </ResponseField>
 
 <ResponseField name="cwd" type={"string | null"}>
-  Filter sessions by working directory. Must be an absolute path.
+Filter sessions by working directory. Must be an absolute path.
 </ResponseField>
 
 #### <span class="font-mono">ListSessionsResponse</span>
@@ -389,20 +390,20 @@ Response from listing sessions.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="nextCursor" type={"string | null"}>
-  Opaque cursor token. If present, pass this in the next request's cursor parameter
-  to fetch the next page. If absent, there are no more results.
+Opaque cursor token. If present, pass this in the next request's cursor parameter
+to fetch the next page. If absent, there are no more results.
 </ResponseField>
 
 <ResponseField name="sessions" type={<a href="#sessioninfo">SessionInfo[]</a>} required>
-  Array of session information objects
+Array of session information objects
 </ResponseField>
 
 <a id="session-load" />
@@ -415,9 +416,9 @@ This method is only available if the agent advertises the `loadSession` capabili
 
 The agent should:
 
-* Restore the session context and conversation history
-* Connect to the specified MCP servers
-* Stream the entire conversation history back to the client via notifications
+- Restore the session context and conversation history
+- Connect to the specified MCP servers
+- Stream the entire conversation history back to the client via notifications
 
 See protocol docs: [Loading Sessions](https://agentclientprotocol.com/protocol/v1/session-setup#loading-sessions)
 
@@ -434,32 +435,32 @@ See protocol docs: [Loading Sessions](https://agentclientprotocol.com/protocol/v
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="additionalDirectories" type={<><span>"string"</span><span>[]</span></>}>
-  Additional workspace roots to activate for this session. Each path must be absolute.
+Additional workspace roots to activate for this session. Each path must be absolute.
 
-  When omitted or empty, no additional roots are activated. When non-empty,
-  this is the complete resulting additional-root list for the loaded
-  session. It may differ from any previously used or reported list as long as
-  the request `cwd` matches the session's `cwd`.
+When omitted or empty, no additional roots are activated. When non-empty,
+this is the complete resulting additional-root list for the loaded
+session. It may differ from any previously used or reported list as long as
+the request `cwd` matches the session's `cwd`.
 </ResponseField>
 
 <ResponseField name="cwd" type={"string"} required>
-  The working directory for this session. Must be an absolute path.
+The working directory for this session. Must be an absolute path.
 </ResponseField>
 
 <ResponseField name="mcpServers" type={<a href="#mcpserver">McpServer[]</a>} required>
-  List of MCP servers to connect to for this session.
+List of MCP servers to connect to for this session.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to load.
+The ID of the session to load.
 </ResponseField>
 
 #### <span class="font-mono">LoadSessionResponse</span>
@@ -471,21 +472,21 @@ Response from loading an existing session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configOptions" type={<><span><a href="#sessionconfigoption">SessionConfigOption[]</a></span><span> | null</span></>}>
-  Initial session configuration options if supported by the Agent.
+Initial session configuration options if supported by the Agent.
 </ResponseField>
 
 <ResponseField name="modes" type={<><span><a href="#sessionmodestate">SessionModeState</a></span><span> | null</span></>}>
-  Initial mode state if supported by the Agent
+Initial mode state if supported by the Agent
 
-  See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
+See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
 </ResponseField>
 
 <a id="session-new" />
@@ -498,9 +499,9 @@ Sessions represent independent conversation contexts with their own history and 
 
 The agent should:
 
-* Create a new session context
-* Connect to any specified MCP servers
-* Return a unique session ID for future requests
+- Create a new session context
+- Connect to any specified MCP servers
+- Return a unique session ID for future requests
 
 May return an `auth_required` error if the agent requires authentication.
 
@@ -517,27 +518,27 @@ See protocol docs: [Creating a Session](https://agentclientprotocol.com/protocol
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="additionalDirectories" type={<><span>"string"</span><span>[]</span></>}>
-  Additional workspace roots for this session. Each path must be absolute.
+Additional workspace roots for this session. Each path must be absolute.
 
-  These expand the session's filesystem scope without changing `cwd`, which
-  remains the base for relative paths. When omitted or empty, no
-  additional roots are activated for the new session.
+These expand the session's filesystem scope without changing `cwd`, which
+remains the base for relative paths. When omitted or empty, no
+additional roots are activated for the new session.
 </ResponseField>
 
 <ResponseField name="cwd" type={"string"} required>
-  The working directory for this session. Must be an absolute path.
+The working directory for this session. Must be an absolute path.
 </ResponseField>
 
 <ResponseField name="mcpServers" type={<a href="#mcpserver">McpServer[]</a>} required>
-  List of MCP (Model Context Protocol) servers the agent should connect to.
+List of MCP (Model Context Protocol) servers the agent should connect to.
 </ResponseField>
 
 #### <span class="font-mono">NewSessionResponse</span>
@@ -551,27 +552,27 @@ See protocol docs: [Creating a Session](https://agentclientprotocol.com/protocol
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configOptions" type={<><span><a href="#sessionconfigoption">SessionConfigOption[]</a></span><span> | null</span></>}>
-  Initial session configuration options if supported by the Agent.
+Initial session configuration options if supported by the Agent.
 </ResponseField>
 
 <ResponseField name="modes" type={<><span><a href="#sessionmodestate">SessionModeState</a></span><span> | null</span></>}>
-  Initial mode state if supported by the Agent
+Initial mode state if supported by the Agent
 
-  See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
+See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  Unique identifier for the created session.
+Unique identifier for the created session.
 
-  Used in all subsequent requests for this conversation.
+Used in all subsequent requests for this conversation.
 </ResponseField>
 
 <a id="session-prompt" />
@@ -582,12 +583,12 @@ Processes a user prompt within a session.
 
 This method handles the whole lifecycle of a prompt:
 
-* Receives user messages with optional context (files, images, etc.)
-* Processes the prompt using language models
-* Reports language model content and tool calls to the Clients
-* Requests permission to run tools
-* Executes any requested tool calls
-* Returns when the turn is complete with a stop reason
+- Receives user messages with optional context (files, images, etc.)
+- Processes the prompt using language models
+- Reports language model content and tool calls to the Clients
+- Requests permission to run tools
+- Executes any requested tool calls
+- Returns when the turn is complete with a stop reason
 
 See protocol docs: [Prompt Turn](https://agentclientprotocol.com/protocol/v1/prompt-turn)
 
@@ -604,31 +605,31 @@ See protocol docs: [User Message](https://agentclientprotocol.com/protocol/v1/pr
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="prompt" type={<a href="#contentblock">ContentBlock[]</a>} required>
-  The blocks of content that compose the user's message.
+The blocks of content that compose the user's message.
 
-  As a baseline, the Agent MUST support `ContentBlock::Text` and `ContentBlock::ResourceLink`,
-  while other variants are optionally enabled via `PromptCapabilities`.
+As a baseline, the Agent MUST support `ContentBlock::Text` and `ContentBlock::ResourceLink`,
+while other variants are optionally enabled via `PromptCapabilities`.
 
-  The Client MUST adapt its interface according to `PromptCapabilities`.
+The Client MUST adapt its interface according to `PromptCapabilities`.
 
-  The client MAY include referenced pieces of context as either
-  `ContentBlock::Resource` or `ContentBlock::ResourceLink`.
+The client MAY include referenced pieces of context as either
+`ContentBlock::Resource` or `ContentBlock::ResourceLink`.
 
-  When available, `ContentBlock::Resource` is preferred
-  as it avoids extra round-trips and allows the message to include
-  pieces of context from sources the agent may not have access to.
+When available, `ContentBlock::Resource` is preferred
+as it avoids extra round-trips and allows the message to include
+pieces of context from sources the agent may not have access to.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to send this user message to
+The ID of the session to send this user message to
 </ResponseField>
 
 #### <span class="font-mono">PromptResponse</span>
@@ -642,15 +643,15 @@ See protocol docs: [Check for Completion](https://agentclientprotocol.com/protoc
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="stopReason" type={<a href="#stopreason">StopReason</a>} required>
-  Indicates why the agent stopped processing the turn.
+Indicates why the agent stopped processing the turn.
 </ResponseField>
 
 <a id="session-resume" />
@@ -678,32 +679,32 @@ Only available if the Agent supports the `sessionCapabilities.resume` capability
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="additionalDirectories" type={<><span>"string"</span><span>[]</span></>}>
-  Additional workspace roots to activate for this session. Each path must be absolute.
+Additional workspace roots to activate for this session. Each path must be absolute.
 
-  When omitted or empty, no additional roots are activated. When non-empty,
-  this is the complete resulting additional-root list for the resumed
-  session. It may differ from any previously used or reported list as long as
-  the request `cwd` matches the session's `cwd`.
+When omitted or empty, no additional roots are activated. When non-empty,
+this is the complete resulting additional-root list for the resumed
+session. It may differ from any previously used or reported list as long as
+the request `cwd` matches the session's `cwd`.
 </ResponseField>
 
 <ResponseField name="cwd" type={"string"} required>
-  The working directory for this session. Must be an absolute path.
+The working directory for this session. Must be an absolute path.
 </ResponseField>
 
 <ResponseField name="mcpServers" type={<a href="#mcpserver">McpServer[]</a>}>
-  List of MCP servers to connect to for this session.
+List of MCP servers to connect to for this session.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to resume.
+The ID of the session to resume.
 </ResponseField>
 
 #### <span class="font-mono">ResumeSessionResponse</span>
@@ -715,21 +716,21 @@ Response from resuming an existing session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configOptions" type={<><span><a href="#sessionconfigoption">SessionConfigOption[]</a></span><span> | null</span></>}>
-  Initial session configuration options if supported by the Agent.
+Initial session configuration options if supported by the Agent.
 </ResponseField>
 
 <ResponseField name="modes" type={<><span><a href="#sessionmodestate">SessionModeState</a></span><span> | null</span></>}>
-  Initial mode state if supported by the Agent
+Initial mode state if supported by the Agent
 
-  See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
+See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
 </ResponseField>
 
 <a id="session-set_config_option" />
@@ -747,19 +748,19 @@ Request parameters for setting a session configuration option.
 **Shared properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configId" type={<a href="#sessionconfigid">SessionConfigId</a>} required>
-  The ID of the configuration option to set.
+The ID of the configuration option to set.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to set the configuration option for.
+The ID of the session to set the configuration option for.
 </ResponseField>
 
 **Variants:**
@@ -775,15 +776,16 @@ Request parameters for setting a session configuration option.
     <ResponseField name="value" type={"boolean"} required>
       The boolean value.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="value_id" type="object">
   A `SessionConfigValueId` string value.
 
-  This is the default when `type` is absent on the wire. Unknown `type`
-  values with string payloads also gracefully deserialize into this
-  variant.
+This is the default when `type` is absent on the wire. Unknown `type`
+values with string payloads also gracefully deserialize into this
+variant.
 
   <Expandable title="Properties">
     <ResponseField name="value" type={<a href="#sessionconfigvalueid">SessionConfigValueId</a>} required>
@@ -801,15 +803,15 @@ Response to `session/set_config_option` method.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configOptions" type={<a href="#sessionconfigoption">SessionConfigOption[]</a>} required>
-  The full set of configuration options and their current values.
+The full set of configuration options and their current values.
 </ResponseField>
 
 <a id="session-set_mode" />
@@ -839,19 +841,19 @@ Request parameters for setting a session mode.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="modeId" type={<a href="#sessionmodeid">SessionModeId</a>} required>
-  The ID of the mode to set.
+The ID of the mode to set.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session to set the mode for.
+The ID of the session to set the mode for.
 </ResponseField>
 
 #### <span class="font-mono">SetSessionModeResponse</span>
@@ -863,11 +865,11 @@ Response to `session/set_mode` method.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## Client
@@ -895,17 +897,17 @@ Notification sent by the agent when a URL-based elicitation is complete.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="elicitationId" type={<a href="#elicitationid">ElicitationId</a>} required>
-  The ID of the elicitation that completed.
+The ID of the elicitation that completed.
 </ResponseField>
 
 <a id="elicitation-create" />
@@ -929,17 +931,17 @@ Elicitations are tied to a session (optionally a tool call) or a request.
 **Shared properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="message" type={"string"} required>
-  A human-readable message describing what input is needed.
+A human-readable message describing what input is needed.
 </ResponseField>
 
 **Variants:**
@@ -955,6 +957,7 @@ Elicitations are tied to a session (optionally a tool call) or a request.
     <ResponseField name="requestedSchema" type={<a href="#elicitationschema">ElicitationSchema</a>} required>
       A JSON Schema describing the form fields to present to the user.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -975,19 +978,20 @@ Elicitations are tied to a session (optionally a tool call) or a request.
 
       * Format: `uri`
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="other" type="object">
   Custom or future elicitation mode.
 
-  Values beginning with `_` are reserved for implementation-specific
-  extensions. Unknown values that do not begin with `_` are reserved for
-  future ACP variants.
+Values beginning with `_` are reserved for implementation-specific
+extensions. Unknown values that do not begin with `_` are reserved for
+future ACP variants.
 
-  Clients that do not understand this mode should preserve the raw payload
-  when storing, replaying, proxying, or forwarding elicitation requests.
-  They MUST NOT render it as a known elicitation mode.
+Clients that do not understand this mode should preserve the raw payload
+when storing, replaying, proxying, or forwarding elicitation requests.
+They MUST NOT render it as a known elicitation mode.
 
   <Expandable title="Properties">
     <ResponseField name="mode" type={"string"} required>
@@ -997,6 +1001,7 @@ Elicitations are tied to a session (optionally a tool call) or a request.
       extensions. Unknown values that do not begin with `_` are reserved for
       future ACP variants.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -1009,13 +1014,13 @@ Response from the client to an elicitation request.
 **Shared properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 **Variants:**
@@ -1031,6 +1036,7 @@ Response from the client to an elicitation request.
     <ResponseField name="content" type={"object | null"}>
       The user-provided content, if any, as an object matching the requested schema.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -1057,13 +1063,13 @@ Response from the client to an elicitation request.
 <ResponseField name="other" type="object">
   Custom or future elicitation action.
 
-  Values beginning with `_` are reserved for implementation-specific
-  extensions. Unknown values that do not begin with `_` are reserved for
-  future ACP variants.
+Values beginning with `_` are reserved for implementation-specific
+extensions. Unknown values that do not begin with `_` are reserved for
+future ACP variants.
 
-  Agents that do not understand this action should preserve the raw
-  payload when storing, replaying, proxying, or forwarding elicitation
-  responses. They MUST NOT treat it as a known elicitation action.
+Agents that do not understand this action should preserve the raw
+payload when storing, replaying, proxying, or forwarding elicitation
+responses. They MUST NOT treat it as a known elicitation action.
 
   <Expandable title="Properties">
     <ResponseField name="action" type={"string"} required>
@@ -1073,6 +1079,7 @@ Response from the client to an elicitation request.
       extensions. Unknown values that do not begin with `_` are reserved for
       future ACP variants.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -1098,31 +1105,31 @@ Only available if the client supports the `fs.readTextFile` capability.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="limit" type={"integer | null"}>
-  Maximum number of lines to read.
+Maximum number of lines to read.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="line" type={"integer | null"}>
-  Line number to start reading from (1-based).
+Line number to start reading from (1-based).
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="path" type={"string"} required>
-  Absolute path to the file to read.
+Absolute path to the file to read.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 #### <span class="font-mono">ReadTextFileResponse</span>
@@ -1134,15 +1141,15 @@ Response containing the contents of a text file.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={"string"} required>
-  Content payload returned by this response.
+Content payload returned by this response.
 </ResponseField>
 
 <a id="fs-write_text_file" />
@@ -1167,23 +1174,23 @@ Only available if the client supports the `fs.writeTextFile` capability.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={"string"} required>
-  The text content to write to the file.
+The text content to write to the file.
 </ResponseField>
 
 <ResponseField name="path" type={"string"} required>
-  Absolute path to the file to write.
+Absolute path to the file to write.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 #### <span class="font-mono">WriteTextFileResponse</span>
@@ -1195,11 +1202,11 @@ Response to `fs/write_text_file`
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <a id="session-request_permission" />
@@ -1230,23 +1237,23 @@ See protocol docs: [Requesting Permission](https://agentclientprotocol.com/proto
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="options" type={<a href="#permissionoption">PermissionOption[]</a>} required>
-  Available permission options for the user to choose from.
+Available permission options for the user to choose from.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 <ResponseField name="toolCall" type={<a href="#toolcallupdate">ToolCallUpdate</a>} required>
-  Details about the tool call requiring permission.
+Details about the tool call requiring permission.
 </ResponseField>
 
 #### <span class="font-mono">RequestPermissionResponse</span>
@@ -1258,15 +1265,15 @@ Response to a permission request.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="outcome" type={<a href="#requestpermissionoutcome">RequestPermissionOutcome</a>} required>
-  The user's decision on the permission request.
+The user's decision on the permission request.
 </ResponseField>
 
 <a id="session-update" />
@@ -1298,19 +1305,19 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The ID of the session this update pertains to.
+The ID of the session this update pertains to.
 </ResponseField>
 
 <ResponseField name="update" type={<a href="#sessionupdate">SessionUpdate</a>} required>
-  The actual update content.
+The actual update content.
 </ResponseField>
 
 <a id="terminal-create" />
@@ -1341,44 +1348,44 @@ Request to create a new terminal and execute a command.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="args" type={<><span>"string"</span><span>[]</span></>}>
-  Array of command arguments.
+Array of command arguments.
 </ResponseField>
 
 <ResponseField name="command" type={"string"} required>
-  The command to execute.
+The command to execute.
 </ResponseField>
 
 <ResponseField name="cwd" type={"string | null"}>
-  Working directory for the command. Must be an absolute path.
+Working directory for the command. Must be an absolute path.
 </ResponseField>
 
 <ResponseField name="env" type={<a href="#envvariable">EnvVariable[]</a>}>
-  Environment variables for the command.
+Environment variables for the command.
 </ResponseField>
 
 <ResponseField name="outputByteLimit" type={"integer | null"}>
-  Maximum number of output bytes to retain.
+Maximum number of output bytes to retain.
 
-  When the limit is exceeded, the Client truncates from the beginning of the output
-  to stay within the limit.
+When the limit is exceeded, the Client truncates from the beginning of the output
+to stay within the limit.
 
-  The Client MUST ensure truncation happens at a character boundary to maintain valid
-  string output, even if this means the retained output is slightly less than the
-  specified limit.
+The Client MUST ensure truncation happens at a character boundary to maintain valid
+string output, even if this means the retained output is slightly less than the
+specified limit.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 #### <span class="font-mono">CreateTerminalResponse</span>
@@ -1390,15 +1397,15 @@ Response containing the ID of the created terminal.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="terminalId" type={<a href="#terminalid">TerminalId</a>} required>
-  The unique identifier for the created terminal.
+The unique identifier for the created terminal.
 </ResponseField>
 
 <a id="terminal-kill" />
@@ -1427,19 +1434,19 @@ Request to kill a terminal without releasing it.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 <ResponseField name="terminalId" type={<a href="#terminalid">TerminalId</a>} required>
-  The ID of the terminal to kill.
+The ID of the terminal to kill.
 </ResponseField>
 
 #### <span class="font-mono">KillTerminalResponse</span>
@@ -1451,11 +1458,11 @@ Response to `terminal/kill` method
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <a id="terminal-output" />
@@ -1478,19 +1485,19 @@ Request to get the current output and status of a terminal.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 <ResponseField name="terminalId" type={<a href="#terminalid">TerminalId</a>} required>
-  The ID of the terminal to get output from.
+The ID of the terminal to get output from.
 </ResponseField>
 
 #### <span class="font-mono">TerminalOutputResponse</span>
@@ -1502,23 +1509,23 @@ Response containing the terminal output and exit status.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="exitStatus" type={<><span><a href="#terminalexitstatus">TerminalExitStatus</a></span><span> | null</span></>}>
-  Exit status if the command has completed.
+Exit status if the command has completed.
 </ResponseField>
 
 <ResponseField name="output" type={"string"} required>
-  The terminal output captured so far.
+The terminal output captured so far.
 </ResponseField>
 
 <ResponseField name="truncated" type={"boolean"} required>
-  Whether the output was truncated due to byte limits.
+Whether the output was truncated due to byte limits.
 </ResponseField>
 
 <a id="terminal-release" />
@@ -1547,19 +1554,19 @@ Request to release a terminal and free its resources.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 <ResponseField name="terminalId" type={<a href="#terminalid">TerminalId</a>} required>
-  The ID of the terminal to release.
+The ID of the terminal to release.
 </ResponseField>
 
 #### <span class="font-mono">ReleaseTerminalResponse</span>
@@ -1571,11 +1578,11 @@ Response to terminal/release method
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <a id="terminal-wait_for_exit" />
@@ -1595,19 +1602,19 @@ Request to wait for a terminal command to exit.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session ID for this request.
+The session ID for this request.
 </ResponseField>
 
 <ResponseField name="terminalId" type={<a href="#terminalid">TerminalId</a>} required>
-  The ID of the terminal to wait for.
+The ID of the terminal to wait for.
 </ResponseField>
 
 #### <span class="font-mono">WaitForTerminalExitResponse</span>
@@ -1619,21 +1626,21 @@ Response containing the exit status of a terminal command.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="exitCode" type={"integer | null"}>
-  The process exit code (may be null if terminated by signal).
+The process exit code (may be null if terminated by signal).
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="signal" type={"string | null"}>
-  The signal that terminated the process (may be null if exited normally).
+The signal that terminated the process (may be null if exited normally).
 </ResponseField>
 
 ## Protocol Level
@@ -1660,8 +1667,8 @@ Upon receiving this notification, the receiver:
 2. MAY send any pending notifications.
 3. MUST send one of these responses for the original request:
 
-* Valid response with appropriate data (partial results or cancellation marker)
-* Error response with code `-32800` (Cancelled)
+- Valid response with appropriate data (partial results or cancellation marker)
+- Error response with code `-32800` (Cancelled)
 
 See protocol docs: [Cancellation](https://agentclientprotocol.com/protocol/v1/cancellation)
 
@@ -1676,15 +1683,15 @@ See protocol docs: [Cancellation](https://agentclientprotocol.com/protocol/v1/ca
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="requestId" type={<a href="#requestid">RequestId</a>} required>
-  The ID of the request to cancel.
+The ID of the request to cancel.
 </ResponseField>
 
 ## <span class="font-mono">AgentAuthCapabilities</span>
@@ -1696,18 +1703,18 @@ Authentication-related capabilities supported by the agent.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="logout" type={<><span><a href="#logoutcapabilities">LogoutCapabilities</a></span><span> | null</span></>}>
-  Whether the agent supports the logout method.
+Whether the agent supports the logout method.
 
-  Optional. Omitted or `null` both mean the agent does not advertise support.
-  Supplying `\{\}` means the agent supports the logout method.
+Optional. Omitted or `null` both mean the agent does not advertise support.
+Supplying `\{\}` means the agent supports the logout method.
 </ResponseField>
 
 ## <span class="font-mono">AgentCapabilities</span>
@@ -1724,41 +1731,41 @@ See protocol docs: [Agent Capabilities](https://agentclientprotocol.com/protocol
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="auth" type={<a href="#agentauthcapabilities">AgentAuthCapabilities</a>}>
-  Authentication-related capabilities supported by the agent.
+Authentication-related capabilities supported by the agent.
 
-  * Default: `{}`
+- Default: `{}`
 </ResponseField>
 
 <ResponseField name="loadSession" type={"boolean"}>
-  Whether the agent supports `session/load`.
+Whether the agent supports `session/load`.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 <ResponseField name="mcpCapabilities" type={<a href="#mcpcapabilities">McpCapabilities</a>}>
-  MCP capabilities supported by the agent.
+MCP capabilities supported by the agent.
 
-  * Default: `{"http":false,"sse":false}`
+- Default: `{"http":false,"sse":false}`
 </ResponseField>
 
 <ResponseField name="promptCapabilities" type={<a href="#promptcapabilities">PromptCapabilities</a>}>
-  Prompt capabilities supported by the agent.
+Prompt capabilities supported by the agent.
 
-  * Default: `{"image":false,"audio":false,"embeddedContext":false}`
+- Default: `{"image":false,"audio":false,"embeddedContext":false}`
 </ResponseField>
 
 <ResponseField name="sessionCapabilities" type={<a href="#sessioncapabilities">SessionCapabilities</a>}>
-  Session lifecycle and prompt capabilities advertised by the agent.
+Session lifecycle and prompt capabilities advertised by the agent.
 
-  * Default: `{}`
+- Default: `{}`
 </ResponseField>
 
 ## <span class="font-mono">Annotations</span>
@@ -1770,23 +1777,23 @@ Optional annotations for the client. The client can use annotations to inform ho
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="audience" type={<><span><a href="#role">Role[]</a></span><span> | null</span></>}>
-  Intended recipients for this content, such as the user or assistant.
+Intended recipients for this content, such as the user or assistant.
 </ResponseField>
 
 <ResponseField name="lastModified" type={"string | null"}>
-  Timestamp indicating when the underlying resource was last modified.
+Timestamp indicating when the underlying resource was last modified.
 </ResponseField>
 
 <ResponseField name="priority" type={"number | null"}>
-  Relative importance of this content when clients choose what to surface.
+Relative importance of this content when clients choose what to surface.
 </ResponseField>
 
 ## <span class="font-mono">AudioContent</span>
@@ -1798,23 +1805,23 @@ Audio provided to or from an LLM.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="annotations" type={<><span><a href="#annotations">Annotations</a></span><span> | null</span></>}>
-  Optional annotations that help clients decide how to display or route this content.
+Optional annotations that help clients decide how to display or route this content.
 </ResponseField>
 
 <ResponseField name="data" type={"string"} required>
-  Base64-encoded media payload.
+Base64-encoded media payload.
 </ResponseField>
 
 <ResponseField name="mimeType" type={"string"} required>
-  MIME type describing the encoded media payload.
+MIME type describing the encoded media payload.
 </ResponseField>
 
 ## <span class="font-mono">AuthMethod</span>
@@ -1833,23 +1840,23 @@ This is the default when no `type` is specified.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional description providing more details about this authentication method.
+Optional description providing more details about this authentication method.
 </ResponseField>
 
 <ResponseField name="id" type={<a href="#authmethodid">AuthMethodId</a>} required>
-  Unique identifier for this authentication method.
+Unique identifier for this authentication method.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name of the authentication method.
+Human-readable name of the authentication method.
 </ResponseField>
 
 ## <span class="font-mono">AuthMethodAgent</span>
@@ -1863,23 +1870,23 @@ This is the default authentication method type.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional description providing more details about this authentication method.
+Optional description providing more details about this authentication method.
 </ResponseField>
 
 <ResponseField name="id" type={<a href="#authmethodid">AuthMethodId</a>} required>
-  Unique identifier for this authentication method.
+Unique identifier for this authentication method.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name of the authentication method.
+Human-readable name of the authentication method.
 </ResponseField>
 
 ## <span class="font-mono">AuthMethodId</span>
@@ -1897,23 +1904,23 @@ Information about a command.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="description" type={"string"} required>
-  Human-readable description of what the command does.
+Human-readable description of what the command does.
 </ResponseField>
 
 <ResponseField name="input" type={<><span><a href="#availablecommandinput">AvailableCommandInput</a></span><span> | null</span></>}>
-  Input for the command if required
+Input for the command if required
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Command name (e.g., `create_plan`, `research_codebase`).
+Command name (e.g., `create_plan`, `research_codebase`).
 </ResponseField>
 
 ## <span class="font-mono">AvailableCommandInput</span>
@@ -1927,15 +1934,15 @@ All text that was typed after the command name is provided as input.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="hint" type={"string"} required>
-  A hint to display when the input hasn't been provided yet
+A hint to display when the input hasn't been provided yet
 </ResponseField>
 
 ## <span class="font-mono">AvailableCommandsUpdate</span>
@@ -1947,15 +1954,15 @@ Available commands are ready or have changed
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="availableCommands" type={<a href="#availablecommand">AvailableCommand[]</a>} required>
-  Commands the agent can execute
+Commands the agent can execute
 </ResponseField>
 
 ## <span class="font-mono">BlobResourceContents</span>
@@ -1967,23 +1974,23 @@ Binary resource contents.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="blob" type={"string"} required>
-  Base64-encoded bytes for a binary resource payload.
+Base64-encoded bytes for a binary resource payload.
 </ResponseField>
 
 <ResponseField name="mimeType" type={"string | null"}>
-  MIME type describing the encoded media payload.
+MIME type describing the encoded media payload.
 </ResponseField>
 
 <ResponseField name="uri" type={"string"} required>
-  URI associated with this resource or media payload.
+URI associated with this resource or media payload.
 </ResponseField>
 
 ## <span class="font-mono">BooleanConfigOptionCapabilities</span>
@@ -1997,11 +2004,11 @@ Supplying `\{\}` means the client supports boolean session configuration options
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">BooleanPropertySchema</span>
@@ -2013,31 +2020,31 @@ Schema for boolean properties in an elicitation form.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="default" type={"boolean | null"}>
-  Default value.
+Default value.
 
-  Optional. Omitted and `null` are equivalent and mean no default value is provided.
+Optional. Omitted and `null` are equivalent and mean no default value is provided.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Human-readable description.
+Human-readable description.
 
-  Optional. Omitted and `null` are equivalent and mean no description is provided.
+Optional. Omitted and `null` are equivalent and mean no description is provided.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional title for the property.
+Optional title for the property.
 
-  Optional. Omitted and `null` are equivalent and mean no title is provided.
+Optional. Omitted and `null` are equivalent and mean no title is provided.
 </ResponseField>
 
 ## <span class="font-mono">ClientCapabilities</span>
@@ -2054,39 +2061,39 @@ See protocol docs: [Client Capabilities](https://agentclientprotocol.com/protoco
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="elicitation" type={<><span><a href="#elicitationcapabilities">ElicitationCapabilities</a></span><span> | null</span></>}>
-  Elicitation capabilities supported by the client.
-  Determines which elicitation modes the agent may use.
+Elicitation capabilities supported by the client.
+Determines which elicitation modes the agent may use.
 
-  Optional. Omitted or `null` both mean the client does not advertise
-  elicitation support.
+Optional. Omitted or `null` both mean the client does not advertise
+elicitation support.
 </ResponseField>
 
 <ResponseField name="fs" type={<a href="#filesystemcapabilities">FileSystemCapabilities</a>}>
-  File system capabilities supported by the client.
-  Determines which file operations the agent can request.
+File system capabilities supported by the client.
+Determines which file operations the agent can request.
 
-  * Default: `{"readTextFile":false,"writeTextFile":false}`
+- Default: `{"readTextFile":false,"writeTextFile":false}`
 </ResponseField>
 
 <ResponseField name="session" type={<><span><a href="#clientsessioncapabilities">ClientSessionCapabilities</a></span><span> | null</span></>}>
-  Session-related capabilities supported by the client.
+Session-related capabilities supported by the client.
 
-  Optional. Omitted or `null` both mean the client does not advertise any
-  session-related extensions.
+Optional. Omitted or `null` both mean the client does not advertise any
+session-related extensions.
 </ResponseField>
 
 <ResponseField name="terminal" type={"boolean"}>
-  Whether the Client support all `terminal/*` methods.
+Whether the Client support all `terminal/*` methods.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 ## <span class="font-mono">ClientSessionCapabilities</span>
@@ -2098,18 +2105,18 @@ Session-related capabilities supported by the client.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configOptions" type={<><span><a href="#sessionconfigoptionscapabilities">SessionConfigOptionsCapabilities</a></span><span> | null</span></>}>
-  Config option capabilities supported by the client.
+Config option capabilities supported by the client.
 
-  Omitted or `null` both mean the client does not advertise support for any
-  config option extensions.
+Omitted or `null` both mean the client does not advertise support for any
+config option extensions.
 </ResponseField>
 
 ## <span class="font-mono">ConfigOptionUpdate</span>
@@ -2121,15 +2128,15 @@ Session configuration options have been updated.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="configOptions" type={<a href="#sessionconfigoption">SessionConfigOption[]</a>} required>
-  The full set of configuration options and their current values.
+The full set of configuration options and their current values.
 </ResponseField>
 
 ## <span class="font-mono">Content</span>
@@ -2141,15 +2148,15 @@ Standard content block (text, images, resources).
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={<a href="#contentblock">ContentBlock</a>} required>
-  The actual content block.
+The actual content block.
 </ResponseField>
 
 ## <span class="font-mono">ContentBlock</span>
@@ -2161,9 +2168,9 @@ it's text from language models, images for analysis, or embedded resources for c
 
 Content blocks appear in:
 
-* User prompts sent via `session/prompt`
-* Language model output streamed through `session/update` notifications
-* Progress updates and results from tool calls
+- User prompts sent via `session/prompt`
+- Language model output streamed through `session/update` notifications
+- Progress updates and results from tool calls
 
 This structure is compatible with the Model Context Protocol (MCP), enabling
 agents to seamlessly forward content from MCP tool outputs without transformation.
@@ -2175,8 +2182,8 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/content
 <ResponseField name="text" type="object">
   Text content. May be plain text or formatted with Markdown.
 
-  All agents MUST support text content blocks in prompts.
-  Clients SHOULD render this text as Markdown.
+All agents MUST support text content blocks in prompts.
+Clients SHOULD render this text as Markdown.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -2198,13 +2205,14 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/content
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"text"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="image" type="object">
   Images for visual context or analysis.
 
-  Requires the `image` prompt capability when included in prompts.
+Requires the `image` prompt capability when included in prompts.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -2234,13 +2242,14 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/content
     <ResponseField name="uri" type={"string | null"}>
       URI associated with this resource or media payload.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="audio" type="object">
   Audio data for transcription or analysis.
 
-  Requires the `audio` prompt capability when included in prompts.
+Requires the `audio` prompt capability when included in prompts.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -2266,13 +2275,14 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/content
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"audio"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="resource_link" type="object">
   References to resources that the agent can access.
 
-  All agents MUST support resource links in prompts.
+All agents MUST support resource links in prompts.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -2314,15 +2324,16 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/content
     <ResponseField name="uri" type={"string"} required>
       URI associated with this resource or media payload.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="resource" type="object">
   Complete resource contents embedded directly in the message.
 
-  Preferred for including context as it avoids extra round-trips.
+Preferred for including context as it avoids extra round-trips.
 
-  Requires the `embeddedContext` prompt capability when included in prompts.
+Requires the `embeddedContext` prompt capability when included in prompts.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -2344,6 +2355,7 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/content
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"resource"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2356,22 +2368,22 @@ A streamed item of content
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={<a href="#contentblock">ContentBlock</a>} required>
-  A single item of content
+A single item of content
 </ResponseField>
 
 <ResponseField name="messageId" type={<><span><a href="#messageid">MessageId</a></span><span> | null</span></>}>
-  A unique identifier for the message this chunk belongs to.
+A unique identifier for the message this chunk belongs to.
 
-  All chunks belonging to the same message share the same `messageId`.
-  A change in `messageId` indicates a new message has started.
+All chunks belonging to the same message share the same `messageId`.
+A change in `messageId` indicates a new message has started.
 </ResponseField>
 
 ## <span class="font-mono">Cost</span>
@@ -2383,19 +2395,19 @@ Cost information for a session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="amount" type={"number"} required>
-  Total cumulative cost for session.
+Total cumulative cost for session.
 </ResponseField>
 
 <ResponseField name="currency" type={"string"} required>
-  ISO 4217 currency code (e.g., "USD", "EUR").
+ISO 4217 currency code (e.g., "USD", "EUR").
 </ResponseField>
 
 ## <span class="font-mono">CurrentModeUpdate</span>
@@ -2409,15 +2421,15 @@ See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/s
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="currentModeId" type={<a href="#sessionmodeid">SessionModeId</a>} required>
-  The ID of the current mode
+The ID of the current mode
 </ResponseField>
 
 ## <span class="font-mono">Diff</span>
@@ -2433,23 +2445,23 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/tool-ca
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="newText" type={"string"} required>
-  The new content after modification.
+The new content after modification.
 </ResponseField>
 
 <ResponseField name="oldText" type={"string | null"}>
-  The original content (None for new files).
+The original content (None for new files).
 </ResponseField>
 
 <ResponseField name="path" type={"string"} required>
-  The absolute file path being modified.
+The absolute file path being modified.
 </ResponseField>
 
 ## <span class="font-mono">ElicitationAcceptAction</span>
@@ -2461,7 +2473,7 @@ The user accepted the elicitation and provided content.
 **Properties:**
 
 <ResponseField name="content" type={"object | null"}>
-  The user-provided content, if any, as an object matching the requested schema.
+The user-provided content, if any, as an object matching the requested schema.
 </ResponseField>
 
 ## <span class="font-mono">ElicitationCapabilities</span>
@@ -2473,27 +2485,27 @@ Elicitation capabilities supported by the client.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="form" type={<><span><a href="#elicitationformcapabilities">ElicitationFormCapabilities</a></span><span> | null</span></>}>
-  Whether the client supports form-based elicitation.
+Whether the client supports form-based elicitation.
 
-  Optional. Omitted and `null` are equivalent and mean form support is not advertised.
-  Supplying `\{\}` explicitly advertises form support.
+Optional. Omitted and `null` are equivalent and mean form support is not advertised.
+Supplying `\{\}` explicitly advertises form support.
 </ResponseField>
 
 <ResponseField name="url" type={<><span><a href="#elicitationurlcapabilities">ElicitationUrlCapabilities</a></span><span> | null</span></>}>
-  Whether the client supports URL-based elicitation.
+Whether the client supports URL-based elicitation.
 
-  Optional. Omitted or `null` both mean the client does not advertise support.
-  Supplying `\{\}` means the client supports URL-based elicitation.
+Optional. Omitted or `null` both mean the client does not advertise support.
+Supplying `\{\}` means the client supports URL-based elicitation.
 </ResponseField>
 
 ## <span class="font-mono">ElicitationContentValue</span>
@@ -2533,13 +2545,13 @@ Supplying `\{\}` means the client supports form-based elicitation.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">ElicitationFormMode</span>
@@ -2551,7 +2563,7 @@ Form-based elicitation mode where the client renders a form from the provided sc
 **Shared properties:**
 
 <ResponseField name="requestedSchema" type={<a href="#elicitationschema">ElicitationSchema</a>} required>
-  A JSON Schema describing the form fields to present to the user.
+A JSON Schema describing the form fields to present to the user.
 </ResponseField>
 
 **Variants:**
@@ -2570,6 +2582,7 @@ Form-based elicitation mode where the client renders a form from the provided sc
       Optional. Omitted and `null` are equivalent and mean the elicitation is scoped to the
       session without a specific tool call.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2675,6 +2688,7 @@ Multi-select enums use the `Array` variant.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"string"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2725,6 +2739,7 @@ Multi-select enums use the `Array` variant.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"number"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2775,6 +2790,7 @@ Multi-select enums use the `Array` variant.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"integer"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2813,6 +2829,7 @@ Multi-select enums use the `Array` variant.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"boolean"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2871,19 +2888,20 @@ Multi-select enums use the `Array` variant.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"array"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="other" type="object">
   Custom or future elicitation property schema.
 
-  Values beginning with `_` are reserved for implementation-specific
-  extensions. Unknown values that do not begin with `_` are reserved for
-  future ACP variants.
+Values beginning with `_` are reserved for implementation-specific
+extensions. Unknown values that do not begin with `_` are reserved for
+future ACP variants.
 
-  Clients that do not understand this property schema type should preserve
-  the raw schema when storing, replaying, proxying, or forwarding
-  elicitation requests. They MUST NOT render it as a known input control.
+Clients that do not understand this property schema type should preserve
+the raw schema when storing, replaying, proxying, or forwarding
+elicitation requests. They MUST NOT render it as a known input control.
 
   <Expandable title="Properties">
     <ResponseField name="type" type={"string"} required>
@@ -2893,6 +2911,7 @@ Multi-select enums use the `Array` variant.
       extensions. Unknown values that do not begin with `_` are reserved for
       future ACP variants.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -2906,7 +2925,7 @@ Request-scoped elicitation, tied to a specific JSON-RPC request outside of a ses
 **Properties:**
 
 <ResponseField name="requestId" type={<a href="#requestid">RequestId</a>} required>
-  The request this elicitation is tied to.
+The request this elicitation is tied to.
 </ResponseField>
 
 ## <span class="font-mono">ElicitationSchema</span>
@@ -2921,43 +2940,43 @@ as required by the elicitation specification.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional description of what this schema represents.
+Optional description of what this schema represents.
 
-  Optional. Omitted and `null` are equivalent and mean no schema description is provided.
+Optional. Omitted and `null` are equivalent and mean no schema description is provided.
 </ResponseField>
 
 <ResponseField name="properties" type={"object"}>
-  Property definitions (must be primitive types).
+Property definitions (must be primitive types).
 
-  * Default: `{}`
+- Default: `{}`
 </ResponseField>
 
 <ResponseField name="required" type={<><span><><span>"string"</span><span>[]</span></></span><span> | null</span></>}>
-  List of required property names.
+List of required property names.
 
-  Optional. Omitted and `null` are equivalent and mean no property names are required.
+Optional. Omitted and `null` are equivalent and mean no property names are required.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional title for the schema.
+Optional title for the schema.
 
-  Optional. Omitted and `null` are equivalent and mean no title is provided.
+Optional. Omitted and `null` are equivalent and mean no title is provided.
 </ResponseField>
 
 <ResponseField name="type" type={<a href="#elicitationschematype">ElicitationSchemaType</a>}>
-  Type discriminator. Always `"object"`.
+Type discriminator. Always `"object"`.
 
-  * Default: `"object"`
+- Default: `"object"`
 </ResponseField>
 
 ## <span class="font-mono">ElicitationSchemaType</span>
@@ -2983,14 +3002,14 @@ during a tool call and needs to redirect it to the user.
 **Properties:**
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  The session this elicitation is tied to.
+The session this elicitation is tied to.
 </ResponseField>
 
 <ResponseField name="toolCallId" type={<><span><a href="#toolcallid">ToolCallId</a></span><span> | null</span></>}>
-  Optional tool call within the session.
+Optional tool call within the session.
 
-  Optional. Omitted and `null` are equivalent and mean the elicitation is scoped to the
-  session without a specific tool call.
+Optional. Omitted and `null` are equivalent and mean the elicitation is scoped to the
+session without a specific tool call.
 </ResponseField>
 
 ## <span class="font-mono">ElicitationUrlCapabilities</span>
@@ -3004,13 +3023,13 @@ Supplying `\{\}` means the client supports URL-based elicitation.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">ElicitationUrlMode</span>
@@ -3022,13 +3041,13 @@ URL-based elicitation mode where the client directs the user to a URL.
 **Shared properties:**
 
 <ResponseField name="elicitationId" type={<a href="#elicitationid">ElicitationId</a>} required>
-  The unique identifier for this elicitation.
+The unique identifier for this elicitation.
 </ResponseField>
 
 <ResponseField name="url" type={"string"} required>
-  The URL to direct the user to.
+The URL to direct the user to.
 
-  * Format: `uri`
+- Format: `uri`
 </ResponseField>
 
 **Variants:**
@@ -3047,6 +3066,7 @@ URL-based elicitation mode where the client directs the user to a URL.
       Optional. Omitted and `null` are equivalent and mean the elicitation is scoped to the
       session without a specific tool call.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3070,19 +3090,19 @@ The contents of a resource, embedded into a prompt or tool call result.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="annotations" type={<><span><a href="#annotations">Annotations</a></span><span> | null</span></>}>
-  Optional annotations that help clients decide how to display or route this content.
+Optional annotations that help clients decide how to display or route this content.
 </ResponseField>
 
 <ResponseField name="resource" type={<a href="#embeddedresourceresource">EmbeddedResourceResource</a>} required>
-  Embedded resource payload, either text or binary data.
+Embedded resource payload, either text or binary data.
 </ResponseField>
 
 ## <span class="font-mono">EmbeddedResourceResource</span>
@@ -3114,6 +3134,7 @@ Resource content that can be embedded in a message.
     <ResponseField name="uri" type={"string"} required>
       URI associated with this resource or media payload.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3140,6 +3161,7 @@ Resource content that can be embedded in a message.
     <ResponseField name="uri" type={"string"} required>
       URI associated with this resource or media payload.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3152,27 +3174,27 @@ A titled enum option with a const value, human-readable title, and optional desc
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="const" type={"string"} required>
-  The constant value for this option.
+The constant value for this option.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Human-readable description.
+Human-readable description.
 
-  Optional. Omitted and `null` are equivalent and mean no description is provided.
+Optional. Omitted and `null` are equivalent and mean no description is provided.
 </ResponseField>
 
 <ResponseField name="title" type={"string"} required>
-  Human-readable title for this option.
+Human-readable title for this option.
 </ResponseField>
 
 ## <span class="font-mono">EnvVariable</span>
@@ -3184,19 +3206,19 @@ An environment variable to set when launching an MCP server.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  The name of the environment variable.
+The name of the environment variable.
 </ResponseField>
 
 <ResponseField name="value" type={"string"} required>
-  The value to set for the environment variable.
+The value to set for the environment variable.
 </ResponseField>
 
 ## <span class="font-mono">Error</span>
@@ -3213,19 +3235,19 @@ See protocol docs: [JSON-RPC Error Object](https://www.jsonrpc.org/specification
 **Properties:**
 
 <ResponseField name="code" type={<a href="#errorcode">ErrorCode</a>} required>
-  A number indicating the error type that occurred. This must be an integer as
-  defined in the JSON-RPC specification.
+A number indicating the error type that occurred. This must be an integer as
+defined in the JSON-RPC specification.
 </ResponseField>
 
 <ResponseField name="data" type={"object"}>
-  Optional primitive or structured value that contains additional information
-  about the error. This may include debugging information or context-specific
-  details.
+Optional primitive or structured value that contains additional information
+about the error. This may include debugging information or context-specific
+details.
 </ResponseField>
 
 <ResponseField name="message" type={"string"} required>
-  A string providing a short description of the error. The message should be
-  limited to a concise single sentence.
+A string providing a short description of the error. The message should be
+limited to a concise single sentence.
 </ResponseField>
 
 ## <span class="font-mono">ErrorCode</span>
@@ -3313,23 +3335,23 @@ See protocol docs: [FileSystem](https://agentclientprotocol.com/protocol/v1/init
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="readTextFile" type={"boolean"}>
-  Whether the Client supports `fs/read_text_file` requests.
+Whether the Client supports `fs/read_text_file` requests.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 <ResponseField name="writeTextFile" type={"boolean"}>
-  Whether the Client supports `fs/write_text_file` requests.
+Whether the Client supports `fs/write_text_file` requests.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 ## <span class="font-mono">HttpHeader</span>
@@ -3341,19 +3363,19 @@ An HTTP header to set when making requests to the MCP server.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  The name of the HTTP header.
+The name of the HTTP header.
 </ResponseField>
 
 <ResponseField name="value" type={"string"} required>
-  The value to set for the HTTP header.
+The value to set for the HTTP header.
 </ResponseField>
 
 ## <span class="font-mono">ImageContent</span>
@@ -3365,27 +3387,27 @@ An image provided to or from an LLM.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="annotations" type={<><span><a href="#annotations">Annotations</a></span><span> | null</span></>}>
-  Optional annotations that help clients decide how to display or route this content.
+Optional annotations that help clients decide how to display or route this content.
 </ResponseField>
 
 <ResponseField name="data" type={"string"} required>
-  Base64-encoded media payload.
+Base64-encoded media payload.
 </ResponseField>
 
 <ResponseField name="mimeType" type={"string"} required>
-  MIME type describing the encoded media payload.
+MIME type describing the encoded media payload.
 </ResponseField>
 
 <ResponseField name="uri" type={"string | null"}>
-  URI associated with this resource or media payload.
+URI associated with this resource or media payload.
 </ResponseField>
 
 ## <span class="font-mono">Implementation</span>
@@ -3399,28 +3421,28 @@ title for UI representation.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Intended for programmatic or logical use, but can be used as a display
-  name fallback if title isn’t present.
+Intended for programmatic or logical use, but can be used as a display
+name fallback if title isn’t present.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Intended for UI and end-user contexts — optimized to be human-readable
-  and easily understood.
+Intended for UI and end-user contexts — optimized to be human-readable
+and easily understood.
 
-  If not provided, the name should be used for display.
+If not provided, the name should be used for display.
 </ResponseField>
 
 <ResponseField name="version" type={"string"} required>
-  Version of the implementation. Can be displayed to the user or used
-  for debugging or metrics purposes. (e.g. "1.0.0").
+Version of the implementation. Can be displayed to the user or used
+for debugging or metrics purposes. (e.g. "1.0.0").
 </ResponseField>
 
 ## <span class="font-mono">IntegerPropertySchema</span>
@@ -3432,43 +3454,43 @@ Schema for integer properties in an elicitation form.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="default" type={"integer | null"}>
-  Default value.
+Default value.
 
-  Optional. Omitted and `null` are equivalent and mean no default value is provided.
+Optional. Omitted and `null` are equivalent and mean no default value is provided.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Human-readable description.
+Human-readable description.
 
-  Optional. Omitted and `null` are equivalent and mean no description is provided.
+Optional. Omitted and `null` are equivalent and mean no description is provided.
 </ResponseField>
 
 <ResponseField name="maximum" type={"integer | null"}>
-  Maximum value (inclusive).
+Maximum value (inclusive).
 
-  Optional. Omitted and `null` are equivalent and mean there is no inclusive upper bound.
+Optional. Omitted and `null` are equivalent and mean there is no inclusive upper bound.
 </ResponseField>
 
 <ResponseField name="minimum" type={"integer | null"}>
-  Minimum value (inclusive).
+Minimum value (inclusive).
 
-  Optional. Omitted and `null` are equivalent and mean there is no inclusive lower bound.
+Optional. Omitted and `null` are equivalent and mean there is no inclusive lower bound.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional title for the property.
+Optional title for the property.
 
-  Optional. Omitted and `null` are equivalent and mean no title is provided.
+Optional. Omitted and `null` are equivalent and mean no title is provided.
 </ResponseField>
 
 ## <span class="font-mono">LogoutCapabilities</span>
@@ -3482,11 +3504,11 @@ Supplying `\{\}` means the agent supports the logout method.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">McpCapabilities</span>
@@ -3498,23 +3520,23 @@ MCP capabilities supported by the agent
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="http" type={"boolean"}>
-  Agent supports `McpServer::Http`.
+Agent supports `McpServer::Http`.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 <ResponseField name="sse" type={"boolean"}>
-  Agent supports `McpServer::Sse`.
+Agent supports `McpServer::Sse`.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 ## <span class="font-mono">McpServer</span>
@@ -3531,7 +3553,7 @@ See protocol docs: [MCP Servers](https://agentclientprotocol.com/protocol/v1/ses
 <ResponseField name="http" type="object">
   HTTP transport configuration
 
-  Only available when the Agent capabilities indicate `mcp_capabilities.http` is `true`.
+Only available when the Agent capabilities indicate `mcp_capabilities.http` is `true`.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -3557,13 +3579,14 @@ See protocol docs: [MCP Servers](https://agentclientprotocol.com/protocol/v1/ses
     <ResponseField name="url" type={"string"} required>
       URL to the MCP server.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="sse" type="object">
   SSE transport configuration
 
-  Only available when the Agent capabilities indicate `mcp_capabilities.sse` is `true`.
+Only available when the Agent capabilities indicate `mcp_capabilities.sse` is `true`.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -3589,13 +3612,14 @@ See protocol docs: [MCP Servers](https://agentclientprotocol.com/protocol/v1/ses
     <ResponseField name="url" type={"string"} required>
       URL to the MCP server.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="stdio">
   Stdio transport configuration
 
-  All Agents MUST support this transport.
+All Agents MUST support this transport.
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -3621,6 +3645,7 @@ See protocol docs: [MCP Servers](https://agentclientprotocol.com/protocol/v1/ses
     <ResponseField name="name" type={"string"} required>
       Human-readable name identifying this MCP server.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3633,23 +3658,23 @@ HTTP transport configuration for MCP.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="headers" type={<a href="#httpheader">HttpHeader[]</a>} required>
-  HTTP headers to set when making requests to the MCP server.
+HTTP headers to set when making requests to the MCP server.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name identifying this MCP server.
+Human-readable name identifying this MCP server.
 </ResponseField>
 
 <ResponseField name="url" type={"string"} required>
-  URL to the MCP server.
+URL to the MCP server.
 </ResponseField>
 
 ## <span class="font-mono">McpServerSse</span>
@@ -3661,23 +3686,23 @@ SSE transport configuration for MCP.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="headers" type={<a href="#httpheader">HttpHeader[]</a>} required>
-  HTTP headers to set when making requests to the MCP server.
+HTTP headers to set when making requests to the MCP server.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name identifying this MCP server.
+Human-readable name identifying this MCP server.
 </ResponseField>
 
 <ResponseField name="url" type={"string"} required>
-  URL to the MCP server.
+URL to the MCP server.
 </ResponseField>
 
 ## <span class="font-mono">McpServerStdio</span>
@@ -3689,27 +3714,27 @@ Stdio transport configuration for MCP.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="args" type={<><span>"string"</span><span>[]</span></>} required>
-  Command-line arguments to pass to the MCP server.
+Command-line arguments to pass to the MCP server.
 </ResponseField>
 
 <ResponseField name="command" type={"string"} required>
-  Absolute path to the MCP server executable.
+Absolute path to the MCP server executable.
 </ResponseField>
 
 <ResponseField name="env" type={<a href="#envvariable">EnvVariable[]</a>} required>
-  Environment variables to set when launching the MCP server.
+Environment variables to set when launching the MCP server.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name identifying this MCP server.
+Human-readable name identifying this MCP server.
 </ResponseField>
 
 ## <span class="font-mono">MessageId</span>
@@ -3745,6 +3770,7 @@ Items for a multi-select (array) property schema.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"string"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3759,6 +3785,7 @@ Items for a multi-select (array) property schema.
       extensions. Unknown values that do not begin with `_` are reserved for
       future ACP variants.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3779,6 +3806,7 @@ Items for a multi-select (array) property schema.
     <ResponseField name="anyOf" type={<a href="#enumoption">EnumOption[]</a>} required>
       Titled enum options.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -3791,51 +3819,51 @@ Schema for multi-select (array) properties in an elicitation form.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="default" type={<><span><><span>"string"</span><span>[]</span></></span><span> | null</span></>}>
-  Default selected values.
+Default selected values.
 
-  Optional. Omitted and `null` are equivalent and mean no default selections are provided.
+Optional. Omitted and `null` are equivalent and mean no default selections are provided.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Human-readable description.
+Human-readable description.
 
-  Optional. Omitted and `null` are equivalent and mean no description is provided.
+Optional. Omitted and `null` are equivalent and mean no description is provided.
 </ResponseField>
 
 <ResponseField name="items" type={<a href="#multiselectitems">MultiSelectItems</a>} required>
-  The items definition describing allowed values.
+The items definition describing allowed values.
 </ResponseField>
 
 <ResponseField name="maxItems" type={"integer | null"}>
-  Maximum number of items to select.
+Maximum number of items to select.
 
-  Optional. Omitted and `null` are equivalent and mean there is no maximum selection count.
+Optional. Omitted and `null` are equivalent and mean there is no maximum selection count.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="minItems" type={"integer | null"}>
-  Minimum number of items to select.
+Minimum number of items to select.
 
-  Optional. Omitted and `null` are equivalent and mean there is no minimum selection count.
+Optional. Omitted and `null` are equivalent and mean there is no minimum selection count.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional title for the property.
+Optional title for the property.
 
-  Optional. Omitted and `null` are equivalent and mean no title is provided.
+Optional. Omitted and `null` are equivalent and mean no title is provided.
 </ResponseField>
 
 ## <span class="font-mono">NumberPropertySchema</span>
@@ -3847,43 +3875,43 @@ Schema for number (floating-point) properties in an elicitation form.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="default" type={"number | null"}>
-  Default value.
+Default value.
 
-  Optional. Omitted and `null` are equivalent and mean no default value is provided.
+Optional. Omitted and `null` are equivalent and mean no default value is provided.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Human-readable description.
+Human-readable description.
 
-  Optional. Omitted and `null` are equivalent and mean no description is provided.
+Optional. Omitted and `null` are equivalent and mean no description is provided.
 </ResponseField>
 
 <ResponseField name="maximum" type={"number | null"}>
-  Maximum value (inclusive).
+Maximum value (inclusive).
 
-  Optional. Omitted and `null` are equivalent and mean there is no inclusive upper bound.
+Optional. Omitted and `null` are equivalent and mean there is no inclusive upper bound.
 </ResponseField>
 
 <ResponseField name="minimum" type={"number | null"}>
-  Minimum value (inclusive).
+Minimum value (inclusive).
 
-  Optional. Omitted and `null` are equivalent and mean there is no inclusive lower bound.
+Optional. Omitted and `null` are equivalent and mean there is no inclusive lower bound.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional title for the property.
+Optional title for the property.
 
-  Optional. Omitted and `null` are equivalent and mean no title is provided.
+Optional. Omitted and `null` are equivalent and mean no title is provided.
 </ResponseField>
 
 ## <span class="font-mono">PermissionOption</span>
@@ -3895,23 +3923,23 @@ An option presented to the user when requesting permission.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="kind" type={<a href="#permissionoptionkind">PermissionOptionKind</a>} required>
-  Hint about the nature of this permission option.
+Hint about the nature of this permission option.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable label to display to the user.
+Human-readable label to display to the user.
 </ResponseField>
 
 <ResponseField name="optionId" type={<a href="#permissionoptionid">PermissionOptionId</a>} required>
-  Unique identifier for this permission option.
+Unique identifier for this permission option.
 </ResponseField>
 
 ## <span class="font-mono">PermissionOptionId</span>
@@ -3959,18 +3987,18 @@ See protocol docs: [Agent Plan](https://agentclientprotocol.com/protocol/v1/agen
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="entries" type={<a href="#planentry">PlanEntry[]</a>} required>
-  The list of tasks to be accomplished.
+The list of tasks to be accomplished.
 
-  When updating a plan, the agent must send a complete list of all entries
-  with their current status. The client replaces the entire plan with each update.
+When updating a plan, the agent must send a complete list of all entries
+with their current status. The client replaces the entire plan with each update.
 </ResponseField>
 
 ## <span class="font-mono">PlanEntry</span>
@@ -3986,24 +4014,24 @@ See protocol docs: [Plan Entries](https://agentclientprotocol.com/protocol/v1/ag
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={"string"} required>
-  Human-readable description of what this task aims to accomplish.
+Human-readable description of what this task aims to accomplish.
 </ResponseField>
 
 <ResponseField name="priority" type={<a href="#planentrypriority">PlanEntryPriority</a>} required>
-  The relative importance of this task.
-  Used to indicate which tasks are most critical to the overall goal.
+The relative importance of this task.
+Used to indicate which tasks are most critical to the overall goal.
 </ResponseField>
 
 <ResponseField name="status" type={<a href="#planentrystatus">PlanEntryStatus</a>} required>
-  Current execution status of this task.
+Current execution status of this task.
 </ResponseField>
 
 ## <span class="font-mono">PlanEntryPriority</span>
@@ -4069,32 +4097,32 @@ See protocol docs: [Prompt Capabilities](https://agentclientprotocol.com/protoco
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="audio" type={"boolean"}>
-  Agent supports `ContentBlock::Audio`.
+Agent supports `ContentBlock::Audio`.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 <ResponseField name="embeddedContext" type={"boolean"}>
-  Agent supports embedded context in `session/prompt` requests.
+Agent supports embedded context in `session/prompt` requests.
 
-  When enabled, the Client is allowed to include `ContentBlock::Resource`
-  in prompt requests for pieces of context that are referenced in the message.
+When enabled, the Client is allowed to include `ContentBlock::Resource`
+in prompt requests for pieces of context that are referenced in the message.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 <ResponseField name="image" type={"boolean"}>
-  Agent supports `ContentBlock::Image`.
+Agent supports `ContentBlock::Image`.
 
-  * Default: `false`
+- Default: `false`
 </ResponseField>
 
 ## <span class="font-mono">ProtocolVersion</span>
@@ -4146,11 +4174,11 @@ The outcome of a permission request.
 <ResponseField name="cancelled" type="object">
   The prompt turn was cancelled before the user responded.
 
-  When a client sends a `session/cancel` notification to cancel an ongoing
-  prompt turn, it MUST respond to all pending `session/request_permission`
-  requests with this `Cancelled` outcome.
+When a client sends a `session/cancel` notification to cancel an ongoing
+prompt turn, it MUST respond to all pending `session/request_permission`
+requests with this `Cancelled` outcome.
 
-  See protocol docs: [Cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation)
+See protocol docs: [Cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation)
 
   <Expandable title="Properties">
     <ResponseField name="outcome" type={"string"} required>
@@ -4178,6 +4206,7 @@ The outcome of a permission request.
     <ResponseField name="outcome" type={"string"} required>
       The discriminator value. Must be `"selected"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4190,39 +4219,39 @@ A resource that the server is capable of reading, included in a prompt or tool c
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="annotations" type={<><span><a href="#annotations">Annotations</a></span><span> | null</span></>}>
-  Optional annotations that help clients decide how to display or route this content.
+Optional annotations that help clients decide how to display or route this content.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional human-readable details shown with this protocol object.
+Optional human-readable details shown with this protocol object.
 </ResponseField>
 
 <ResponseField name="mimeType" type={"string | null"}>
-  MIME type describing the encoded media payload.
+MIME type describing the encoded media payload.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name shown for this protocol object.
+Human-readable name shown for this protocol object.
 </ResponseField>
 
 <ResponseField name="size" type={"integer | null"}>
-  Optional size of the linked resource in bytes, if known.
+Optional size of the linked resource in bytes, if known.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional display title for end-user UI.
+Optional display title for end-user UI.
 </ResponseField>
 
 <ResponseField name="uri" type={"string"} required>
-  URI associated with this resource or media payload.
+URI associated with this resource or media payload.
 </ResponseField>
 
 ## <span class="font-mono">Role</span>
@@ -4248,15 +4277,15 @@ The user selected one of the provided options.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="optionId" type={<a href="#permissionoptionid">PermissionOptionId</a>} required>
-  The ID of the option the user selected.
+The ID of the option the user selected.
 </ResponseField>
 
 ## <span class="font-mono">SessionAdditionalDirectoriesCapabilities</span>
@@ -4273,11 +4302,11 @@ complete ordered additional-root list associated with a listed session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">SessionCapabilities</span>
@@ -4297,51 +4326,51 @@ See protocol docs: [Session Capabilities](https://agentclientprotocol.com/protoc
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="additionalDirectories" type={<><span><a href="#sessionadditionaldirectoriescapabilities">SessionAdditionalDirectoriesCapabilities</a></span><span> | null</span></>}>
-  Whether the agent supports `additionalDirectories` on supported session lifecycle requests.
+Whether the agent supports `additionalDirectories` on supported session lifecycle requests.
 
-  Optional. Omitted or `null` both mean the agent does not advertise support.
-  Supplying `\{\}` means the agent supports `additionalDirectories` on
-  supported session lifecycle requests.
+Optional. Omitted or `null` both mean the agent does not advertise support.
+Supplying `\{\}` means the agent supports `additionalDirectories` on
+supported session lifecycle requests.
 
-  Agents that also support `session/list` may return
-  `SessionInfo.additionalDirectories` to report the complete ordered
-  additional-root list associated with a listed session.
+Agents that also support `session/list` may return
+`SessionInfo.additionalDirectories` to report the complete ordered
+additional-root list associated with a listed session.
 </ResponseField>
 
 <ResponseField name="close" type={<><span><a href="#sessionclosecapabilities">SessionCloseCapabilities</a></span><span> | null</span></>}>
-  Whether the agent supports `session/close`.
+Whether the agent supports `session/close`.
 
-  Optional. Omitted or `null` both mean the agent does not advertise support.
-  Supplying `\{\}` means the agent supports closing sessions.
+Optional. Omitted or `null` both mean the agent does not advertise support.
+Supplying `\{\}` means the agent supports closing sessions.
 </ResponseField>
 
 <ResponseField name="delete" type={<><span><a href="#sessiondeletecapabilities">SessionDeleteCapabilities</a></span><span> | null</span></>}>
-  Whether the agent supports `session/delete`.
+Whether the agent supports `session/delete`.
 
-  Optional. Omitted or `null` both mean the agent does not advertise support.
-  Supplying `\{\}` means the agent supports deleting sessions from `session/list`.
+Optional. Omitted or `null` both mean the agent does not advertise support.
+Supplying `\{\}` means the agent supports deleting sessions from `session/list`.
 </ResponseField>
 
 <ResponseField name="list" type={<><span><a href="#sessionlistcapabilities">SessionListCapabilities</a></span><span> | null</span></>}>
-  Whether the agent supports `session/list`.
+Whether the agent supports `session/list`.
 
-  Optional. Omitted or `null` both mean the agent does not advertise support.
-  Supplying `\{\}` means the agent supports listing sessions.
+Optional. Omitted or `null` both mean the agent does not advertise support.
+Supplying `\{\}` means the agent supports listing sessions.
 </ResponseField>
 
 <ResponseField name="resume" type={<><span><a href="#sessionresumecapabilities">SessionResumeCapabilities</a></span><span> | null</span></>}>
-  Whether the agent supports `session/resume`.
+Whether the agent supports `session/resume`.
 
-  Optional. Omitted or `null` both mean the agent does not advertise support.
-  Supplying `\{\}` means the agent supports resuming sessions.
+Optional. Omitted or `null` both mean the agent does not advertise support.
+Supplying `\{\}` means the agent supports resuming sessions.
 </ResponseField>
 
 ## <span class="font-mono">SessionCloseCapabilities</span>
@@ -4355,11 +4384,11 @@ Supplying `\{\}` means the agent supports closing sessions.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">SessionConfigBoolean</span>
@@ -4371,7 +4400,7 @@ A boolean on/off toggle session configuration option payload.
 **Properties:**
 
 <ResponseField name="currentValue" type={"boolean"} required>
-  The current value of the boolean option.
+The current value of the boolean option.
 </ResponseField>
 
 ## <span class="font-mono">SessionConfigGroupId</span>
@@ -4395,27 +4424,27 @@ A session configuration option selector and its current state.
 **Shared properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="category" type={<><span><a href="#sessionconfigoptioncategory">SessionConfigOptionCategory</a></span><span> | null</span></>}>
-  Optional semantic category for this option (UX only).
+Optional semantic category for this option (UX only).
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional description for the Client to display to the user.
+Optional description for the Client to display to the user.
 </ResponseField>
 
 <ResponseField name="id" type={<a href="#sessionconfigid">SessionConfigId</a>} required>
-  Unique identifier for the configuration option.
+Unique identifier for the configuration option.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable label for the option.
+Human-readable label for the option.
 </ResponseField>
 
 **Variants:**
@@ -4435,6 +4464,7 @@ A session configuration option selector and its current state.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"select"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4449,6 +4479,7 @@ A session configuration option selector and its current state.
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"boolean"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4495,20 +4526,20 @@ Session configuration option capabilities supported by the client.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="boolean" type={<><span><a href="#booleanconfigoptioncapabilities">BooleanConfigOptionCapabilities</a></span><span> | null</span></>}>
-  Whether the client supports boolean session configuration options.
+Whether the client supports boolean session configuration options.
 
-  Optional. Omitted or `null` both mean the client does not advertise support.
-  Supplying `\{\}` means agents may include `type: "boolean"` entries in
-  `configOptions`, and the client may send `session/set_config_option`
-  requests with `type: "boolean"` and a boolean `value`.
+Optional. Omitted or `null` both mean the client does not advertise support.
+Supplying `\{\}` means agents may include `type: "boolean"` entries in
+`configOptions`, and the client may send `session/set_config_option`
+requests with `type: "boolean"` and a boolean `value`.
 </ResponseField>
 
 ## <span class="font-mono">SessionConfigSelect</span>
@@ -4520,11 +4551,11 @@ A single-value selector (dropdown) session configuration option payload.
 **Properties:**
 
 <ResponseField name="currentValue" type={<a href="#sessionconfigvalueid">SessionConfigValueId</a>} required>
-  The currently selected value.
+The currently selected value.
 </ResponseField>
 
 <ResponseField name="options" type={<a href="#sessionconfigselectoptions">SessionConfigSelectOptions</a>} required>
-  The set of selectable options.
+The set of selectable options.
 </ResponseField>
 
 ## <span class="font-mono">SessionConfigSelectGroup</span>
@@ -4536,23 +4567,23 @@ A group of possible values for a session configuration option.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="group" type={<a href="#sessionconfiggroupid">SessionConfigGroupId</a>} required>
-  Unique identifier for this group.
+Unique identifier for this group.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable label for this group.
+Human-readable label for this group.
 </ResponseField>
 
 <ResponseField name="options" type={<a href="#sessionconfigselectoption">SessionConfigSelectOption[]</a>} required>
-  The set of option values in this group.
+The set of option values in this group.
 </ResponseField>
 
 ## <span class="font-mono">SessionConfigSelectOption</span>
@@ -4564,23 +4595,23 @@ A possible value for a session configuration option.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional description for this option value.
+Optional description for this option value.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable label for this option value.
+Human-readable label for this option value.
 </ResponseField>
 
 <ResponseField name="value" type={<a href="#sessionconfigvalueid">SessionConfigValueId</a>} required>
-  Unique identifier for this option value.
+Unique identifier for this option value.
 </ResponseField>
 
 ## <span class="font-mono">SessionConfigSelectOptions</span>
@@ -4614,11 +4645,11 @@ Supplying `\{\}` means the agent supports deleting sessions from `session/list`.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">SessionId</span>
@@ -4641,35 +4672,35 @@ Information about a session returned by session/list
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="additionalDirectories" type={<><span>"string"</span><span>[]</span></>}>
-  Additional workspace roots reported for this session. Each path must be absolute.
+Additional workspace roots reported for this session. Each path must be absolute.
 
-  When present, this is the complete ordered additional-root list reported
-  by the Agent. Omitted and empty values are equivalent: the response
-  reports no additional roots.
+When present, this is the complete ordered additional-root list reported
+by the Agent. Omitted and empty values are equivalent: the response
+reports no additional roots.
 </ResponseField>
 
 <ResponseField name="cwd" type={"string"} required>
-  The working directory for this session. Must be an absolute path.
+The working directory for this session. Must be an absolute path.
 </ResponseField>
 
 <ResponseField name="sessionId" type={<a href="#sessionid">SessionId</a>} required>
-  Unique identifier for the session
+Unique identifier for the session
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Human-readable title for the session
+Human-readable title for the session
 </ResponseField>
 
 <ResponseField name="updatedAt" type={"string | null"}>
-  ISO 8601 timestamp of last activity
+ISO 8601 timestamp of last activity
 </ResponseField>
 
 ## <span class="font-mono">SessionInfoUpdate</span>
@@ -4684,19 +4715,19 @@ This allows clients to display dynamic session names and track session state cha
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Human-readable title for the session. Set to null to clear.
+Human-readable title for the session. Set to null to clear.
 </ResponseField>
 
 <ResponseField name="updatedAt" type={"string | null"}>
-  ISO 8601 timestamp of last activity. Set to null to clear.
+ISO 8601 timestamp of last activity. Set to null to clear.
 </ResponseField>
 
 ## <span class="font-mono">SessionListCapabilities</span>
@@ -4710,11 +4741,11 @@ Supplying `\{\}` means the agent supports listing sessions.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">SessionMode</span>
@@ -4728,23 +4759,23 @@ See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/s
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Optional human-readable details shown with this protocol object.
+Optional human-readable details shown with this protocol object.
 </ResponseField>
 
 <ResponseField name="id" type={<a href="#sessionmodeid">SessionModeId</a>} required>
-  Stable identifier used to refer to this protocol object in later messages.
+Stable identifier used to refer to this protocol object in later messages.
 </ResponseField>
 
 <ResponseField name="name" type={"string"} required>
-  Human-readable name shown for this protocol object.
+Human-readable name shown for this protocol object.
 </ResponseField>
 
 ## <span class="font-mono">SessionModeId</span>
@@ -4762,19 +4793,19 @@ The set of modes and the one currently active.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="availableModes" type={<a href="#sessionmode">SessionMode[]</a>} required>
-  The set of modes that the Agent can operate in
+The set of modes that the Agent can operate in
 </ResponseField>
 
 <ResponseField name="currentModeId" type={<a href="#sessionmodeid">SessionModeId</a>} required>
-  The current mode the Agent is in.
+The current mode the Agent is in.
 </ResponseField>
 
 ## <span class="font-mono">SessionResumeCapabilities</span>
@@ -4788,11 +4819,11 @@ Supplying `\{\}` means the agent supports resuming sessions.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 ## <span class="font-mono">SessionUpdate</span>
@@ -4831,6 +4862,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"user_message_chunk"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4860,6 +4892,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"agent_message_chunk"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4889,6 +4922,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"agent_thought_chunk"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4941,6 +4975,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="toolCallId" type={<a href="#toolcallid">ToolCallId</a>} required>
       Unique identifier for this tool call within the session.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -4991,6 +5026,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="toolCallId" type={<a href="#toolcallid">ToolCallId</a>} required>
       The ID of the tool call being updated.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5017,6 +5053,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"plan"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5039,13 +5076,14 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"available_commands_update"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="current_mode_update" type="object">
   The current mode of the session has changed
 
-  See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
+See protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/v1/session-modes)
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -5063,6 +5101,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"current_mode_update"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5085,6 +5124,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="sessionUpdate" type={"string"} required>
       The discriminator value. Must be `"config_option_update"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5111,6 +5151,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
     <ResponseField name="updatedAt" type={"string | null"}>
       ISO 8601 timestamp of last activity. Set to null to clear.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5145,6 +5186,7 @@ See protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protoc
 
       * Minimum: `0`
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5178,10 +5220,10 @@ See protocol docs: [Stop Reasons](https://agentclientprotocol.com/protocol/v1/pr
 <ResponseField name="cancelled" type="string">
   The turn was cancelled by the client via `session/cancel`.
 
-  This stop reason MUST be returned when the client sends a `session/cancel`
-  notification, even if the cancellation causes exceptions in underlying operations.
-  Agents should catch these exceptions and return this semantically meaningful
-  response to confirm successful cancellation.
+This stop reason MUST be returned when the client sends a `session/cancel`
+notification, even if the cancellation causes exceptions in underlying operations.
+Agents should catch these exceptions and return this semantically meaningful
+response to confirm successful cancellation.
 </ResponseField>
 
 ## <span class="font-mono">StringFormat</span>
@@ -5215,17 +5257,17 @@ String item schema for multi-select enum properties.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="enum" type={<><span>"string"</span><span>[]</span></>} required>
-  Allowed enum values.
+Allowed enum values.
 </ResponseField>
 
 ## <span class="font-mono">StringPropertySchema</span>
@@ -5240,71 +5282,71 @@ with `"type": "string"`.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="default" type={"string | null"}>
-  Default value.
+Default value.
 
-  Optional. Omitted and `null` are equivalent and mean no default value is provided.
+Optional. Omitted and `null` are equivalent and mean no default value is provided.
 </ResponseField>
 
 <ResponseField name="description" type={"string | null"}>
-  Human-readable description.
+Human-readable description.
 
-  Optional. Omitted and `null` are equivalent and mean no description is provided.
+Optional. Omitted and `null` are equivalent and mean no description is provided.
 </ResponseField>
 
 <ResponseField name="enum" type={<><span><><span>"string"</span><span>[]</span></></span><span> | null</span></>}>
-  Enum values for untitled single-select enums.
-  Optional. Omitted and `null` are equivalent and mean no untitled single-select choices are
-  declared by `enum`.
+Enum values for untitled single-select enums.
+Optional. Omitted and `null` are equivalent and mean no untitled single-select choices are
+declared by `enum`.
 </ResponseField>
 
 <ResponseField name="format" type={<><span><a href="#stringformat">StringFormat</a></span><span> | null</span></>}>
-  String format.
+String format.
 
-  Optional. Omitted and `null` are equivalent and mean there is no format constraint.
+Optional. Omitted and `null` are equivalent and mean there is no format constraint.
 </ResponseField>
 
 <ResponseField name="maxLength" type={"integer | null"}>
-  Maximum string length.
+Maximum string length.
 
-  Optional. Omitted and `null` are equivalent and mean there is no maximum length constraint.
+Optional. Omitted and `null` are equivalent and mean there is no maximum length constraint.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="minLength" type={"integer | null"}>
-  Minimum string length.
+Minimum string length.
 
-  Optional. Omitted and `null` are equivalent and mean there is no minimum length constraint.
+Optional. Omitted and `null` are equivalent and mean there is no minimum length constraint.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="oneOf" type={<><span><a href="#enumoption">EnumOption[]</a></span><span> | null</span></>}>
-  Titled enum options for titled single-select enums.
-  Optional. Omitted and `null` are equivalent and mean no titled single-select choices are
-  declared by `oneOf`.
+Titled enum options for titled single-select enums.
+Optional. Omitted and `null` are equivalent and mean no titled single-select choices are
+declared by `oneOf`.
 </ResponseField>
 
 <ResponseField name="pattern" type={"string | null"}>
-  Pattern the string must match.
+Pattern the string must match.
 
-  Optional. Omitted and `null` are equivalent and mean there is no pattern constraint.
+Optional. Omitted and `null` are equivalent and mean there is no pattern constraint.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Optional title for the property.
+Optional title for the property.
 
-  Optional. Omitted and `null` are equivalent and mean no title is provided.
+Optional. Omitted and `null` are equivalent and mean no title is provided.
 </ResponseField>
 
 ## <span class="font-mono">Terminal</span>
@@ -5320,15 +5362,15 @@ See protocol docs: [Terminal](https://agentclientprotocol.com/protocol/v1/termin
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="terminalId" type={<a href="#terminalid">TerminalId</a>} required>
-  Identifier of the terminal instance to embed in the content stream.
+Identifier of the terminal instance to embed in the content stream.
 </ResponseField>
 
 ## <span class="font-mono">TerminalExitStatus</span>
@@ -5340,21 +5382,21 @@ Exit status of a terminal command.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="exitCode" type={"integer | null"}>
-  The process exit code (may be null if terminated by signal).
+The process exit code (may be null if terminated by signal).
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="signal" type={"string | null"}>
-  The signal that terminated the process (may be null if exited normally).
+The signal that terminated the process (may be null if exited normally).
 </ResponseField>
 
 ## <span class="font-mono">TerminalId</span>
@@ -5372,19 +5414,19 @@ Text provided to or from an LLM.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="annotations" type={<><span><a href="#annotations">Annotations</a></span><span> | null</span></>}>
-  Optional annotations that help clients decide how to display or route this content.
+Optional annotations that help clients decide how to display or route this content.
 </ResponseField>
 
 <ResponseField name="text" type={"string"} required>
-  Text payload carried by this content block.
+Text payload carried by this content block.
 </ResponseField>
 
 ## <span class="font-mono">TextResourceContents</span>
@@ -5396,23 +5438,23 @@ Text-based resource contents.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="mimeType" type={"string | null"}>
-  MIME type describing the encoded media payload.
+MIME type describing the encoded media payload.
 </ResponseField>
 
 <ResponseField name="text" type={"string"} required>
-  Text payload carried by this content block.
+Text payload carried by this content block.
 </ResponseField>
 
 <ResponseField name="uri" type={"string"} required>
-  URI associated with this resource or media payload.
+URI associated with this resource or media payload.
 </ResponseField>
 
 ## <span class="font-mono">TitledMultiSelectItems</span>
@@ -5424,17 +5466,17 @@ Items definition for titled multi-select enum properties.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  Optional. Omitted and `null` are equivalent and mean no metadata.
+Optional. Omitted and `null` are equivalent and mean no metadata.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="anyOf" type={<a href="#enumoption">EnumOption[]</a>} required>
-  Titled enum options.
+Titled enum options.
 </ResponseField>
 
 ## <span class="font-mono">ToolCall</span>
@@ -5451,45 +5493,45 @@ See protocol docs: [Tool Calls](https://agentclientprotocol.com/protocol/v1/tool
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={<a href="#toolcallcontent">ToolCallContent[]</a>}>
-  Content produced by the tool call.
+Content produced by the tool call.
 </ResponseField>
 
 <ResponseField name="kind" type={<a href="#toolkind">ToolKind</a>}>
-  The category of tool being invoked.
-  Helps clients choose appropriate icons and UI treatment.
+The category of tool being invoked.
+Helps clients choose appropriate icons and UI treatment.
 </ResponseField>
 
 <ResponseField name="locations" type={<a href="#toolcalllocation">ToolCallLocation[]</a>}>
-  File locations affected by this tool call.
-  Enables "follow-along" features in clients.
+File locations affected by this tool call.
+Enables "follow-along" features in clients.
 </ResponseField>
 
 <ResponseField name="rawInput" type={"object"}>
-  Raw input parameters sent to the tool.
+Raw input parameters sent to the tool.
 </ResponseField>
 
 <ResponseField name="rawOutput" type={"object"}>
-  Raw output returned by the tool.
+Raw output returned by the tool.
 </ResponseField>
 
 <ResponseField name="status" type={<a href="#toolcallstatus">ToolCallStatus</a>}>
-  Current execution status of the tool call.
+Current execution status of the tool call.
 </ResponseField>
 
 <ResponseField name="title" type={"string"} required>
-  Human-readable title describing what the tool is doing.
+Human-readable title describing what the tool is doing.
 </ResponseField>
 
 <ResponseField name="toolCallId" type={<a href="#toolcallid">ToolCallId</a>} required>
-  Unique identifier for this tool call within the session.
+Unique identifier for this tool call within the session.
 </ResponseField>
 
 ## <span class="font-mono">ToolCallContent</span>
@@ -5522,6 +5564,7 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/tool-ca
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"content"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5552,15 +5595,16 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/tool-ca
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"diff"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
 <ResponseField name="terminal" type="object">
   Embed a terminal created with `terminal/create` by its id.
 
-  The terminal must be added before calling `terminal/release`.
+The terminal must be added before calling `terminal/release`.
 
-  See protocol docs: [Terminal](https://agentclientprotocol.com/protocol/v1/terminals)
+See protocol docs: [Terminal](https://agentclientprotocol.com/protocol/v1/terminals)
 
   <Expandable title="Properties">
     <ResponseField name="_meta" type={"object | null"}>
@@ -5578,6 +5622,7 @@ See protocol docs: [Content](https://agentclientprotocol.com/protocol/v1/tool-ca
     <ResponseField name="type" type={"string"} required>
       The discriminator value. Must be `"terminal"`.
     </ResponseField>
+
   </Expandable>
 </ResponseField>
 
@@ -5601,21 +5646,21 @@ See protocol docs: [Following the Agent](https://agentclientprotocol.com/protoco
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="line" type={"integer | null"}>
-  Optional line number within the file.
+Optional line number within the file.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="path" type={"string"} required>
-  The absolute file path being accessed or modified.
+The absolute file path being accessed or modified.
 </ResponseField>
 
 ## <span class="font-mono">ToolCallStatus</span>
@@ -5659,43 +5704,43 @@ See protocol docs: [Updating](https://agentclientprotocol.com/protocol/v1/tool-c
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="content" type={<><span><a href="#toolcallcontent">ToolCallContent[]</a></span><span> | null</span></>}>
-  Replace the content collection.
+Replace the content collection.
 </ResponseField>
 
 <ResponseField name="kind" type={<><span><a href="#toolkind">ToolKind</a></span><span> | null</span></>}>
-  Update the tool kind.
+Update the tool kind.
 </ResponseField>
 
 <ResponseField name="locations" type={<><span><a href="#toolcalllocation">ToolCallLocation[]</a></span><span> | null</span></>}>
-  Replace the locations collection.
+Replace the locations collection.
 </ResponseField>
 
 <ResponseField name="rawInput" type={"object"}>
-  Update the raw input.
+Update the raw input.
 </ResponseField>
 
 <ResponseField name="rawOutput" type={"object"}>
-  Update the raw output.
+Update the raw output.
 </ResponseField>
 
 <ResponseField name="status" type={<><span><a href="#toolcallstatus">ToolCallStatus</a></span><span> | null</span></>}>
-  Update the execution status.
+Update the execution status.
 </ResponseField>
 
 <ResponseField name="title" type={"string | null"}>
-  Update the human-readable title.
+Update the human-readable title.
 </ResponseField>
 
 <ResponseField name="toolCallId" type={<a href="#toolcallid">ToolCallId</a>} required>
-  The ID of the tool call being updated.
+The ID of the tool call being updated.
 </ResponseField>
 
 ## <span class="font-mono">ToolKind</span>
@@ -5758,15 +5803,15 @@ All text that was typed after the command name is provided as input.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="hint" type={"string"} required>
-  A hint to display when the input hasn't been provided yet
+A hint to display when the input hasn't been provided yet
 </ResponseField>
 
 ## <span class="font-mono">UsageUpdate</span>
@@ -5778,25 +5823,25 @@ Context window and cost update for a session.
 **Properties:**
 
 <ResponseField name="_meta" type={"object | null"}>
-  The \_meta property is reserved by ACP to allow clients and agents to attach additional
-  metadata to their interactions. Implementations MUST NOT make assumptions about values at
-  these keys.
+The \_meta property is reserved by ACP to allow clients and agents to attach additional
+metadata to their interactions. Implementations MUST NOT make assumptions about values at
+these keys.
 
-  See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
+See protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/v1/extensibility)
 </ResponseField>
 
 <ResponseField name="cost" type={<><span><a href="#cost">Cost</a></span><span> | null</span></>}>
-  Cumulative session cost (optional).
+Cumulative session cost (optional).
 </ResponseField>
 
 <ResponseField name="size" type={"uint64"} required>
-  Total context window size in tokens.
+Total context window size in tokens.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>
 
 <ResponseField name="used" type={"uint64"} required>
-  Tokens currently in context.
+Tokens currently in context.
 
-  * Minimum: `0`
+- Minimum: `0`
 </ResponseField>

@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -67,10 +68,10 @@ The `terminal/create` method starts a command in a new terminal:
 <ParamField path="env" type="EnvVariable[]">
   Environment variables for the command.
 
-  Each variable has:
+Each variable has:
 
-  * `name`: The environment variable name
-  * `value`: The environment variable value
+- `name`: The environment variable name
+- `value`: The environment variable value
 </ParamField>
 
 <ParamField path="cwd" type="string">
@@ -81,12 +82,12 @@ The `terminal/create` method starts a command in a new terminal:
   Maximum number of output bytes to retain. Once exceeded, earlier output is
   truncated to stay within this limit.
 
-  When the limit is exceeded, the Client truncates from the beginning of the output
-  to stay within the limit.
+When the limit is exceeded, the Client truncates from the beginning of the output
+to stay within the limit.
 
-  The Client **MUST** ensure truncation happens at a character boundary to maintain valid
-  string output, even if this means the retained output is slightly less than the
-  specified limit.
+The Client **MUST** ensure truncation happens at a character boundary to maintain valid
+string output, even if this means the retained output is slightly less than the
+specified limit.
 </ParamField>
 
 The Client returns a Terminal ID immediately without waiting for completion:
@@ -183,8 +184,8 @@ The Client responds with the current output and exit status (if the command has 
 <ResponseField name="exitStatus" type="TerminalExitStatus">
   Present only if the command has exited. Contains:
 
-  * `exitCode`: The process exit code (may be null)
-  * `signal`: The signal that terminated the process (may be null)
+- `exitCode`: The process exit code (may be null)
+- `signal`: The signal that terminated the process (may be null)
 </ResponseField>
 
 ## Waiting for Exit
@@ -242,8 +243,8 @@ The `terminal/kill` method terminates a command without releasing the terminal:
 
 After killing a command, the terminal remains valid and can be used with:
 
-* `terminal/output` to get the final output
-* `terminal/wait_for_exit` to get the exit status
+- `terminal/output` to get the final output
+- `terminal/wait_for_exit` to get the exit status
 
 The Agent **MUST** still call `terminal/release` when it's done using it.
 
@@ -255,9 +256,9 @@ Agents can implement command timeouts by combining terminal methods:
 2. Start a timer for the desired timeout duration
 3. Concurrently wait for either the timer to expire or `terminal/wait_for_exit` to return
 4. If the timer expires first:
-   * Call `terminal/kill` to terminate the command
-   * Call `terminal/output` to retrieve any final output
-   * Include the output in the response to the model
+   - Call `terminal/kill` to terminate the command
+   - Call `terminal/output` to retrieve any final output
+   - Include the output in the response to the model
 5. Call `terminal/release` when done
 
 ## Releasing Terminals

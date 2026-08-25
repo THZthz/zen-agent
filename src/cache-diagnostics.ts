@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash } from 'node:crypto';
 
 /**
  * Per-turn cache diagnostics, ported from Reasonix's
@@ -11,13 +11,13 @@ import { createHash } from "node:crypto";
 export const CACHE_DIAGNOSTICS_MAX_ENTRIES = 50;
 
 export type CacheMissReason =
-  | "no-miss"
-  | "cold-start"
-  | "system-prompt-changed"
-  | "env-snapshot-changed"
-  | "tool-list-changed"
-  | "tool-schema-or-order-changed"
-  | "unknown";
+  | 'no-miss'
+  | 'cold-start'
+  | 'system-prompt-changed'
+  | 'env-snapshot-changed'
+  | 'tool-list-changed'
+  | 'tool-schema-or-order-changed'
+  | 'unknown';
 
 export interface CacheDiagnosticEntry {
   ts: number;
@@ -67,7 +67,10 @@ export interface CacheDiagnosticInput {
 
 export function stableHash(value: unknown): string {
   const json = JSON.stringify(value);
-  return createHash("sha256").update(json ?? "undefined").digest("hex").slice(0, 16);
+  return createHash('sha256')
+    .update(json ?? 'undefined')
+    .digest('hex')
+    .slice(0, 16);
 }
 
 export function prefixDiagnosticHashes(opts: {
@@ -76,7 +79,7 @@ export function prefixDiagnosticHashes(opts: {
   env: unknown;
 }): PrefixDiagnosticHashes {
   const toolNames = opts.toolSpecs
-    .map((spec) => (spec as { function?: { name?: string } }).function?.name ?? "")
+    .map((spec) => (spec as { function?: { name?: string } }).function?.name ?? '')
     .filter(Boolean);
   return {
     prefixHash: stableHash({ system: opts.system, tools: opts.toolSpecs, env: opts.env }),
@@ -136,20 +139,20 @@ export function inferCacheMissReason(
   missTokens: number,
 ): { reason: CacheMissReason; detail: string } {
   if (missTokens <= 0) {
-    return { reason: "no-miss", detail: "No prompt-side cache miss tokens were reported." };
+    return { reason: 'no-miss', detail: 'No prompt-side cache miss tokens were reported.' };
   }
   if (!previous) {
-    return { reason: "cold-start", detail: "No previous cache evidence exists for this session." };
+    return { reason: 'cold-start', detail: 'No previous cache evidence exists for this session.' };
   }
   if (previous.systemHash !== current.systemHash) {
     return {
-      reason: "system-prompt-changed",
+      reason: 'system-prompt-changed',
       detail: `systemHash ${short(previous.systemHash)} -> ${short(current.systemHash)}`,
     };
   }
   if (previous.envHash !== current.envHash) {
     return {
-      reason: "env-snapshot-changed",
+      reason: 'env-snapshot-changed',
       detail: `envHash ${short(previous.envHash)} -> ${short(current.envHash)}`,
     };
   }
@@ -158,50 +161,51 @@ export function inferCacheMissReason(
     const removed = previous.toolNames.filter((name) => !current.toolNames.includes(name));
     if (added.length > 0 || removed.length > 0 || previous.toolCount !== current.toolCount) {
       const parts: string[] = [];
-      if (added.length > 0) parts.push(`added ${added.join(", ")}`);
-      if (removed.length > 0) parts.push(`removed ${removed.join(", ")}`);
-      if (parts.length === 0) parts.push(`tool count ${previous.toolCount} -> ${current.toolCount}`);
-      return { reason: "tool-list-changed", detail: parts.join("; ") };
+      if (added.length > 0) parts.push(`added ${added.join(', ')}`);
+      if (removed.length > 0) parts.push(`removed ${removed.join(', ')}`);
+      if (parts.length === 0)
+        parts.push(`tool count ${previous.toolCount} -> ${current.toolCount}`);
+      return { reason: 'tool-list-changed', detail: parts.join('; ') };
     }
     return {
-      reason: "tool-schema-or-order-changed",
+      reason: 'tool-schema-or-order-changed',
       detail: `toolSpecsHash ${short(previous.toolSpecsHash)} -> ${short(current.toolSpecsHash)}`,
     };
   }
   if (previous.prefixHash !== current.prefixHash) {
     return {
-      reason: "unknown",
+      reason: 'unknown',
       detail: `prefixHash changed (${short(previous.prefixHash)} -> ${short(current.prefixHash)}) but sub-hashes matched.`,
     };
   }
   return {
-    reason: "unknown",
+    reason: 'unknown',
     detail:
-      "Prefix hashes matched. DeepSeek does not return cache-miss reasons, so this miss is likely provider-side (cache TTL/eviction) or outside the stable prefix.",
+      'Prefix hashes matched. DeepSeek does not return cache-miss reasons, so this miss is likely provider-side (cache TTL/eviction) or outside the stable prefix.',
   };
 }
 
 export function isCacheDiagnosticEntry(value: unknown): value is CacheDiagnosticEntry {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<CacheDiagnosticEntry>;
   return (
-    typeof entry.ts === "number" &&
-    typeof entry.turn === "number" &&
-    typeof entry.model === "string" &&
-    typeof entry.prefixHash === "string" &&
-    typeof entry.systemHash === "string" &&
-    typeof entry.toolSpecsHash === "string" &&
-    typeof entry.envHash === "string" &&
-    typeof entry.toolCount === "number" &&
+    typeof entry.ts === 'number' &&
+    typeof entry.turn === 'number' &&
+    typeof entry.model === 'string' &&
+    typeof entry.prefixHash === 'string' &&
+    typeof entry.systemHash === 'string' &&
+    typeof entry.toolSpecsHash === 'string' &&
+    typeof entry.envHash === 'string' &&
+    typeof entry.toolCount === 'number' &&
     Array.isArray(entry.toolNames) &&
-    entry.toolNames.every((name) => typeof name === "string") &&
-    typeof entry.inputTokens === "number" &&
-    typeof entry.cachedTokens === "number" &&
-    typeof entry.cacheMissTokens === "number" &&
-    typeof entry.cacheHitRate === "number" &&
-    typeof entry.savedCost === "number" &&
-    typeof entry.missReason === "string" &&
-    typeof entry.missReasonDetail === "string"
+    entry.toolNames.every((name) => typeof name === 'string') &&
+    typeof entry.inputTokens === 'number' &&
+    typeof entry.cachedTokens === 'number' &&
+    typeof entry.cacheMissTokens === 'number' &&
+    typeof entry.cacheHitRate === 'number' &&
+    typeof entry.savedCost === 'number' &&
+    typeof entry.missReason === 'string' &&
+    typeof entry.missReasonDetail === 'string'
   );
 }
 
@@ -210,7 +214,10 @@ function cacheHitRate(usage: CacheDiagnosticUsage): number {
   return total > 0 ? usage.cachedTokens / total : 0;
 }
 
-function cacheSavings(cachedTokens: number, pricing: { cacheHitPerM: number; cacheMissPerM: number }): number {
+function cacheSavings(
+  cachedTokens: number,
+  pricing: { cacheHitPerM: number; cacheMissPerM: number },
+): number {
   return (cachedTokens / 1_000_000) * (pricing.cacheMissPerM - pricing.cacheHitPerM);
 }
 

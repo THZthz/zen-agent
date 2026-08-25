@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
-import type { CacheDiagnosticEntry } from "./cache-diagnostics.js";
-import type { TurnStats } from "./turn-stats.js";
+import { randomBytes } from 'node:crypto';
+import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import type { SessionInfo, SessionUpdate } from '@agentclientprotocol/sdk';
+import type { CacheDiagnosticEntry } from './cache-diagnostics.js';
+import type { TurnStats } from './turn-stats.js';
 
 /**
  * One part of a multi-part user message. Media parts carry base64 payloads
@@ -13,9 +13,9 @@ import type { TurnStats } from "./turn-stats.js";
  * `image_url` (data URI) / `input_audio` content parts.
  */
 export type UserContentPart =
-  | { type: "text"; text: string }
+  | { type: 'text'; text: string }
   | {
-      type: "image";
+      type: 'image';
       /** MIME type, e.g. "image/png". */
       mimeType: string;
       /** Base64-encoded payload. */
@@ -27,7 +27,7 @@ export type UserContentPart =
       uri?: string;
     }
   | {
-      type: "audio";
+      type: 'audio';
       /** MIME type, e.g. "audio/wav". */
       mimeType: string;
       /** Base64-encoded payload. */
@@ -41,18 +41,18 @@ export type UserContentPart =
  * content (text + attached media).
  */
 export interface NamedUserMessage {
-  role: "user";
+  role: 'user';
   content: string | UserContentPart[];
   name?: string;
 }
 
 export interface AssistantMessage {
-  role: "assistant";
+  role: 'assistant';
   content: Array<
-    | { type: "text"; text: string }
-    | { type: "reasoning"; text: string }
+    | { type: 'text'; text: string }
+    | { type: 'reasoning'; text: string }
     | {
-        type: "tool-call";
+        type: 'tool-call';
         toolCallId: string;
         toolName: string;
         input: unknown;
@@ -61,9 +61,9 @@ export interface AssistantMessage {
 }
 
 export interface ToolMessage {
-  role: "tool";
+  role: 'tool';
   content: Array<{
-    type: "tool-result";
+    type: 'tool-result';
     toolCallId: string;
     toolName?: string;
     output: unknown;
@@ -78,19 +78,19 @@ export interface ToolMessage {
  */
 export type LlmMessage = NamedUserMessage | AssistantMessage | ToolMessage;
 
-export type ProviderId = "deepseek" | "openrouter";
+export type ProviderId = 'deepseek' | 'openrouter';
 
 /**
  * Model identifier for the active provider, e.g. "deepseek-v4-flash" or
  * "anthropic/claude-sonnet-4" (OpenRouter uses its own model slugs).
  */
 export type ModelId = string;
-export type ThinkingEffort = "off" | "high" | "max";
+export type ThinkingEffort = 'off' | 'high' | 'max';
 
-export const DEFAULT_DEEPSEEK_MODEL: ModelId = "deepseek-v4-flash";
-export const DEFAULT_OPENROUTER_MODEL: ModelId = "openrouter/free";
-export const DEFAULT_PROVIDER: ProviderId = "deepseek";
-export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "off";
+export const DEFAULT_DEEPSEEK_MODEL: ModelId = 'deepseek-v4-flash';
+export const DEFAULT_OPENROUTER_MODEL: ModelId = 'openrouter/free';
+export const DEFAULT_PROVIDER: ProviderId = 'deepseek';
+export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'off';
 
 export interface SessionConfig {
   /**
@@ -213,7 +213,7 @@ interface SessionIndex {
  *   <project>/.sessions/client/<startupTimestamp>_<uuid>/log.jsonl
  */
 export function sessionDirectory(cwd: string): string {
-  return join(cwd, ".sessions");
+  return join(cwd, '.sessions');
 }
 
 /** Per-session root: <project>/.sessions/<sessionId>/ */
@@ -223,17 +223,17 @@ export function sessionRootDirectory(cwd: string, sessionId: string): string {
 
 /** Terminal artifacts for a session: <project>/.sessions/<sessionId>/terminals/ */
 export function terminalDirectory(cwd: string, sessionId: string): string {
-  return join(sessionRootDirectory(cwd, sessionId), "terminals");
+  return join(sessionRootDirectory(cwd, sessionId), 'terminals');
 }
 
 /** Session state: <project>/.sessions/<sessionId>/state.json */
 export function sessionPath(cwd: string, sessionId: string): string {
-  return join(sessionRootDirectory(cwd, sessionId), "state.json");
+  return join(sessionRootDirectory(cwd, sessionId), 'state.json');
 }
 
 /** LLM request/response transcript: <project>/.sessions/<sessionId>/llm.jsonl */
 export function sessionLlmLogPath(cwd: string, sessionId: string): string {
-  return join(sessionRootDirectory(cwd, sessionId), "llm.jsonl");
+  return join(sessionRootDirectory(cwd, sessionId), 'llm.jsonl');
 }
 
 /**
@@ -244,7 +244,7 @@ export function sessionLlmLogPath(cwd: string, sessionId: string): string {
  * log directory, e.g. 2026-08-21-23-06-04_<uuid>.
  */
 export function clientLogPath(cwd: string, startupKey: string): string {
-  return join(sessionDirectory(cwd), "client", startupKey, "log.jsonl");
+  return join(sessionDirectory(cwd), 'client', startupKey, 'log.jsonl');
 }
 
 /**
@@ -252,11 +252,11 @@ export function clientLogPath(cwd: string, startupKey: string): string {
  * <project>/.sessions/client/models.openrouter.json
  */
 export function clientModelsPath(cwd: string): string {
-  return join(sessionDirectory(cwd), "client", "models.openrouter.json");
+  return join(sessionDirectory(cwd), 'client', 'models.openrouter.json');
 }
 
 function generateSessionId(): string {
-  return `sess_${randomBytes(12).toString("hex")}`;
+  return `sess_${randomBytes(12).toString('hex')}`;
 }
 
 async function ensureDirectory(dir: string): Promise<void> {
@@ -272,9 +272,9 @@ async function ensureDirectory(dir: string): Promise<void> {
  */
 async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
   await ensureDirectory(dirname(filePath));
-  const tmp = `${filePath}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  const tmp = `${filePath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   try {
-    await writeFile(tmp, contents, "utf8");
+    await writeFile(tmp, contents, 'utf8');
     await rename(tmp, filePath);
   } catch (error) {
     // Best-effort cleanup so failed writes do not litter the directory.
@@ -284,17 +284,17 @@ async function writeFileAtomic(filePath: string, contents: string): Promise<void
 }
 
 function indexDirectory(): string {
-  const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
-  return join(dataHome, "zen-agent");
+  const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share');
+  return join(dataHome, 'zen-agent');
 }
 
 function indexPath(): string {
-  return join(indexDirectory(), "index.json");
+  return join(indexDirectory(), 'index.json');
 }
 
 async function readIndex(): Promise<SessionIndex> {
   try {
-    const raw = await readFile(indexPath(), "utf8");
+    const raw = await readFile(indexPath(), 'utf8');
     return JSON.parse(raw) as SessionIndex;
   } catch {
     return {};
@@ -339,9 +339,9 @@ export async function createStoredSession(
     llmMessages: [],
     config: {
       provider,
-      model: provider === "openrouter" ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+      model: provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
       thinkingEffort: DEFAULT_THINKING_EFFORT,
-      systemPrompt: "",
+      systemPrompt: '',
       sandbox: false,
     },
     usage: emptySessionUsage(),
@@ -364,14 +364,14 @@ export async function writeSession(session: StoredSession): Promise<void> {
 function defaultConfig(provider: ProviderId = DEFAULT_PROVIDER): SessionConfig {
   return {
     provider,
-    model: provider === "openrouter" ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+    model: provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
     thinkingEffort: DEFAULT_THINKING_EFFORT,
-    systemPrompt: "",
+    systemPrompt: '',
     sandbox: false,
   };
 }
 
-const THINKING_EFFORTS: readonly ThinkingEffort[] = ["off", "high", "max"];
+const THINKING_EFFORTS: readonly ThinkingEffort[] = ['off', 'high', 'max'];
 
 /**
  * Validate a parsed state.json and backfill fields missing from older
@@ -379,16 +379,12 @@ const THINKING_EFFORTS: readonly ThinkingEffort[] = ["off", "high", "max"];
  * default instead of a TypeError deep inside the agent. Unrecoverable shapes
  * (wrong session id / cwd / not an object) throw a clean, actionable error.
  */
-function normalizeStoredSession(
-  parsed: unknown,
-  cwd: string,
-  sessionId: string,
-): StoredSession {
+function normalizeStoredSession(parsed: unknown, cwd: string, sessionId: string): StoredSession {
   const corrupt = (detail: string): Error =>
     new Error(`Session file for ${sessionId} is corrupted: ${detail}`);
 
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw corrupt("not a session object");
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw corrupt('not a session object');
   }
   const raw = parsed as Record<string, unknown>;
 
@@ -401,25 +397,25 @@ function normalizeStoredSession(
 
   // --- config ---
   const rawConfig =
-    typeof raw.config === "object" && raw.config !== null
+    typeof raw.config === 'object' && raw.config !== null
       ? (raw.config as Record<string, unknown>)
       : {};
   // Sessions created before providers existed have no `provider`; they are
   // DeepSeek sessions by definition (the only provider back then).
   const provider: ProviderId =
-    rawConfig.provider === "deepseek" || rawConfig.provider === "openrouter"
+    rawConfig.provider === 'deepseek' || rawConfig.provider === 'openrouter'
       ? rawConfig.provider
       : DEFAULT_PROVIDER;
   const config: SessionConfig = {
     provider,
     model:
-      typeof rawConfig.model === "string" && rawConfig.model.length > 0
+      typeof rawConfig.model === 'string' && rawConfig.model.length > 0
         ? rawConfig.model
         : defaultConfig(provider).model,
     thinkingEffort: THINKING_EFFORTS.includes(rawConfig.thinkingEffort as ThinkingEffort)
       ? (rawConfig.thinkingEffort as ThinkingEffort)
       : DEFAULT_THINKING_EFFORT,
-    systemPrompt: typeof rawConfig.systemPrompt === "string" ? rawConfig.systemPrompt : "",
+    systemPrompt: typeof rawConfig.systemPrompt === 'string' ? rawConfig.systemPrompt : '',
     // Older sessions predate the flag; absent means off.
     sandbox: rawConfig.sandbox === true,
   };
@@ -427,11 +423,11 @@ function normalizeStoredSession(
   // --- usage: keep every known numeric field, default anything else ---
   const emptyUsage = emptySessionUsage();
   const usage: SessionUsage = { ...emptyUsage };
-  if (typeof raw.usage === "object" && raw.usage !== null) {
+  if (typeof raw.usage === 'object' && raw.usage !== null) {
     for (const key of Object.keys(emptyUsage) as Array<keyof SessionUsage>) {
-      if (key === "estimated") continue;
+      if (key === 'estimated') continue;
       const value = (raw.usage as Record<string, unknown>)[key];
-      if (typeof value === "number" && Number.isFinite(value)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
         usage[key] = value as never;
       }
     }
@@ -439,7 +435,7 @@ function normalizeStoredSession(
     // CNY-only era); map it so old sessions keep their accumulated totals.
     const legacyCost = (raw.usage as Record<string, unknown>).costYuan;
     if (
-      typeof legacyCost === "number" &&
+      typeof legacyCost === 'number' &&
       Number.isFinite(legacyCost) &&
       usage.cost === emptyUsage.cost
     ) {
@@ -451,29 +447,26 @@ function normalizeStoredSession(
   return {
     sessionId,
     cwd,
-    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : nowIso,
-    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso,
-    title: typeof raw.title === "string" ? raw.title : null,
-    events: Array.isArray(raw.events) ? (raw.events as StoredSession["events"]) : [],
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowIso,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso,
+    title: typeof raw.title === 'string' ? raw.title : null,
+    events: Array.isArray(raw.events) ? (raw.events as StoredSession['events']) : [],
     llmMessages: Array.isArray(raw.llmMessages)
-      ? (raw.llmMessages as StoredSession["llmMessages"])
+      ? (raw.llmMessages as StoredSession['llmMessages'])
       : [],
     config,
     usage,
-    turnStats: Array.isArray(raw.turnStats) ? (raw.turnStats as StoredSession["turnStats"]) : [],
+    turnStats: Array.isArray(raw.turnStats) ? (raw.turnStats as StoredSession['turnStats']) : [],
     cacheDiagnostics: Array.isArray(raw.cacheDiagnostics)
-      ? (raw.cacheDiagnostics as StoredSession["cacheDiagnostics"])
+      ? (raw.cacheDiagnostics as StoredSession['cacheDiagnostics'])
       : [],
   };
 }
 
-export async function readStoredSession(
-  cwd: string,
-  sessionId: string,
-): Promise<StoredSession> {
+export async function readStoredSession(cwd: string, sessionId: string): Promise<StoredSession> {
   let raw: string;
   try {
-    raw = await readFile(sessionPath(cwd, sessionId), "utf8");
+    raw = await readFile(sessionPath(cwd, sessionId), 'utf8');
   } catch {
     throw new Error(`Session file not found for ${sessionId}`);
   }
@@ -526,10 +519,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
       if (indexed.has(entry)) continue;
       let raw: string;
       try {
-        raw = await readFile(
-          join(sessionDirectory(cwd), entry, "state.json"),
-          "utf8",
-        );
+        raw = await readFile(join(sessionDirectory(cwd), entry, 'state.json'), 'utf8');
       } catch {
         // Not a per-session directory (client/, llm/, logs/, ...).
         continue;
@@ -575,10 +565,7 @@ function byUpdatedAtDesc(a: SessionInfo, b: SessionInfo): number {
   return bt - at;
 }
 
-export async function deleteStoredSession(
-  cwd: string,
-  sessionId: string,
-): Promise<void> {
+export async function deleteStoredSession(cwd: string, sessionId: string): Promise<void> {
   // Remove the whole per-session tree: state.json plus the terminal
   // artifacts (input-*.sh / output-*.log) and llm.jsonl that would otherwise
   // be orphaned forever (the index forgets the cwd right after).

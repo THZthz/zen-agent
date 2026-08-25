@@ -1,6 +1,6 @@
-import { readFile, stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
-import { maxMediaBytes } from "./media-limit.js";
+import { readFile, stat } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
+import { maxMediaBytes } from './media-limit.js';
 
 /**
  * The model-facing read_media tool: turns a local file path into an actual
@@ -10,21 +10,21 @@ import { maxMediaBytes } from "./media-limit.js";
  */
 
 /** Extensions accepted by read_media, mapped to their MIME type. */
-const MEDIA_MIME_TYPES: Record<string, { mimeType: string; modality: "image" | "audio" }> = {
-  png: { mimeType: "image/png", modality: "image" },
-  jpg: { mimeType: "image/jpeg", modality: "image" },
-  jpeg: { mimeType: "image/jpeg", modality: "image" },
-  webp: { mimeType: "image/webp", modality: "image" },
-  gif: { mimeType: "image/gif", modality: "image" },
-  bmp: { mimeType: "image/bmp", modality: "image" },
-  wav: { mimeType: "audio/wav", modality: "audio" },
-  mp3: { mimeType: "audio/mpeg", modality: "audio" },
+const MEDIA_MIME_TYPES: Record<string, { mimeType: string; modality: 'image' | 'audio' }> = {
+  png: { mimeType: 'image/png', modality: 'image' },
+  jpg: { mimeType: 'image/jpeg', modality: 'image' },
+  jpeg: { mimeType: 'image/jpeg', modality: 'image' },
+  webp: { mimeType: 'image/webp', modality: 'image' },
+  gif: { mimeType: 'image/gif', modality: 'image' },
+  bmp: { mimeType: 'image/bmp', modality: 'image' },
+  wav: { mimeType: 'audio/wav', modality: 'audio' },
+  mp3: { mimeType: 'audio/mpeg', modality: 'audio' },
 };
 
 export interface ResolvedMedia {
   /** Absolute path as shown to the model/user. */
   path: string;
-  modality: "image" | "audio";
+  modality: 'image' | 'audio';
   mimeType: string;
   /** Base64-encoded file contents. */
   data: string;
@@ -35,18 +35,18 @@ export interface ResolvedMedia {
 export async function resolveMedia(
   cwd: string,
   rawPath: string,
-  allowedModalities: ReadonlyArray<"image" | "audio">,
+  allowedModalities: ReadonlyArray<'image' | 'audio'>,
 ): Promise<ResolvedMedia> {
   const trimmed = rawPath.trim();
   if (trimmed.length === 0) {
-    throw new Error("path must be a non-empty string");
+    throw new Error('path must be a non-empty string');
   }
   const absolute = isAbsolute(trimmed) ? trimmed : join(cwd, trimmed);
-  const extension = absolute.split(".").pop()?.toLowerCase() ?? "";
+  const extension = absolute.split('.').pop()?.toLowerCase() ?? '';
   const meta = MEDIA_MIME_TYPES[extension];
   if (!meta) {
     throw new Error(
-      `unsupported media type ".${extension}" (expected one of ${Object.keys(MEDIA_MIME_TYPES).join(", ")})`,
+      `unsupported media type ".${extension}" (expected one of ${Object.keys(MEDIA_MIME_TYPES).join(', ')})`,
     );
   }
   if (!allowedModalities.includes(meta.modality)) {
@@ -68,7 +68,7 @@ export async function resolveMedia(
     path: absolute,
     modality: meta.modality,
     mimeType: meta.mimeType,
-    data: data.toString("base64"),
+    data: data.toString('base64'),
     decodedBytes: data.length,
   };
 }

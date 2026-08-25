@@ -15,29 +15,29 @@ Two OpenAI-compatible chat completions providers are supported, chosen **per ses
 
 ### 2.2 Agent-Implemented Methods
 
-| Method | Description |
-| --- | --- |
-| `initialize` | Negotiate protocol version and capabilities. |
-| `authenticate` | No-op; returns `{}`. |
-| `session/new` | Create a persistent session under `<cwd>/.sessions/` and freeze the environment message. |
-| `session/load` | Load a stored session and replay its events. |
-| `session/list` | List stored sessions (by `cwd`, or the global index). |
-| `session/resume` | Load without replaying history. |
-| `session/delete` | Delete a stored session. |
-| `session/close` | Hard-abort active work and drop the session from memory. |
+| Method                      | Description                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| `initialize`                | Negotiate protocol version and capabilities.                                                     |
+| `authenticate`              | No-op; returns `{}`.                                                                             |
+| `session/new`               | Create a persistent session under `<cwd>/.sessions/` and freeze the environment message.         |
+| `session/load`              | Load a stored session and replay its events.                                                     |
+| `session/list`              | List stored sessions (by `cwd`, or the global index).                                            |
+| `session/resume`            | Load without replaying history.                                                                  |
+| `session/delete`            | Delete a stored session.                                                                         |
+| `session/close`             | Hard-abort active work and drop the session from memory.                                         |
 | `session/set_config_option` | Change `provider` / `model` / `thinking_effort` (locked after the first user message, see §3.1). |
-| `session/prompt` | Run a full agent turn. |
-| `session/cancel` | Request a graceful stop of the active turn (§4.1). |
+| `session/prompt`            | Run a full agent turn.                                                                           |
+| `session/cancel`            | Request a graceful stop of the active turn (§4.1).                                               |
 
 `initialize` response: `protocolVersion: 1`; `agentCapabilities.loadSession: true` with `sessionCapabilities: { list, delete, resume, close }`; `agentCapabilities.promptCapabilities: { image: true, audio: true }` (Zed gates paste / drag & drop / @-mention of images on this; embeddedContext stays off); `agentInfo` (name `zen-agent`, title `Zen Agent`, version `0.1.0`); `authMethods: []`.
 
 ### 2.3 Client-Implemented Methods Used
 
-| Method | When |
-| --- | --- |
-| `session/update` | Text/thought chunks, tool calls, usage updates, available commands. |
-| `terminal/*` | `create`, `wait_for_exit`, `output`, `release`, `kill` for bash execution. |
-| `session/request_permission` | Never (approval policy `never`). |
+| Method                       | When                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| `session/update`             | Text/thought chunks, tool calls, usage updates, available commands.        |
+| `terminal/*`                 | `create`, `wait_for_exit`, `output`, `release`, `kill` for bash execution. |
+| `session/request_permission` | Never (approval policy `never`).                                           |
 
 ## 3. Sessions & Storage
 
@@ -57,16 +57,16 @@ Layout under the project's `.sessions/` directory:
 
 - **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
 - **`session/load`** replays persisted events through `prepareReplayEvents` (see §5.2) and returns the current `configOptions`; **`session/resume`** loads without replay.
-- On load/resume, a fresh environment *continuation* message is appended at the **end** of the conversation (the cached prefix is untouched).
+- On load/resume, a fresh environment _continuation_ message is appended at the **end** of the conversation (the cached prefix is untouched).
 - Sessions created before the `provider` field existed default to `deepseek`.
 
 ### 3.1 Config Options
 
-| Option | Values |
-| --- | --- |
-| `provider` | `deepseek`, `openrouter` — switching resets `model` to the provider default |
-| `model` | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug via `set_config_option`) |
-| `thinking_effort` | `off`, `high`, `max` |
+| Option            | Values                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `provider`        | `deepseek`, `openrouter` — switching resets `model` to the provider default                                         |
+| `model`           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug via `set_config_option`) |
+| `thinking_effort` | `off`, `high`, `max`                                                                                                |
 
 `provider`, `model` and `thinking_effort` are **locked once the conversation contains a user message** (environment messages don't count): `session/set_config_option` then rejects the change with an error. Sessions default to `deepseek`.
 
@@ -145,36 +145,36 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 ### 6.2 DeepSeek (`src/deepseek.ts`, default)
 
-| Env | Default | Purpose |
-| --- | --- | --- |
-| `DEEPSEEK_API_KEY` | — | API key (required). |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Base URL. |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Fallback model. |
-| `DEEPSEEK_CONTEXT_WINDOW` | `1_000_000` | Context size for `usage_update`. |
-| `DEEPSEEK_PRICE_*_CNY_PER_MTOK` | rate table | Per-rate price overrides. |
+| Env                             | Default                    | Purpose                          |
+| ------------------------------- | -------------------------- | -------------------------------- |
+| `DEEPSEEK_API_KEY`              | —                          | API key (required).              |
+| `DEEPSEEK_BASE_URL`             | `https://api.deepseek.com` | Base URL.                        |
+| `DEEPSEEK_MODEL`                | `deepseek-v4-flash`        | Fallback model.                  |
+| `DEEPSEEK_CONTEXT_WINDOW`       | `1_000_000`                | Context size for `usage_update`. |
+| `DEEPSEEK_PRICE_*_CNY_PER_MTOK` | rate table                 | Per-rate price overrides.        |
 
 - Reasoning streams as `delta.reasoning_content`; stored reasoning is echoed back as `reasoning_content` in assistant history (only alongside tool calls).
 - Usage parsed from the raw chunk: `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`.
 - `thinking_effort` maps directly to `reasoning_effort` (`off` omits the field).
 - Cost: static CNY rate table with Beijing peak/off-peak windows (peak 09:00-12:00 and 14:00-18:00; off-peak = half), CNY per 1M tokens:
 
-| Model | Period | Cache hit in | Cache miss in | Output |
-| --- | --- | --- | --- | --- |
-| `deepseek-v4-flash` | Peak | ¥0.10 | ¥3.00 | ¥9.00 |
-| `deepseek-v4-flash` | Off-peak | ¥0.05 | ¥1.50 | ¥4.50 |
-| `deepseek-v4-pro` | Peak | ¥0.30 | ¥9.00 | ¥27.00 |
-| `deepseek-v4-pro` | Off-peak | ¥0.15 | ¥4.50 | ¥13.50 |
+| Model               | Period   | Cache hit in | Cache miss in | Output |
+| ------------------- | -------- | ------------ | ------------- | ------ |
+| `deepseek-v4-flash` | Peak     | ¥0.10        | ¥3.00         | ¥9.00  |
+| `deepseek-v4-flash` | Off-peak | ¥0.05        | ¥1.50         | ¥4.50  |
+| `deepseek-v4-pro`   | Peak     | ¥0.30        | ¥9.00         | ¥27.00 |
+| `deepseek-v4-pro`   | Off-peak | ¥0.15        | ¥4.50         | ¥13.50 |
 
 - Balance verification: `GET /user/balance` (`fetchDeepSeekBalance`).
 
 ### 6.3 OpenRouter (`src/openrouter.ts`)
 
-| Env | Default | Purpose |
-| --- | --- | --- |
-| `OPENROUTER_API_KEY` | — | API key (required). |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL. |
-| `OPENROUTER_MODEL` | `openrouter/free` | Fallback model slug. |
-| `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` | — | `HTTP-Referer` / `X-Title` headers. |
+| Env                                           | Default                        | Purpose                             |
+| --------------------------------------------- | ------------------------------ | ----------------------------------- |
+| `OPENROUTER_API_KEY`                          | —                              | API key (required).                 |
+| `OPENROUTER_BASE_URL`                         | `https://openrouter.ai/api/v1` | Base URL.                           |
+| `OPENROUTER_MODEL`                            | `openrouter/free`              | Fallback model slug.                |
+| `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` | —                              | `HTTP-Referer` / `X-Title` headers. |
 
 - Reasoning streams as `delta.reasoning` (with `reasoning_content` accepted as passthrough for DeepSeek routes); stored reasoning is echoed back as `reasoning`.
 - Sends `stream_options: { include_usage: true }` (OpenRouter omits usage otherwise). `parseOpenRouterUsage` reads generic `prompt_tokens`/`completion_tokens` plus optional passthrough cache (`prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`) and reasoning fields.
@@ -198,10 +198,10 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 After `session/new`/`load`/`resume`, an `available_commands_update` notification advertises:
 
-| Command | Behavior |
-| --- | --- |
-| `prompt` | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model. |
-| `sandbox` | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`. |
+| Command        | Behavior                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model.                                                                                                             |
+| `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                      |
 | `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`. |
 
 Unknown commands reply `Unknown slash command` and return `end_turn`.

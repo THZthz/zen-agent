@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -93,7 +94,7 @@ The turn begins when the Client sends a `session/prompt`:
 <ParamField path="prompt" type="ContentBlock[]">
   The contents of the user message, e.g. text, images, files, etc.
 
-  Clients **MUST** restrict types of content according to the [Prompt Capabilities](/protocol/v1/initialization#prompt-capabilities) established during [initialization](/protocol/v1/initialization).
+Clients **MUST** restrict types of content according to the [Prompt Capabilities](/protocol/v1/initialization#prompt-capabilities) established during [initialization](/protocol/v1/initialization).
 
   <Card icon="comments" horizontal href="/protocol/v1/content">
     Learn more about Content
@@ -337,15 +338,15 @@ After all ongoing operations have been successfully aborted and pending updates 
 <Warning>
   API client libraries and tools often throw an exception when their operation is aborted, which may propagate as an error response to `session/prompt`.
 
-  Clients often display unrecognized errors from the Agent to the user, which would be undesirable for cancellations as they aren't considered errors.
+Clients often display unrecognized errors from the Agent to the user, which would be undesirable for cancellations as they aren't considered errors.
 
-  Agents **MUST** catch these errors and return the semantically meaningful `cancelled` stop reason, so that Clients can reliably confirm the cancellation.
+Agents **MUST** catch these errors and return the semantically meaningful `cancelled` stop reason, so that Clients can reliably confirm the cancellation.
 </Warning>
 
 The Agent **MAY** send `session/update` notifications with content or tool call updates after receiving the `session/cancel` notification, but it **MUST** ensure that it does so before responding to the `session/prompt` request.
 
 The Client **SHOULD** still accept tool call updates received after sending `session/cancel`.
 
-***
+---
 
 Once a prompt turn completes, the Client may send another `session/prompt` to continue the conversation, building on the context established in previous turns.

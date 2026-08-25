@@ -56,7 +56,7 @@ export async function fetchWithRetry(
       // Drain the body so the connection can be reused on the next attempt.
       await resp.text().catch(() => undefined);
 
-      const waitMs = computeWait(attempt, initial, cap, resp.headers.get("Retry-After"));
+      const waitMs = computeWait(attempt, initial, cap, resp.headers.get('Retry-After'));
       opts.onRetry?.({ attempt: attempt + 1, reason: `http ${resp.status}`, waitMs });
       await sleep(waitMs, opts.signal);
     } catch (err) {
@@ -70,7 +70,7 @@ export async function fetchWithRetry(
     }
   }
 
-  throw new Error("fetchWithRetry: loop exited unexpectedly");
+  throw new Error('fetchWithRetry: loop exited unexpectedly');
 }
 
 function computeWait(
@@ -106,24 +106,24 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     };
     const timer = setTimeout(() => {
       // Normal resolution must not leak the abort listener.
-      signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
     if (signal) {
       if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
+      else signal.addEventListener('abort', onAbort, { once: true });
     }
   });
 }
 
 /** Preserve the abort reason (e.g. a timeout error) instead of masking it with "aborted". */
 function abortError(signal: AbortSignal): Error {
-  return signal.reason instanceof Error ? signal.reason : new Error("aborted");
+  return signal.reason instanceof Error ? signal.reason : new Error('aborted');
 }
 
 function isAbortError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  return (err as { name?: unknown }).name === "AbortError";
+  if (!err || typeof err !== 'object') return false;
+  return (err as { name?: unknown }).name === 'AbortError';
 }
 
 function messageOf(err: unknown): string {
@@ -131,6 +131,6 @@ function messageOf(err: unknown): string {
   try {
     return String(err);
   } catch {
-    return "unknown error";
+    return 'unknown error';
   }
 }

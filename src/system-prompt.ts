@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { sessionDirectory, type LlmMessage, type StoredSession } from "./storage.js";
-import { buildSkillsSection, listSkills } from "./skills.js";
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { sessionDirectory, type LlmMessage, type StoredSession } from './storage.js';
+import { buildSkillsSection, listSkills } from './skills.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,15 +20,11 @@ When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use 
  * deliberately different from the human's name (the git user name) so the
  * model can tell the two apart.
  */
-export const ENVIRONMENT_MESSAGE_NAME = "Environment";
+export const ENVIRONMENT_MESSAGE_NAME = 'Environment';
 
 /** True for the auto-generated environment/continuation user messages. */
 export function isEnvironmentMessage(message: LlmMessage): boolean {
-  return (
-    message.role === "user" &&
-    "name" in message &&
-    message.name === ENVIRONMENT_MESSAGE_NAME
-  );
+  return message.role === 'user' && 'name' in message && message.name === ENVIRONMENT_MESSAGE_NAME;
 }
 
 /**
@@ -47,10 +43,7 @@ export const MEDIA_GUIDANCE = `Media handling:
  *
  * `options.media` appends the media-handling guidance for multimodal models.
  */
-export function buildSystemPrompt(
-  session: StoredSession,
-  options?: { media?: boolean },
-): string {
+export function buildSystemPrompt(session: StoredSession, options?: { media?: boolean }): string {
   const base = session.config.systemPrompt || SYSTEM_PROMPT;
   return options?.media ? `${base}\n\n${MEDIA_GUIDANCE}` : base;
 }
@@ -63,12 +56,10 @@ export function buildSystemPrompt(
  * submodule handling). The git part is best-effort: when `cwd` is not a git
  * repository (or git is unavailable), the git lines are omitted.
  */
-export async function buildEnvironmentMessage(
-  session: StoredSession,
-): Promise<string> {
+export async function buildEnvironmentMessage(session: StoredSession): Promise<string> {
   const lines = [
-    "<environment>",
-    "<session-state>fresh-started</session-state>",
+    '<environment>',
+    '<session-state>fresh-started</session-state>',
     `<session-transcript>${sessionDirectory(session.cwd)}</session-transcript>`,
     `<working-directory>${session.cwd}</working-directory>`,
     `<current-time>${session.createdAt}</current-time>`,
@@ -77,31 +68,29 @@ export async function buildEnvironmentMessage(
   if (git) {
     lines.push(...git);
     lines.push(
-      "<git-remainder>",
-      "> Follow Conventional Commits; keep the commit message body concise.",
-      "> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.",
+      '<git-remainder>',
+      '> Follow Conventional Commits; keep the commit message body concise.',
+      '> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.',
     );
     const submodules = await readSubmodulePaths(session.cwd);
     if (submodules.length > 0) {
-      lines.push(
-        `> This project contains git submodules: ${submodules.join(", ")}.`,
-      );
+      lines.push(`> This project contains git submodules: ${submodules.join(', ')}.`);
     }
-    lines.push("</git-remainder>");
+    lines.push('</git-remainder>');
   }
   // Skills are opt-in and frozen at session creation: with
   // ZEN_AGENT_SHOW_SKILLS_CATALOG=1 the catalog (and everything else in this
   // message) stays byte-identical for DeepSeek's prefix cache, and skills
   // installed after session creation are picked up by the next session. By
   // default Zen Agent stays minimal and passes no skill information at all.
-  if (process.env.ZEN_AGENT_SHOW_SKILLS_CATALOG === "1") {
+  if (process.env.ZEN_AGENT_SHOW_SKILLS_CATALOG === '1') {
     const skills = await listSkills(session.cwd);
     if (skills.length > 0) {
-      lines.push("", buildSkillsSection(skills));
+      lines.push('', buildSkillsSection(skills));
     }
   }
-  lines.push("</environment>");
-  return lines.join("\n");
+  lines.push('</environment>');
+  return lines.join('\n');
 }
 
 /**
@@ -112,20 +101,18 @@ export async function buildEnvironmentMessage(
  * cache hit ratio intact across restarts. The model sees a fresh snapshot of
  * the environment (now, git state) and knows the session was continued.
  */
-export async function buildSessionContinuedMessage(
-  session: StoredSession,
-): Promise<string> {
+export async function buildSessionContinuedMessage(session: StoredSession): Promise<string> {
   const lines = [
-    "<environment>",
-    "<session-state>resumed</session-state>",
+    '<environment>',
+    '<session-state>resumed</session-state>',
     `<current-time>${new Date().toISOString()}</current-time>`,
   ];
   const git = await readSimpleGitInfo(session.cwd);
   if (git) {
     lines.push(...git);
   }
-  lines.push("</environment>");
-  return lines.join("\n");
+  lines.push('</environment>');
+  return lines.join('\n');
 }
 
 /**
@@ -135,11 +122,11 @@ export async function buildSessionContinuedMessage(
  */
 export async function getUserMessageName(cwd: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["config", "--get", "user.name"],
-      { cwd, timeout: GIT_TIMEOUT_MS, encoding: "utf8" },
-    );
+    const { stdout } = await execFileAsync('git', ['config', '--get', 'user.name'], {
+      cwd,
+      timeout: GIT_TIMEOUT_MS,
+      encoding: 'utf8',
+    });
     const sanitized = sanitizeMessageName(stdout.trim());
     if (sanitized.length > 0) {
       return sanitized;
@@ -147,23 +134,17 @@ export async function getUserMessageName(cwd: string): Promise<string> {
   } catch {
     // git missing, not configured, or not a repository — fall through.
   }
-  return "User";
+  return 'User';
 }
 
 /** Returns git lines, or null when cwd is not a git repository. */
 async function readSimpleGitInfo(cwd: string): Promise<string[] | null> {
   try {
-    const branch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
-    const status = await runGit(["status", "--porcelain"], cwd);
-    const changed = status.length > 0 ? status.split("\n").length : 0;
-    const state =
-      changed === 0
-        ? "clean"
-        : `${changed} changed file${changed === 1 ? "" : "s"}`;
-    return [
-      `<git-branch>${branch}</git-branch>`,
-      `<git-status>${state}</git-status>`,
-    ];
+    const branch = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    const status = await runGit(['status', '--porcelain'], cwd);
+    const changed = status.length > 0 ? status.split('\n').length : 0;
+    const state = changed === 0 ? 'clean' : `${changed} changed file${changed === 1 ? '' : 's'}`;
+    return [`<git-branch>${branch}</git-branch>`, `<git-status>${state}</git-status>`];
   } catch {
     return null;
   }
@@ -176,13 +157,13 @@ async function readSimpleGitInfo(cwd: string): Promise<string[] | null> {
  */
 async function readSubmodulePaths(cwd: string): Promise<string[]> {
   try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["submodule", "status"],
-      { cwd, timeout: GIT_TIMEOUT_MS, encoding: "utf8" },
-    );
+    const { stdout } = await execFileAsync('git', ['submodule', 'status'], {
+      cwd,
+      timeout: GIT_TIMEOUT_MS,
+      encoding: 'utf8',
+    });
     return stdout
-      .split("\n")
+      .split('\n')
       .map((line) => line.trim().split(/\s+/)[1])
       .filter((path): path is string => Boolean(path));
   } catch {
@@ -191,15 +172,15 @@ async function readSubmodulePaths(cwd: string): Promise<string[]> {
 }
 
 async function runGit(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
+  const { stdout } = await execFileAsync('git', args, {
     cwd,
     timeout: GIT_TIMEOUT_MS,
-    encoding: "utf8",
+    encoding: 'utf8',
   });
   return stdout.trim();
 }
 
 /** Keep only characters OpenAI accepts in message `name` fields. */
 function sanitizeMessageName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }

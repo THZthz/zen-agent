@@ -1,53 +1,49 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   fetchBalanceSnapshot,
   getContextWindowTokens,
   getDefaultModel,
   getModelPricing,
   runLlmStep,
-} from "./provider.js";
-import { DEFAULT_OPENROUTER_MODEL } from "./openrouter.js";
-import { resetOpenRouterModelsCache } from "./openrouter.js";
+} from './provider.js';
+import { DEFAULT_OPENROUTER_MODEL } from './openrouter.js';
+import { resetOpenRouterModelsCache } from './openrouter.js';
 
-describe("runLlmStep", () => {
+describe('runLlmStep', () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
     process.env = { ...originalEnv };
   });
 
-  it("dispatches to the requested provider (key checks prove routing)", async () => {
+  it('dispatches to the requested provider (key checks prove routing)', async () => {
     delete process.env.DEEPSEEK_API_KEY;
-    await expect(runLlmStep("deepseek", { messages: [] })).rejects.toThrow(
-      /DEEPSEEK_API_KEY/,
-    );
+    await expect(runLlmStep('deepseek', { messages: [] })).rejects.toThrow(/DEEPSEEK_API_KEY/);
     delete process.env.OPENROUTER_API_KEY;
-    await expect(runLlmStep("openrouter", { messages: [] })).rejects.toThrow(
-      /OPENROUTER_API_KEY/,
-    );
+    await expect(runLlmStep('openrouter', { messages: [] })).rejects.toThrow(/OPENROUTER_API_KEY/);
   });
 });
 
-describe("getDefaultModel", () => {
+describe('getDefaultModel', () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
     process.env = { ...originalEnv };
   });
 
-  it("returns the DeepSeek fallback", () => {
-    expect(getDefaultModel("deepseek")).toBe("deepseek-v4-flash");
+  it('returns the DeepSeek fallback', () => {
+    expect(getDefaultModel('deepseek')).toBe('deepseek-v4-flash');
   });
 
-  it("returns OPENROUTER_MODEL when set, else the curated default", () => {
+  it('returns OPENROUTER_MODEL when set, else the curated default', () => {
     delete process.env.OPENROUTER_MODEL;
-    expect(getDefaultModel("openrouter")).toBe(DEFAULT_OPENROUTER_MODEL);
-    process.env.OPENROUTER_MODEL = "openai/gpt-5";
-    expect(getDefaultModel("openrouter")).toBe("openai/gpt-5");
+    expect(getDefaultModel('openrouter')).toBe(DEFAULT_OPENROUTER_MODEL);
+    process.env.OPENROUTER_MODEL = 'openai/gpt-5';
+    expect(getDefaultModel('openrouter')).toBe('openai/gpt-5');
   });
 });
 
-describe("getModelPricing", () => {
+describe('getModelPricing', () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
@@ -55,24 +51,24 @@ describe("getModelPricing", () => {
     resetOpenRouterModelsCache();
   });
 
-  it("returns CNY DeepSeek pricing (off-peak flash)", async () => {
+  it('returns CNY DeepSeek pricing (off-peak flash)', async () => {
     // 2026-08-19 04:00 UTC = 12:00 Beijing = off-peak.
     const offPeak = new Date(Date.UTC(2026, 7, 19, 4));
-    const pricing = await getModelPricing("deepseek", "deepseek-v4-flash", offPeak);
+    const pricing = await getModelPricing('deepseek', 'deepseek-v4-flash', offPeak);
     expect(pricing).toEqual({
-      currency: "CNY",
+      currency: 'CNY',
       cacheHitPerM: 0.05,
       cacheMissPerM: 1.5,
       outputPerM: 4.5,
     });
   });
 
-  it("returns USD OpenRouter pricing from the fallback table without network", async () => {
+  it('returns USD OpenRouter pricing from the fallback table without network', async () => {
     delete process.env.OPENROUTER_API_KEY;
-    const pricing = await getModelPricing("openrouter", "openrouter/free");
+    const pricing = await getModelPricing('openrouter', 'openrouter/free');
     // openrouter/free routes to free models: billed at $0.
     expect(pricing).toEqual({
-      currency: "USD",
+      currency: 'USD',
       cacheHitPerM: 0,
       cacheMissPerM: 0,
       outputPerM: 0,
@@ -80,7 +76,7 @@ describe("getModelPricing", () => {
   });
 });
 
-describe("getContextWindowTokens", () => {
+describe('getContextWindowTokens', () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
@@ -88,18 +84,18 @@ describe("getContextWindowTokens", () => {
     resetOpenRouterModelsCache();
   });
 
-  it("uses DEEPSEEK_CONTEXT_WINDOW for deepseek", async () => {
-    process.env.DEEPSEEK_CONTEXT_WINDOW = "123456";
-    expect(await getContextWindowTokens("deepseek", "deepseek-v4-flash")).toBe(123456);
+  it('uses DEEPSEEK_CONTEXT_WINDOW for deepseek', async () => {
+    process.env.DEEPSEEK_CONTEXT_WINDOW = '123456';
+    expect(await getContextWindowTokens('deepseek', 'deepseek-v4-flash')).toBe(123456);
   });
 
   it("uses the model's context length for openrouter", async () => {
     delete process.env.OPENROUTER_API_KEY;
-    expect(await getContextWindowTokens("openrouter", "openrouter/free")).toBe(128_000);
+    expect(await getContextWindowTokens('openrouter', 'openrouter/free')).toBe(128_000);
   });
 });
 
-describe("fetchBalanceSnapshot", () => {
+describe('fetchBalanceSnapshot', () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
@@ -108,10 +104,8 @@ describe("fetchBalanceSnapshot", () => {
 
   it("throws with a provider hint when the provider's key is missing", async () => {
     delete process.env.DEEPSEEK_API_KEY;
-    await expect(fetchBalanceSnapshot("deepseek")).rejects.toThrow(/DEEPSEEK_API_KEY/);
+    await expect(fetchBalanceSnapshot('deepseek')).rejects.toThrow(/DEEPSEEK_API_KEY/);
     delete process.env.OPENROUTER_API_KEY;
-    await expect(fetchBalanceSnapshot("openrouter")).rejects.toThrow(
-      /OPENROUTER_API_KEY/,
-    );
+    await expect(fetchBalanceSnapshot('openrouter')).rejects.toThrow(/OPENROUTER_API_KEY/);
   });
 });

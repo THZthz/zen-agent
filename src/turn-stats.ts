@@ -63,7 +63,7 @@ export function cacheHitPercent(stats: {
 }): string {
   const total = stats.cacheReadTokens + stats.cacheMissTokens;
   if (total === 0) {
-    return "n/a";
+    return 'n/a';
   }
   const percent = (stats.cacheReadTokens / total) * 100;
   return `${percent.toFixed(2)}%`;
@@ -74,5 +74,5 @@ export function showTurnStats(): boolean {
   if (raw === undefined) {
     return true;
   }
-  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+  return !['0', 'false', 'no', 'off'].includes(raw.trim().toLowerCase());
 }

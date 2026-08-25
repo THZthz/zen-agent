@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -26,8 +27,8 @@ sequenceDiagram
 
 Before a Session can be created, Clients **MUST** initialize the connection by calling the `initialize` method with:
 
-* The latest [protocol version](#protocol-version) supported
-* The [capabilities](#client-capabilities) supported
+- The latest [protocol version](#protocol-version) supported
+- The [capabilities](#client-capabilities) supported
 
 They **SHOULD** also provide a name and version to the Agent.
 
@@ -174,8 +175,8 @@ The Client **SHOULD** specify whether it supports the following capabilities:
 The Agent **SHOULD** specify whether it supports the following capabilities:
 
 <ResponseField name="loadSession" type="boolean" post={["default: false"]}>
-  The [`session/load`](/protocol/v1/session-setup#loading-sessions) method is
-  available.
+The [`session/load`](/protocol/v1/session-setup#loading-sessions) method is
+available.
 </ResponseField>
 
 <ResponseField name="promptCapabilities" type="PromptCapabilities Object">
@@ -194,27 +195,27 @@ As a baseline, all Agents **MUST** support `ContentBlock::Text` and `ContentBloc
 Optionally, they **MAY** support richer types of [content](/protocol/v1/content) by specifying the following capabilities:
 
 <ResponseField name="image" type="boolean" post={["default: false"]}>
-  The prompt may include `ContentBlock::Image`
+The prompt may include `ContentBlock::Image`
 </ResponseField>
 
 <ResponseField name="audio" type="boolean" post={["default: false"]}>
-  The prompt may include `ContentBlock::Audio`
+The prompt may include `ContentBlock::Audio`
 </ResponseField>
 
 <ResponseField name="embeddedContext" type="boolean" post={["default: false"]}>
-  The prompt may include `ContentBlock::Resource`
+The prompt may include `ContentBlock::Resource`
 </ResponseField>
 
 #### MCP capabilities
 
 <ResponseField name="http" type="boolean" post={["default: false"]}>
-  The Agent supports connecting to MCP servers over HTTP.
+The Agent supports connecting to MCP servers over HTTP.
 </ResponseField>
 
 <ResponseField name="sse" type="boolean" post={["default: false"]}>
-  The Agent supports connecting to MCP servers over SSE.
+The Agent supports connecting to MCP servers over SSE.
 
-  Note: This transport has been deprecated by the MCP spec.
+Note: This transport has been deprecated by the MCP spec.
 </ResponseField>
 
 #### Authentication Capabilities
@@ -273,6 +274,6 @@ Both Clients and Agents **SHOULD** provide information about their implementatio
   Note: in future versions of the protocol, this information will be required.
 </Info>
 
-***
+---
 
 Once the connection is initialized, you're ready to [create a session](/protocol/v1/session-setup) and begin the conversation with the Agent.

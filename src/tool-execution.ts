@@ -1,18 +1,18 @@
-import * as acp from "@agentclientprotocol/sdk";
-import { existsSync, realpathSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { LlmToolCall } from "./deepseek.js";
-import { resolveMedia, type ResolvedMedia } from "./media.js";
-import { terminalDirectory, type StoredSession } from "./storage.js";
-import { envPositiveInt } from "./env.js";
-import { formatMs } from "./turn-stats.js";
+import * as acp from '@agentclientprotocol/sdk';
+import { existsSync, realpathSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { LlmToolCall } from './deepseek.js';
+import { resolveMedia, type ResolvedMedia } from './media.js';
+import { terminalDirectory, type StoredSession } from './storage.js';
+import { envPositiveInt } from './env.js';
+import { formatMs } from './turn-stats.js';
 
 export interface ToolExecutionResult {
   toolCallId: string;
   toolName: string;
-  output: { type: "text"; value: string };
+  output: { type: 'text'; value: string };
   /**
    * Set by read_media: the media to inject as parts of the synthetic user
    * message that follows the tool result (the tool role only allows text).
@@ -36,7 +36,7 @@ export interface ToolExecutorContext {
   clientCapabilities: acp.ClientCapabilities;
   emit: (update: acp.SessionUpdate) => Promise<void>;
   logRuntime: (
-    level: "debug" | "info" | "warn" | "error",
+    level: 'debug' | 'info' | 'warn' | 'error',
     message: string,
     details?: Record<string, unknown>,
   ) => Promise<void>;
@@ -68,11 +68,8 @@ export interface TruncatedTerminalOutput {
  * disk at the log path (and in the terminal card), so the model can read
  * more with bash whenever it needs to.
  */
-export function truncateTerminalOutput(
-  text: string,
-  maxBytes: number,
-): TruncatedTerminalOutput {
-  const bytes = Buffer.from(text, "utf8");
+export function truncateTerminalOutput(text: string, maxBytes: number): TruncatedTerminalOutput {
+  const bytes = Buffer.from(text, 'utf8');
   const originalBytes = bytes.length;
   if (originalBytes <= maxBytes) {
     return { text, truncated: false, originalBytes, keptBytes: originalBytes };
@@ -83,12 +80,12 @@ export function truncateTerminalOutput(
   while (start < bytes.length && (bytes[start]! & 0b1100_0000) === 0b1000_0000) {
     start++;
   }
-  const kept = bytes.subarray(start).toString("utf8");
+  const kept = bytes.subarray(start).toString('utf8');
   return {
     text: kept,
     truncated: true,
     originalBytes,
-    keptBytes: Buffer.byteLength(kept, "utf8"),
+    keptBytes: Buffer.byteLength(kept, 'utf8'),
   };
 }
 
@@ -97,10 +94,7 @@ export function truncateTerminalOutput(
  * `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` (bytes; must be > 0).
  */
 function terminalOutputByteLimit(): number {
-  return envPositiveInt(
-    "ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT",
-    DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT,
-  );
+  return envPositiveInt('ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT', DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT);
 }
 
 /**
@@ -111,13 +105,13 @@ function terminalOutputByteLimit(): number {
  * and `find`.
  */
 const BLOCKED_COMMANDS: Record<string, string> = {
-  rm: "trash",
-  grep: "rg",
-  find: "fdfind",
+  rm: 'trash',
+  grep: 'rg',
+  find: 'fdfind',
 };
 
 /** Standard locations of the blocked binaries (checked at runtime). */
-const BLOCKED_BINARY_DIRS = ["/usr/bin", "/bin"];
+const BLOCKED_BINARY_DIRS = ['/usr/bin', '/bin'];
 
 /**
  * Path to the shim mounted over the blocked binaries. Override with
@@ -126,12 +120,10 @@ const BLOCKED_BINARY_DIRS = ["/usr/bin", "/bin"];
  */
 function sandboxBlockShimPath(): string {
   const override = process.env.ZEN_AGENT_SANDBOX_BLOCK_SHIM;
-  if (override !== undefined && override.trim() !== "") {
+  if (override !== undefined && override.trim() !== '') {
     return override.trim();
   }
-  return fileURLToPath(
-    new URL("../bin/zen-agent-sandbox-block.sh", import.meta.url),
-  );
+  return fileURLToPath(new URL('../bin/zen-agent-sandbox-block.sh', import.meta.url));
 }
 
 /**
@@ -175,18 +167,18 @@ function blockedBinaryBinds(): string[] {
  */
 function defaultBashSandbox(): string {
   return [
-    "bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev",
-    "--bind /dev/pts /dev/pts --tmpfs /dev/shm",
+    'bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev',
+    '--bind /dev/pts /dev/pts --tmpfs /dev/shm',
     ...blockedBinaryBinds(),
-  ].join(" ");
+  ].join(' ');
 }
 
 function bashSandboxPrefix(enabled: boolean): string {
   if (!enabled) {
-    return "";
+    return '';
   }
   const custom = process.env.ZEN_AGENT_SANDBOX_CMD;
-  if (custom !== undefined && custom.trim() !== "") {
+  if (custom !== undefined && custom.trim() !== '') {
     return `${custom.trim()} `;
   }
   return `${defaultBashSandbox()} `;
@@ -224,27 +216,26 @@ export async function executeLlmToolCall(
   // A streamed tool call whose JSON arguments never parsed cannot be
   // dispatched; report that clearly instead of a confusing per-tool
   // "requires a string" error (the client used to assume bash).
-  const malformedArguments = (
-    call.input as { malformed_arguments?: unknown } | null
-  )?.malformed_arguments;
-  if (typeof malformedArguments === "string") {
+  const malformedArguments = (call.input as { malformed_arguments?: unknown } | null)
+    ?.malformed_arguments;
+  if (typeof malformedArguments === 'string') {
     const message = `Tool ${call.name} produced malformed JSON arguments: ${malformedArguments.slice(0, 200)}`;
     await emit({
-      sessionUpdate: "tool_call",
+      sessionUpdate: 'tool_call',
       toolCallId: call.id,
       title: `Malformed arguments for ${call.name}`,
-      kind: "other",
-      status: "failed",
+      kind: 'other',
+      status: 'failed',
       rawInput: call.input,
     });
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "failed",
-      content: [{ type: "content", content: { type: "text", text: message } }],
+      status: 'failed',
+      content: [{ type: 'content', content: { type: 'text', text: message } }],
       rawOutput: { error: message },
     });
-    void logRuntime("warn", "tool call had malformed JSON arguments", {
+    void logRuntime('warn', 'tool call had malformed JSON arguments', {
       sessionId: session.sessionId,
       toolCallId: call.id,
       toolName: call.name,
@@ -252,32 +243,32 @@ export async function executeLlmToolCall(
     return {
       toolCallId: call.id,
       toolName: call.name,
-      output: { type: "text", value: message },
+      output: { type: 'text', value: message },
     };
   }
 
-  if (call.name === "read_media") {
+  if (call.name === 'read_media') {
     return executeReadMedia(context, cx, call);
   }
 
-  if (call.name !== "bash") {
+  if (call.name !== 'bash') {
     const message = `Unknown tool: ${call.name}`;
     await emit({
-      sessionUpdate: "tool_call",
+      sessionUpdate: 'tool_call',
       toolCallId: call.id,
       title: `Unknown tool ${call.name}`,
-      kind: "other",
-      status: "failed",
+      kind: 'other',
+      status: 'failed',
       rawInput: call.input,
     });
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "failed",
+      status: 'failed',
       content: [
         {
-          type: "content",
-          content: { type: "text", text: message },
+          type: 'content',
+          content: { type: 'text', text: message },
         },
       ],
       rawOutput: { error: message },
@@ -285,37 +276,37 @@ export async function executeLlmToolCall(
     return {
       toolCallId: call.id,
       toolName: call.name,
-      output: { type: "text", value: message },
+      output: { type: 'text', value: message },
     };
   }
 
   const command = (call.input as { command?: unknown }).command;
-  if (typeof command !== "string" || command.trim().length === 0) {
-    const message = "bash tool requires a non-empty string command";
+  if (typeof command !== 'string' || command.trim().length === 0) {
+    const message = 'bash tool requires a non-empty string command';
     await emit({
-      sessionUpdate: "tool_call",
+      sessionUpdate: 'tool_call',
       toolCallId: call.id,
-      title: "Invalid bash command",
-      kind: "execute",
-      status: "failed",
+      title: 'Invalid bash command',
+      kind: 'execute',
+      status: 'failed',
       rawInput: call.input,
     });
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "failed",
+      status: 'failed',
       content: [
         {
-          type: "content",
-          content: { type: "text", text: message },
+          type: 'content',
+          content: { type: 'text', text: message },
         },
       ],
       rawOutput: { error: message },
     });
     return {
       toolCallId: call.id,
-      toolName: "bash",
-      output: { type: "text", value: message },
+      toolName: 'bash',
+      output: { type: 'text', value: message },
     };
   }
 
@@ -326,7 +317,7 @@ export async function executeLlmToolCall(
   const logPath = join(terminalDir, `output-${timestamp}-${call.id}.log`);
   const commandScriptPath = join(terminalDir, `input-${timestamp}-${call.id}.sh`);
   await mkdir(terminalDir, { recursive: true });
-  await writeFile(commandScriptPath, command, "utf8");
+  await writeFile(commandScriptPath, command, 'utf8');
   const scriptCommand = `${bashSandboxPrefix(sandbox)}bash ${shellQuote(commandScriptPath)}`;
   const wrappedCommand = `script -q -e -c ${shellQuote(scriptCommand)} ${shellQuote(logPath)}`;
   const toolStart = Date.now();
@@ -354,11 +345,11 @@ export async function executeLlmToolCall(
   const displayTerminalId = `zen-${call.id}`;
 
   await emit({
-    sessionUpdate: "tool_call",
+    sessionUpdate: 'tool_call',
     toolCallId: call.id,
     title: `$ ${command}`,
-    kind: "execute",
-    status: "pending",
+    kind: 'execute',
+    status: 'pending',
     rawInput: { command },
     // Zed pre-registers a display-only terminal for this id on every
     // session/update notification, including the replayed ones during
@@ -375,23 +366,23 @@ export async function executeLlmToolCall(
 
   if (!clientCapabilities.terminal) {
     const message =
-      "Zed terminal support is required for the bash tool, but the client did not advertise terminal: true";
+      'Zed terminal support is required for the bash tool, but the client did not advertise terminal: true';
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "failed",
+      status: 'failed',
       content: [
         {
-          type: "content",
-          content: { type: "text", text: message },
+          type: 'content',
+          content: { type: 'text', text: message },
         },
       ],
       rawOutput: { error: message },
     });
     return {
       toolCallId: call.id,
-      toolName: "bash",
-      output: { type: "text", value: message },
+      toolName: 'bash',
+      output: { type: 'text', value: message },
     };
   }
 
@@ -430,30 +421,30 @@ export async function executeLlmToolCall(
   if (signal.aborted) {
     onAbort();
   } else {
-    signal.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
   }
 
   try {
     const createResp = await cx.request(acp.methods.client.terminal.create, {
       sessionId: session.sessionId,
-      command: "/bin/bash",
-      args: ["-lc", wrappedCommand],
+      command: '/bin/bash',
+      args: ['-lc', wrappedCommand],
       cwd: session.cwd,
       env: [],
       outputByteLimit: 1_000_000,
     });
     terminalId = createResp.terminalId;
-    void logRuntime("info", "terminal created", {
+    void logRuntime('info', 'terminal created', {
       sessionId: session.sessionId,
       terminalId,
       command,
     });
 
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "in_progress",
-      content: [{ type: "terminal", terminalId }],
+      status: 'in_progress',
+      content: [{ type: 'terminal', terminalId }],
     });
 
     const exit = await cx.request(acp.methods.client.terminal.waitForExit, {
@@ -467,7 +458,7 @@ export async function executeLlmToolCall(
     });
 
     await releaseTerminal();
-    void logRuntime("info", "terminal finished", {
+    void logRuntime('info', 'terminal finished', {
       sessionId: session.sessionId,
       terminalId,
       command,
@@ -476,11 +467,11 @@ export async function executeLlmToolCall(
     });
 
     const cancelled = cancelledBySignal || signal.aborted;
-    const status = cancelled || exit.exitCode !== 0 ? "failed" : "completed";
+    const status = cancelled || exit.exitCode !== 0 ? 'failed' : 'completed';
     const durationMs = Date.now() - toolStart;
     const outputText =
       outputResp.output ||
-      (status === "completed" ? "(no output)" : `exit code ${exit.exitCode ?? "unknown"}`);
+      (status === 'completed' ? '(no output)' : `exit code ${exit.exitCode ?? 'unknown'}`);
     const modelOutput = truncateTerminalOutput(outputText, terminalOutputByteLimit());
     const outputForModel = modelOutput.truncated
       ? `${modelOutput.text}\n\n[Terminal output truncated: showing the last ${modelOutput.keptBytes} of ${modelOutput.originalBytes} bytes; full output saved to ${logPath}]`
@@ -488,14 +479,14 @@ export async function executeLlmToolCall(
     const displayText = `${outputText}\n\n⏱ ${formatMs(durationMs)}`;
 
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
       status,
       content: [
-        { type: "terminal", terminalId },
+        { type: 'terminal', terminalId },
         {
-          type: "content",
-          content: { type: "text", text: displayText },
+          type: 'content',
+          content: { type: 'text', text: displayText },
         },
       ],
       rawOutput: {
@@ -530,22 +521,22 @@ export async function executeLlmToolCall(
 
     return {
       toolCallId: call.id,
-      toolName: "bash",
-      output: { type: "text", value: outputForModel },
+      toolName: 'bash',
+      output: { type: 'text', value: outputForModel },
     };
   } catch (error) {
     await releaseTerminal();
     const message = error instanceof Error ? error.message : String(error);
     const durationMs = Date.now() - toolStart;
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "failed",
+      status: 'failed',
       content: [
         {
-          type: "content",
+          type: 'content',
           content: {
-            type: "text",
+            type: 'text',
             text: `${message}\n\n⏱ ${formatMs(durationMs)}`,
           },
         },
@@ -554,11 +545,11 @@ export async function executeLlmToolCall(
     });
     return {
       toolCallId: call.id,
-      toolName: "bash",
-      output: { type: "text", value: message },
+      toolName: 'bash',
+      output: { type: 'text', value: message },
     };
   } finally {
-    signal.removeEventListener("abort", onAbort);
+    signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -576,63 +567,63 @@ async function executeReadMedia(
   void cx;
   const { session, mediaModalities, emit } = context;
   const rawPath = (call.input as { path?: unknown }).path;
-  const displayPath = typeof rawPath === "string" ? rawPath : String(rawPath ?? "");
+  const displayPath = typeof rawPath === 'string' ? rawPath : String(rawPath ?? '');
 
   await emit({
-    sessionUpdate: "tool_call",
+    sessionUpdate: 'tool_call',
     toolCallId: call.id,
     title: `read_media ${displayPath}`,
-    kind: "read",
-    status: "pending",
+    kind: 'read',
+    status: 'pending',
     rawInput: call.input,
   });
 
   try {
-    if (typeof rawPath !== "string" || rawPath.trim().length === 0) {
-      throw new Error("read_media requires a non-empty string path");
+    if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+      throw new Error('read_media requires a non-empty string path');
     }
-    const allowed: Array<"image" | "audio"> = [];
-    if (mediaModalities.image) allowed.push("image");
-    if (mediaModalities.audio) allowed.push("audio");
+    const allowed: Array<'image' | 'audio'> = [];
+    if (mediaModalities.image) allowed.push('image');
+    if (mediaModalities.audio) allowed.push('audio');
     const media = await resolveMedia(session.cwd, rawPath, allowed);
 
     const summary = `loaded ${media.path} (${media.mimeType}, ${(media.decodedBytes / 1024).toFixed(1)} KB); media attached below`;
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "completed",
+      status: 'completed',
       content: [
         {
-          type: "content",
-          content: { type: "text", text: summary },
+          type: 'content',
+          content: { type: 'text', text: summary },
         },
       ],
       rawOutput: { path: media.path, mimeType: media.mimeType, bytes: media.decodedBytes },
     });
     return {
       toolCallId: call.id,
-      toolName: "read_media",
-      output: { type: "text", value: summary },
+      toolName: 'read_media',
+      output: { type: 'text', value: summary },
       attachedMedia: media,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await emit({
-      sessionUpdate: "tool_call_update",
+      sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
-      status: "failed",
+      status: 'failed',
       content: [
         {
-          type: "content",
-          content: { type: "text", text: message },
+          type: 'content',
+          content: { type: 'text', text: message },
         },
       ],
       rawOutput: { error: message },
     });
     return {
       toolCallId: call.id,
-      toolName: "read_media",
-      output: { type: "text", value: `read_media failed: ${message}` },
+      toolName: 'read_media',
+      output: { type: 'text', value: `read_media failed: ${message}` },
     };
   }
 }

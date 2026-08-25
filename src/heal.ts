@@ -1,4 +1,4 @@
-import type { LlmMessage } from "./storage.js";
+import type { LlmMessage } from './storage.js';
 
 /**
  * Heal message history before it is sent to the LLM API, ported from
@@ -30,22 +30,20 @@ export function healMessages(messages: readonly LlmMessage[]): HealResult {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]!;
 
-    if (msg.role === "assistant" && Array.isArray(msg.content)) {
-      const hasCalls = msg.content.some((part) => part.type === "tool-call");
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      const hasCalls = msg.content.some((part) => part.type === 'tool-call');
       if (!hasCalls) {
         out.push(msg);
         continue;
       }
 
       const stamped = msg.content.map((part) =>
-        part.type === "tool-call" && !part.toolCallId
+        part.type === 'tool-call' && !part.toolCallId
           ? { ...part, toolCallId: `zen-${Date.now()}-${stampSeq++}` }
           : part,
       );
       const needed = new Set(
-        stamped
-          .filter((part) => part.type === "tool-call")
-          .map((part) => part.toolCallId),
+        stamped.filter((part) => part.type === 'tool-call').map((part) => part.toolCallId),
       );
 
       // The following consecutive tool messages must provide a result for
@@ -56,9 +54,9 @@ export function healMessages(messages: readonly LlmMessage[]): HealResult {
       let j = i + 1;
       while (j < messages.length && needed.size > 0) {
         const next = messages[j]!;
-        if (next.role !== "tool" || !Array.isArray(next.content)) break;
+        if (next.role !== 'tool' || !Array.isArray(next.content)) break;
         const resultIds = next.content
-          .filter((part) => part.type === "tool-result")
+          .filter((part) => part.type === 'tool-result')
           .map((part) => part.toolCallId);
         if (resultIds.length === 0) break;
         if (!resultIds.every((id) => needed.has(id))) break;
@@ -81,7 +79,7 @@ export function healMessages(messages: readonly LlmMessage[]): HealResult {
       continue;
     }
 
-    if (msg.role === "tool") {
+    if (msg.role === 'tool') {
       droppedTools += 1;
       continue;
     }

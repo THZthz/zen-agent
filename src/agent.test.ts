@@ -1,12 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import * as acp from "@agentclientprotocol/sdk";
-import type { SessionUpdate } from "@agentclientprotocol/sdk";
-import { ZenAgent } from "./agent.js";
-import { prepareReplayEvents } from "./replay.js";
-import { emptySessionUsage, type StoredSession } from "./storage.js";
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import * as acp from '@agentclientprotocol/sdk';
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
+import { ZenAgent } from './agent.js';
+import { prepareReplayEvents } from './replay.js';
+import { emptySessionUsage, type StoredSession } from './storage.js';
 
 type ReplayEvent = {
   sessionUpdate: string;
@@ -20,16 +20,22 @@ function prepare(events: ReplayEvent[], cwd?: string): SessionUpdate[] {
   return prepareReplayEvents(events as unknown as SessionUpdate[], cwd);
 }
 
-function makeSession(sessionId = "s1"): StoredSession {
+function makeSession(sessionId = 's1'): StoredSession {
   return {
     sessionId,
-    cwd: "/tmp",
+    cwd: '/tmp',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     title: null,
     events: [],
     llmMessages: [],
-    config: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEffort: "off", systemPrompt: "", sandbox: false },
+    config: {
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      thinkingEffort: 'off',
+      systemPrompt: '',
+      sandbox: false,
+    },
     usage: emptySessionUsage(),
     turnStats: [],
   };
@@ -51,9 +57,9 @@ type TestAgent = {
   cancel(params: { sessionId: string }): void;
 };
 
-describe("newSession default provider", () => {
-  it("creates sessions on deepseek with DeepSeek model options", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
+describe('newSession default provider', () => {
+  it('creates sessions on deepseek with DeepSeek model options', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-test-'));
     try {
       const agent = new ZenAgent();
       await agent.initialize({
@@ -63,32 +69,29 @@ describe("newSession default provider", () => {
       const cx = {
         notify: async () => {},
         request: async () => {
-          throw new Error("unexpected client request");
+          throw new Error('unexpected client request');
         },
       } as unknown as acp.AgentContext;
-      const created = await agent.newSession(
-        { cwd, mcpServers: [] } as acp.NewSessionRequest,
-        cx,
-      );
-      const providerOption = created.configOptions?.find((o) => o.id === "provider") as
-        | { currentValue?: string }
-        | undefined;
-      expect(providerOption?.currentValue).toBe("deepseek");
-      const modelOption = created.configOptions?.find((o) => o.id === "model") as
-        | { options?: Array<{ value: string }> }
-        | undefined;
-      expect(modelOption?.options?.some((o) => o.value === "deepseek-v4-flash")).toBe(true);
-      const active = (agent as unknown as {
-        sessions: Map<string, { session: StoredSession }>;
-      }).sessions.get(created.sessionId);
-      expect(active?.session.config.provider).toBe("deepseek");
+      const created = await agent.newSession({ cwd, mcpServers: [] } as acp.NewSessionRequest, cx);
+      const providerOption = created.configOptions?.find((o) => o.id === 'provider') as
+        { currentValue?: string } | undefined;
+      expect(providerOption?.currentValue).toBe('deepseek');
+      const modelOption = created.configOptions?.find((o) => o.id === 'model') as
+        { options?: Array<{ value: string }> } | undefined;
+      expect(modelOption?.options?.some((o) => o.value === 'deepseek-v4-flash')).toBe(true);
+      const active = (
+        agent as unknown as {
+          sessions: Map<string, { session: StoredSession }>;
+        }
+      ).sessions.get(created.sessionId);
+      expect(active?.session.config.provider).toBe('deepseek');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 });
 
-describe("setSessionConfigOption", () => {
+describe('setSessionConfigOption', () => {
   const originalEnv = { ...process.env };
 
   function register(agent: ZenAgent, session: StoredSession): void {
@@ -104,7 +107,7 @@ describe("setSessionConfigOption", () => {
     process.env = { ...originalEnv };
   });
 
-  it("switches provider before the first message and resets the model to the provider default", async () => {
+  it('switches provider before the first message and resets the model to the provider default', async () => {
     delete process.env.OPENROUTER_MODEL;
     const agent = new ZenAgent();
     const session = makeSession();
@@ -112,24 +115,22 @@ describe("setSessionConfigOption", () => {
 
     const res = await agent.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: "provider",
-      value: "openrouter",
+      configId: 'provider',
+      value: 'openrouter',
     });
 
-    expect(session.config.provider).toBe("openrouter");
-    expect(session.config.model).toBe("openrouter/free");
-    const providerOption = res.configOptions?.find((o) => o.id === "provider") as
-      | { currentValue?: string }
-      | undefined;
-    expect(providerOption?.currentValue).toBe("openrouter");
-    const modelOption = res.configOptions?.find((o) => o.id === "model") as
-      | { options?: Array<{ value: string }> }
-      | undefined;
-    expect(modelOption?.options?.some((o) => o.value === "deepseek-v4-flash")).toBe(false);
-    expect(modelOption?.options?.some((o) => o.value === "openrouter/free")).toBe(true);
+    expect(session.config.provider).toBe('openrouter');
+    expect(session.config.model).toBe('openrouter/free');
+    const providerOption = res.configOptions?.find((o) => o.id === 'provider') as
+      { currentValue?: string } | undefined;
+    expect(providerOption?.currentValue).toBe('openrouter');
+    const modelOption = res.configOptions?.find((o) => o.id === 'model') as
+      { options?: Array<{ value: string }> } | undefined;
+    expect(modelOption?.options?.some((o) => o.value === 'deepseek-v4-flash')).toBe(false);
+    expect(modelOption?.options?.some((o) => o.value === 'openrouter/free')).toBe(true);
   });
 
-  it("rejects unknown providers", async () => {
+  it('rejects unknown providers', async () => {
     const agent = new ZenAgent();
     const session = makeSession();
     register(agent, session);
@@ -137,288 +138,286 @@ describe("setSessionConfigOption", () => {
     await expect(
       agent.setSessionConfigOption({
         sessionId: session.sessionId,
-        configId: "provider",
-        value: "anthropic",
+        configId: 'provider',
+        value: 'anthropic',
       }),
     ).rejects.toThrow(/Unknown provider/);
   });
 
-  it("locks provider, model and thinking effort after the first user message", async () => {
+  it('locks provider, model and thinking effort after the first user message', async () => {
     const agent = new ZenAgent();
     const session = makeSession();
-    session.llmMessages = [{ role: "user", content: "hi", name: "Amias" }];
+    session.llmMessages = [{ role: 'user', content: 'hi', name: 'Amias' }];
     register(agent, session);
 
     const base = { sessionId: session.sessionId };
     await expect(
-      agent.setSessionConfigOption({ ...base, configId: "provider", value: "openrouter" }),
+      agent.setSessionConfigOption({ ...base, configId: 'provider', value: 'openrouter' }),
     ).rejects.toThrow(/after the first message/);
     await expect(
-      agent.setSessionConfigOption({ ...base, configId: "model", value: "deepseek-v4-pro" }),
+      agent.setSessionConfigOption({ ...base, configId: 'model', value: 'deepseek-v4-pro' }),
     ).rejects.toThrow(/after the first message/);
     await expect(
-      agent.setSessionConfigOption({ ...base, configId: "thinking_effort", value: "high" }),
+      agent.setSessionConfigOption({ ...base, configId: 'thinking_effort', value: 'high' }),
     ).rejects.toThrow(/after the first message/);
     // Nothing was applied.
-    expect(session.config.provider).toBe("deepseek");
-    expect(session.config.model).toBe("deepseek-v4-flash");
-    expect(session.config.thinkingEffort).toBe("off");
+    expect(session.config.provider).toBe('deepseek');
+    expect(session.config.model).toBe('deepseek-v4-flash');
+    expect(session.config.thinkingEffort).toBe('off');
   });
 
-  it("still allows changes when only environment messages exist", async () => {
+  it('still allows changes when only environment messages exist', async () => {
     const agent = new ZenAgent();
     const session = makeSession();
-    session.llmMessages = [{ role: "user", content: "<environment>...", name: "Environment" }];
+    session.llmMessages = [{ role: 'user', content: '<environment>...', name: 'Environment' }];
     register(agent, session);
 
     const res = await agent.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: "thinking_effort",
-      value: "max",
+      configId: 'thinking_effort',
+      value: 'max',
     });
 
-    expect(session.config.thinkingEffort).toBe("max");
-    expect(res.configOptions?.find((o) => o.id === "thinking_effort")).toBeDefined();
+    expect(session.config.thinkingEffort).toBe('max');
+    expect(res.configOptions?.find((o) => o.id === 'thinking_effort')).toBeDefined();
   });
 });
 
-describe("prepareReplayEvents", () => {
-  it("synthesizes a display-only terminal for legacy bash calls so output stays visible", () => {
+describe('prepareReplayEvents', () => {
+  it('synthesizes a display-only terminal for legacy bash calls so output stays visible', () => {
     const events: ReplayEvent[] = [
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "c1",
-        title: "$ ls",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "ls" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'c1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c1",
-        status: "in_progress",
-        content: [{ type: "terminal", terminalId: "t1" }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c1',
+        status: 'in_progress',
+        content: [{ type: 'terminal', terminalId: 't1' }],
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c1",
-        status: "completed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c1',
+        status: 'completed',
         content: [
-          { type: "terminal", terminalId: "t1" },
-          { type: "content", content: { type: "text", text: "out" } },
+          { type: 'terminal', terminalId: 't1' },
+          { type: 'content', content: { type: 'text', text: 'out' } },
         ],
-        rawOutput: { output: "out" },
+        rawOutput: { output: 'out' },
       },
       // Interrupted call: initial event but no final update -> dropped.
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "c2",
-        title: "$ sleep",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "sleep" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'c2',
+        title: '$ sleep',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'sleep' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c2",
-        status: "in_progress",
-        content: [{ type: "terminal", terminalId: "t2" }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c2',
+        status: 'in_progress',
+        content: [{ type: 'terminal', terminalId: 't2' }],
       },
       // Orphan update without a tool_call event -> dropped.
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c3",
-        status: "completed",
-        content: [{ type: "content", content: { type: "text", text: "orphan" } }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c3',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'orphan' } }],
       },
-      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } },
     ];
 
-    expect(prepare(events, "/tmp")).toEqual([
+    expect(prepare(events, '/tmp')).toEqual([
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "c1",
-        title: "$ ls",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "ls" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'c1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
         // Synthesized so Zed re-registers a display-only terminal on load.
         _meta: {
-          terminal_info: { terminal_id: "zen-c1", cwd: "/tmp" },
+          terminal_info: { terminal_id: 'zen-c1', cwd: '/tmp' },
         },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c1",
-        status: "completed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c1',
+        status: 'completed',
         content: [
-          { type: "terminal", terminalId: "zen-c1" },
-          { type: "content", content: { type: "text", text: "out" } },
+          { type: 'terminal', terminalId: 'zen-c1' },
+          { type: 'content', content: { type: 'text', text: 'out' } },
         ],
-        rawOutput: { output: "out" },
+        rawOutput: { output: 'out' },
         // Synthesized from the persisted raw output so Zed streams the
         // output into the display-only terminal on load.
         _meta: {
-          terminal_output: { terminal_id: "zen-c1", data: "out" },
-          terminal_exit: { terminal_id: "zen-c1", exit_code: null, signal: null },
+          terminal_output: { terminal_id: 'zen-c1', data: 'out' },
+          terminal_exit: { terminal_id: 'zen-c1', exit_code: null, signal: null },
         },
       },
-      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } },
     ]);
   });
 
-  it("keeps failed bash calls with a synthesized display terminal and exit code", () => {
+  it('keeps failed bash calls with a synthesized display terminal and exit code', () => {
     const events: ReplayEvent[] = [
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "f1",
-        title: "$ nope",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "nope" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'f1',
+        title: '$ nope',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'nope' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "f1",
-        status: "failed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'f1',
+        status: 'failed',
         content: [
-          { type: "terminal", terminalId: "t9" },
-          { type: "content", content: { type: "text", text: "boom" } },
+          { type: 'terminal', terminalId: 't9' },
+          { type: 'content', content: { type: 'text', text: 'boom' } },
         ],
-        rawOutput: { output: "boom", exitCode: 127 },
+        rawOutput: { output: 'boom', exitCode: 127 },
       },
     ];
     expect(prepare(events)).toEqual([
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "f1",
-        title: "$ nope",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "nope" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'f1',
+        title: '$ nope',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'nope' },
         _meta: {
-          terminal_info: { terminal_id: "zen-f1" },
+          terminal_info: { terminal_id: 'zen-f1' },
         },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "f1",
-        status: "failed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'f1',
+        status: 'failed',
         content: [
-          { type: "terminal", terminalId: "zen-f1" },
-          { type: "content", content: { type: "text", text: "boom" } },
+          { type: 'terminal', terminalId: 'zen-f1' },
+          { type: 'content', content: { type: 'text', text: 'boom' } },
         ],
-        rawOutput: { output: "boom", exitCode: 127 },
+        rawOutput: { output: 'boom', exitCode: 127 },
         _meta: {
-          terminal_output: { terminal_id: "zen-f1", data: "boom" },
-          terminal_exit: { terminal_id: "zen-f1", exit_code: 127, signal: null },
+          terminal_output: { terminal_id: 'zen-f1', data: 'boom' },
+          terminal_exit: { terminal_id: 'zen-f1', exit_code: 127, signal: null },
         },
       },
     ]);
   });
 
-  it("leaves text-only tool calls (no terminal card) untouched", () => {
+  it('leaves text-only tool calls (no terminal card) untouched', () => {
     const events: ReplayEvent[] = [
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "g1",
-        title: "$ npm test",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "npm test" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'g1',
+        title: '$ npm test',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'npm test' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "g1",
-        status: "completed",
-        content: [{ type: "content", content: { type: "text", text: "passed" } }],
-        rawOutput: { output: "passed" },
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'g1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'passed' } }],
+        rawOutput: { output: 'passed' },
       },
-      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Turn stats" } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Turn stats' } },
     ];
     const out = prepare(events);
     expect(out).toEqual(events);
-    expect(out.filter((e) => e.sessionUpdate === "tool_call")).toHaveLength(1);
+    expect(out.filter((e) => e.sessionUpdate === 'tool_call')).toHaveLength(1);
   });
 });
 
-describe("replay preparation on a session with terminal content", () => {
-  it("produces a replay stream with no terminal content and no orphan/in-progress updates", () => {
+describe('replay preparation on a session with terminal content', () => {
+  it('produces a replay stream with no terminal content and no orphan/in-progress updates', () => {
     // Representative event stream as persisted by the agent: tool calls with
     // terminal cards, an in-progress update, an orphan update and a failed
     // call with a text result.
     const events: ReplayEvent[] = [
-      { sessionUpdate: "user_message_chunk", content: { type: "text", text: "hello" } },
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'hello' } },
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "c1",
-        title: "$ ls",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "ls" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'c1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c1",
-        status: "in_progress",
-        content: [{ type: "terminal", terminalId: "t1" }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c1',
+        status: 'in_progress',
+        content: [{ type: 'terminal', terminalId: 't1' }],
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c1",
-        status: "completed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c1',
+        status: 'completed',
         content: [
-          { type: "terminal", terminalId: "t1" },
-          { type: "content", content: { type: "text", text: "a.txt" } },
+          { type: 'terminal', terminalId: 't1' },
+          { type: 'content', content: { type: 'text', text: 'a.txt' } },
         ],
-        rawOutput: { output: "a.txt" },
+        rawOutput: { output: 'a.txt' },
       },
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "c2",
-        title: "$ git status",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "git status" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'c2',
+        title: '$ git status',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'git status' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c2",
-        status: "in_progress",
-        content: [{ type: "terminal", terminalId: "t2" }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c2',
+        status: 'in_progress',
+        content: [{ type: 'terminal', terminalId: 't2' }],
       },
       // Orphan update: no matching tool_call, must be dropped.
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "orphan",
-        status: "completed",
-        content: [{ type: "content", content: { type: "text", text: "x" } }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'orphan',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'x' } }],
       },
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "c3",
-        title: "$ nope",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "nope" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'c3',
+        title: '$ nope',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'nope' },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "c3",
-        status: "failed",
-        content: [{ type: "content", content: { type: "text", text: "boom" } }],
-        rawOutput: { output: "boom", exitCode: 127 },
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c3',
+        status: 'failed',
+        content: [{ type: 'content', content: { type: 'text', text: 'boom' } }],
+        rawOutput: { output: 'boom', exitCode: 127 },
       },
-      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "done" } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } },
     ];
     const out = prepare(events);
 
-    const toolCalls = out.filter((e) => e.sessionUpdate === "tool_call");
-    const updates = out.filter((e) => e.sessionUpdate === "tool_call_update");
-    const finalUpdates = updates.filter(
-      (e) => e.status === "completed" || e.status === "failed",
-    );
-    const inProgress = updates.filter((e) => e.status === "in_progress");
+    const toolCalls = out.filter((e) => e.sessionUpdate === 'tool_call');
+    const updates = out.filter((e) => e.sessionUpdate === 'tool_call_update');
+    const finalUpdates = updates.filter((e) => e.status === 'completed' || e.status === 'failed');
+    const inProgress = updates.filter((e) => e.status === 'in_progress');
 
     expect(inProgress).toHaveLength(0);
     expect(toolCalls).toHaveLength(finalUpdates.length);
@@ -428,21 +427,22 @@ describe("replay preparation on a session with terminal content", () => {
     // c1 had a terminal card: it replays with a synthesized display-only
     // terminal (zen-c1) plus its text output, so Zed can re-render the card
     // expanded with the output visible.
-    const c1Call = toolCalls.find((e) => e.toolCallId === "c1")!;
-    expect((c1Call as unknown as { _meta?: { terminal_info?: unknown } })._meta?.terminal_info)
-      .toEqual({ terminal_id: "zen-c1" });
-    const c1Update = updates.find((u) => u.toolCallId === "c1")!;
+    const c1Call = toolCalls.find((e) => e.toolCallId === 'c1')!;
+    expect(
+      (c1Call as unknown as { _meta?: { terminal_info?: unknown } })._meta?.terminal_info,
+    ).toEqual({ terminal_id: 'zen-c1' });
+    const c1Update = updates.find((u) => u.toolCallId === 'c1')!;
     expect(c1Update.content ?? []).toContainEqual(
-      expect.objectContaining({ type: "terminal", terminalId: "zen-c1" }),
+      expect.objectContaining({ type: 'terminal', terminalId: 'zen-c1' }),
     );
     expect(
       (c1Update as unknown as { _meta?: { terminal_output?: { data?: unknown } } })._meta
         ?.terminal_output?.data,
-    ).toBe("a.txt");
+    ).toBe('a.txt');
     // c3 failed before a terminal card existed: text-only, no terminal.
-    const c3Update = updates.find((u) => u.toolCallId === "c3")!;
+    const c3Update = updates.find((u) => u.toolCallId === 'c3')!;
     expect(c3Update.content ?? []).not.toContainEqual(
-      expect.objectContaining({ type: "terminal" }),
+      expect.objectContaining({ type: 'terminal' }),
     );
     // All kept updates must have a matching kept tool_call.
     const ids = new Set(toolCalls.map((e) => e.toolCallId));
@@ -452,131 +452,134 @@ describe("replay preparation on a session with terminal content", () => {
   });
 });
 
-describe("graceful cancel", () => {
-  it("sets gracefulCancel instead of aborting when a turn is running", () => {
+describe('graceful cancel', () => {
+  it('sets gracefulCancel instead of aborting when a turn is running', () => {
     const agent = new ZenAgent() as unknown as TestAgent;
     const controller = new AbortController();
-    agent.sessions.set("s1", {
+    agent.sessions.set('s1', {
       session: makeSession(),
       abortController: controller,
       gracefulCancel: false,
       cancelTimer: null,
     });
 
-    agent.cancel({ sessionId: "s1" });
+    agent.cancel({ sessionId: 's1' });
 
     expect(controller.signal.aborted).toBe(false);
-    const entry = agent.sessions.get("s1")!;
+    const entry = agent.sessions.get('s1')!;
     expect(entry.gracefulCancel).toBe(true);
     expect(entry.cancelTimer).toBeNull();
   });
 
-  it("does nothing when no turn is running", () => {
+  it('does nothing when no turn is running', () => {
     const agent = new ZenAgent() as unknown as TestAgent;
-    agent.sessions.set("s1", {
+    agent.sessions.set('s1', {
       session: makeSession(),
       abortController: null,
       gracefulCancel: false,
       cancelTimer: null,
     });
 
-    agent.cancel({ sessionId: "s1" });
+    agent.cancel({ sessionId: 's1' });
 
-    const entry = agent.sessions.get("s1")!;
+    const entry = agent.sessions.get('s1')!;
     expect(entry.gracefulCancel).toBe(false);
   });
 
-  it("does nothing for an unknown session", () => {
+  it('does nothing for an unknown session', () => {
     const agent = new ZenAgent() as unknown as TestAgent;
-    expect(() => agent.cancel({ sessionId: "missing" })).not.toThrow();
+    expect(() => agent.cancel({ sessionId: 'missing' })).not.toThrow();
   });
 
-  it("hard abort (session close) clears graceful state and aborts", () => {
+  it('hard abort (session close) clears graceful state and aborts', () => {
     const agent = new ZenAgent() as unknown as TestAgent;
     const controller = new AbortController();
-    agent.sessions.set("s1", {
+    agent.sessions.set('s1', {
       session: makeSession(),
       abortController: controller,
       gracefulCancel: true,
       cancelTimer: null,
     });
 
-    agent.abortActiveSession("s1");
+    agent.abortActiveSession('s1');
 
     expect(controller.signal.aborted).toBe(true);
-    const entry = agent.sessions.get("s1")!;
+    const entry = agent.sessions.get('s1')!;
     expect(entry.gracefulCancel).toBe(false);
   });
 
-  it("schedules a hard-abort timer when the timeout env is set", async () => {
-    const { vi } = await import("vitest");
+  it('schedules a hard-abort timer when the timeout env is set', async () => {
+    const { vi } = await import('vitest');
     vi.resetModules();
-    process.env.ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS = "10";
+    process.env.ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS = '10';
     try {
-      const { ZenAgent: ReloadedZenAgent } = await import("./agent.js");
+      const { ZenAgent: ReloadedZenAgent } = await import('./agent.js');
       const agent = new ReloadedZenAgent() as unknown as TestAgent;
       const controller = new AbortController();
-      agent.sessions.set("s1", {
+      agent.sessions.set('s1', {
         session: makeSession(),
         abortController: controller,
         gracefulCancel: false,
         cancelTimer: null,
       });
 
-      agent.cancel({ sessionId: "s1" });
+      agent.cancel({ sessionId: 's1' });
 
-      const entry = agent.sessions.get("s1")!;
+      const entry = agent.sessions.get('s1')!;
       expect(entry.gracefulCancel).toBe(true);
       expect(entry.cancelTimer).not.toBeNull();
 
       await new Promise((resolve) => setTimeout(resolve, 40));
       expect(controller.signal.aborted).toBe(true);
-      expect(agent.sessions.get("s1")!.cancelTimer).toBeNull();
+      expect(agent.sessions.get('s1')!.cancelTimer).toBeNull();
     } finally {
       delete process.env.ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS;
     }
   });
 });
 
-describe("loadSession environment backfill", () => {
-  it("prepends a frozen environment message and appends a continuation notice for empty sessions", async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const { vi } = await import("vitest");
+describe('loadSession environment backfill', () => {
+  it('prepends a frozen environment message and appends a continuation notice for empty sessions', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { vi } = await import('vitest');
 
-    const dir = mkdtempSync(join(tmpdir(), "zen-agent-load-empty-"));
+    const dir = mkdtempSync(join(tmpdir(), 'zen-agent-load-empty-'));
     try {
       const agent = new ZenAgent() as unknown as TestAgent & {
         loadSession(
           params: { cwd: string; sessionId: string },
           cx: {
-            notify: (method: string, params: { sessionId: string; update: unknown }) => Promise<void>;
+            notify: (
+              method: string,
+              params: { sessionId: string; update: unknown },
+            ) => Promise<void>;
           },
         ): Promise<unknown>;
       };
 
-      const session = makeSession("sess_empty");
+      const session = makeSession('sess_empty');
       session.cwd = dir;
-      mkdirSync(join(dir, ".sessions", "sess_empty"), { recursive: true });
+      mkdirSync(join(dir, '.sessions', 'sess_empty'), { recursive: true });
       writeFileSync(
-        join(dir, ".sessions", "sess_empty", "state.json"),
+        join(dir, '.sessions', 'sess_empty', 'state.json'),
         JSON.stringify(session),
-        "utf8",
+        'utf8',
       );
 
       const notify = vi.fn(async () => {});
       const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
 
-      await agent.loadSession({ cwd: dir, sessionId: "sess_empty" }, cx);
+      await agent.loadSession({ cwd: dir, sessionId: 'sess_empty' }, cx);
 
-      const loaded = agent.sessions.get("sess_empty")!.session;
+      const loaded = agent.sessions.get('sess_empty')!.session;
       expect(loaded.llmMessages).toHaveLength(2);
-      expect(loaded.llmMessages[0]).toMatchObject({ role: "user", name: "Environment" });
-      expect(String(loaded.llmMessages[0]!.content)).toContain("<working-directory>");
-      expect(loaded.llmMessages[1]).toMatchObject({ role: "user", name: "Environment" });
+      expect(loaded.llmMessages[0]).toMatchObject({ role: 'user', name: 'Environment' });
+      expect(String(loaded.llmMessages[0]!.content)).toContain('<working-directory>');
+      expect(loaded.llmMessages[1]).toMatchObject({ role: 'user', name: 'Environment' });
       expect(String(loaded.llmMessages[1]!.content)).toContain(
-        "<session-state>resumed</session-state>",
+        '<session-state>resumed</session-state>',
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -584,111 +587,113 @@ describe("loadSession environment backfill", () => {
   });
 });
 
-describe("prepareReplayEvents with display-only terminal info", () => {
-  it("rewrites terminal content to the display-only id so it resolves after restart", () => {
+describe('prepareReplayEvents with display-only terminal info', () => {
+  it('rewrites terminal content to the display-only id so it resolves after restart', () => {
     const events: ReplayEvent[] = [
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "d1",
-        title: "$ ls",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "ls" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'd1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
         _meta: {
-          terminal_info: { terminal_id: "zen-d1", cwd: "/tmp" },
+          terminal_info: { terminal_id: 'zen-d1', cwd: '/tmp' },
         },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "d1",
-        status: "in_progress",
-        content: [{ type: "terminal", terminalId: "real-uuid-1" }],
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'd1',
+        status: 'in_progress',
+        content: [{ type: 'terminal', terminalId: 'real-uuid-1' }],
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "d1",
-        status: "completed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'd1',
+        status: 'completed',
         content: [
-          { type: "terminal", terminalId: "real-uuid-1" },
-          { type: "content", content: { type: "text", text: "out" } },
+          { type: 'terminal', terminalId: 'real-uuid-1' },
+          { type: 'content', content: { type: 'text', text: 'out' } },
         ],
         _meta: {
-          terminal_output: { terminal_id: "zen-d1", data: "out" },
-          terminal_exit: { terminal_id: "zen-d1", exit_code: 0 },
+          terminal_output: { terminal_id: 'zen-d1', data: 'out' },
+          terminal_exit: { terminal_id: 'zen-d1', exit_code: 0 },
         },
-        rawOutput: { output: "out" },
+        rawOutput: { output: 'out' },
       },
     ];
 
     expect(prepare(events)).toEqual([
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "d1",
-        title: "$ ls",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "ls" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'd1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
         _meta: {
-          terminal_info: { terminal_id: "zen-d1", cwd: "/tmp" },
+          terminal_info: { terminal_id: 'zen-d1', cwd: '/tmp' },
         },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "d1",
-        status: "completed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'd1',
+        status: 'completed',
         content: [
-          { type: "terminal", terminalId: "zen-d1" },
-          { type: "content", content: { type: "text", text: "out" } },
+          { type: 'terminal', terminalId: 'zen-d1' },
+          { type: 'content', content: { type: 'text', text: 'out' } },
         ],
         _meta: {
-          terminal_output: { terminal_id: "zen-d1", data: "out" },
-          terminal_exit: { terminal_id: "zen-d1", exit_code: 0 },
+          terminal_output: { terminal_id: 'zen-d1', data: 'out' },
+          terminal_exit: { terminal_id: 'zen-d1', exit_code: 0 },
         },
-        rawOutput: { output: "out" },
+        rawOutput: { output: 'out' },
       },
     ]);
   });
 
-  it("uses the existing terminal_info id (new sessions) instead of synthesizing", () => {
+  it('uses the existing terminal_info id (new sessions) instead of synthesizing', () => {
     const events: ReplayEvent[] = [
       {
-        sessionUpdate: "tool_call",
-        toolCallId: "n1",
-        title: "$ ls",
-        kind: "execute",
-        status: "pending",
-        rawInput: { command: "ls" },
+        sessionUpdate: 'tool_call',
+        toolCallId: 'n1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
         _meta: {
-          terminal_info: { terminal_id: "zen-n1", cwd: "/work" },
+          terminal_info: { terminal_id: 'zen-n1', cwd: '/work' },
         },
       },
       {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "n1",
-        status: "completed",
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'n1',
+        status: 'completed',
         content: [
-          { type: "terminal", terminalId: "real-uuid-9" },
-          { type: "content", content: { type: "text", text: "n out" } },
+          { type: 'terminal', terminalId: 'real-uuid-9' },
+          { type: 'content', content: { type: 'text', text: 'n out' } },
         ],
         _meta: {
-          terminal_output: { terminal_id: "zen-n1", data: "n out" },
-          terminal_exit: { terminal_id: "zen-n1", exit_code: 0 },
+          terminal_output: { terminal_id: 'zen-n1', data: 'n out' },
+          terminal_exit: { terminal_id: 'zen-n1', exit_code: 0 },
         },
-        rawOutput: { output: "n out", exitCode: 0 },
+        rawOutput: { output: 'n out', exitCode: 0 },
       },
     ];
-    const out = prepare(events, "/tmp");
+    const out = prepare(events, '/tmp');
     expect(out[0]).toEqual(events[0]);
     const update = out[1] as ReplayEvent;
     expect(update.content).toContainEqual(
-      expect.objectContaining({ type: "terminal", terminalId: "zen-n1" }),
+      expect.objectContaining({ type: 'terminal', terminalId: 'zen-n1' }),
     );
-    expect((update as unknown as { _meta?: { terminal_output?: { data?: unknown } } })._meta
-      ?.terminal_output?.data).toBe("n out");
+    expect(
+      (update as unknown as { _meta?: { terminal_output?: { data?: unknown } } })._meta
+        ?.terminal_output?.data,
+    ).toBe('n out');
     // cwd passed to prepare() must not override the persisted one.
     expect(
-      (out[0] as unknown as { _meta?: { terminal_info?: { cwd?: unknown } } })._meta
-        ?.terminal_info?.cwd,
-    ).toBe("/work");
+      (out[0] as unknown as { _meta?: { terminal_info?: { cwd?: unknown } } })._meta?.terminal_info
+        ?.cwd,
+    ).toBe('/work');
   });
 });

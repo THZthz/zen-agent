@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentclientprotocol.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -52,7 +53,7 @@ When the language model requests a tool invocation, the Agent **SHOULD** report 
     * `other` - Other tool types (default)
   </Expandable>
 
-  Tool kinds help Clients choose appropriate icons and optimize how they display tool execution progress.
+Tool kinds help Clients choose appropriate icons and optimize how they display tool execution progress.
 </ParamField>
 
 <ParamField path="status" type="ToolCallStatus">
@@ -202,10 +203,10 @@ Each permission option provided to the Client contains:
 <ParamField path="kind" type="PermissionOptionKind" required>
   A hint to help Clients choose appropriate icons and UI treatment for each option.
 
-  * `allow_once` - Allow this operation only this time
-  * `allow_always` - Allow this operation and remember the choice
-  * `reject_once` - Reject this operation only this time
-  * `reject_always` - Reject this operation and remember the choice
+- `allow_once` - Allow this operation only this time
+- `allow_always` - Allow this operation and remember the choice
+- `reject_once` - Reject this operation only this time
+- `reject_always` - Reject this operation and remember the choice
 </ParamField>
 
 ## Status

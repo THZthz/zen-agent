@@ -1,4 +1,4 @@
-import { envPositiveInt } from "./env.js";
+import { envPositiveInt } from './env.js';
 
 /**
  * Client-side spacing of chat requests, ported from Reasonix's
@@ -32,10 +32,10 @@ export async function waitForChatRateLimit(signal?: AbortSignal): Promise<void> 
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(resolve, waitMs);
     signal?.addEventListener(
-      "abort",
+      'abort',
       () => {
         clearTimeout(timer);
-        reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+        reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
       },
       { once: true },
     );
@@ -49,5 +49,5 @@ export function resetChatRateLimit(): void {
 
 /** Requests per minute cap; unset/invalid/0 disables the throttle. */
 function parseChatRpm(): number {
-  return envPositiveInt("ZEN_AGENT_CHAT_RPM", 0);
+  return envPositiveInt('ZEN_AGENT_CHAT_RPM', 0);
 }

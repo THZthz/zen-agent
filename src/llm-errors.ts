@@ -1,5 +1,5 @@
-import { fetchDeepSeekBalance } from "./deepseek.js";
-import type { ProviderId } from "./storage.js";
+import { fetchDeepSeekBalance } from './deepseek.js';
+import type { ProviderId } from './storage.js';
 
 /**
  * Classify an LLM API failure into user-facing guidance, ported from
@@ -15,11 +15,11 @@ export async function formatLlmError(
   opts: { provider: ProviderId },
 ): Promise<string> {
   if (!(err instanceof Error)) return String(err);
-  const match = API_ERROR_RE.exec(err.message ?? "");
+  const match = API_ERROR_RE.exec(err.message ?? '');
   if (!match) return err.message;
 
   const status = Number.parseInt(match[2]!, 10);
-  const body = match[3] ?? "";
+  const body = match[3] ?? '';
 
   // Context overflow comes back as a 400 whose body names the limit — give
   // the user the fix (fresh session) instead of the raw body.
@@ -33,18 +33,18 @@ export async function formatLlmError(
   switch (status) {
     case 401:
       return `API key rejected (401). Check ${
-        opts.provider === "deepseek" ? "DEEPSEEK_API_KEY" : "OPENROUTER_API_KEY"
+        opts.provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'OPENROUTER_API_KEY'
       }.`;
     case 402:
-      return opts.provider === "deepseek"
-        ? "Insufficient DeepSeek balance (402). Top up your account at https://platform.deepseek.com."
+      return opts.provider === 'deepseek'
+        ? 'Insufficient DeepSeek balance (402). Top up your account at https://platform.deepseek.com.'
         : err.message;
     case 400:
       return `Bad request (400): ${extractErrorMessage(body)}`;
     case 422:
       return `Request rejected (422): ${extractErrorMessage(body)}`;
     case 429:
-      return "Rate limit reached (429). The request was already retried automatically — wait a few seconds and try again.";
+      return 'Rate limit reached (429). The request was already retried automatically — wait a few seconds and try again.';
     default:
       if (status >= 500) {
         return format5xx(status, opts.provider);
@@ -55,7 +55,7 @@ export async function formatLlmError(
 
 /** 5xx: probe the provider with a cheap balance call so the user knows whether to check their network or wait. */
 async function format5xx(status: number, provider: ProviderId): Promise<string> {
-  if (provider === "openrouter") {
+  if (provider === 'openrouter') {
     return `OpenRouter returned ${status} — a temporary server error. Retry in a few seconds or try a different model.`;
   }
   const reachable = await probeDeepSeekReachable();
@@ -76,11 +76,11 @@ async function probeDeepSeekReachable(timeoutMs = 1500): Promise<boolean> {
 /** OpenAI-compatible error bodies are JSON `{error: {message}}`; fall back to the raw body. */
 function extractErrorMessage(body: string): string {
   const trimmed = body.trim();
-  if (!trimmed) return "(empty response body)";
+  if (!trimmed) return '(empty response body)';
   try {
     const parsed = JSON.parse(trimmed) as { error?: { message?: unknown }; message?: unknown };
-    if (parsed?.error && typeof parsed.error.message === "string") return parsed.error.message;
-    if (typeof parsed?.message === "string") return parsed.message;
+    if (parsed?.error && typeof parsed.error.message === 'string') return parsed.error.message;
+    if (typeof parsed?.message === 'string') return parsed.message;
   } catch {
     /* not JSON — fall through */
   }
