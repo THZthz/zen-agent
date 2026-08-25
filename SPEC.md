@@ -29,7 +29,7 @@ Two OpenAI-compatible chat completions providers are supported, chosen **per ses
 | `session/prompt` | Run a full agent turn. |
 | `session/cancel` | Request a graceful stop of the active turn (§4.1). |
 
-`initialize` response: `protocolVersion: 1`; `agentCapabilities.loadSession: true` with `sessionCapabilities: { list, delete, resume, close }`; `agentInfo` (name `zen-agent`, title `Zen Agent`, version `0.1.0`); `authMethods: []`. No `promptCapabilities.image`/`audio`/`embeddedContext` (text and resource links are baseline).
+`initialize` response: `protocolVersion: 1`; `agentCapabilities.loadSession: true` with `sessionCapabilities: { list, delete, resume, close }`; `agentCapabilities.promptCapabilities: { image: true, audio: true }` (Zed gates paste / drag & drop / @-mention of images on this; embeddedContext stays off); `agentInfo` (name `zen-agent`, title `Zen Agent`, version `0.1.0`); `authMethods: []`.
 
 ### 2.3 Client-Implemented Methods Used
 
@@ -72,10 +72,10 @@ Layout under the project's `.sessions/` directory:
 
 ## 4. Agent Turn Lifecycle (`session/prompt`)
 
-1. Look up the session; convert `ContentBlock[]` to a user message: `text` → plain text, `resource_link` with `file://` → inline file contents (unreadable → URI as text), anything else → error.
+1. Look up the session; convert `ContentBlock[]` via `promptBlocksToPromptContent`: text and resource links become text parts (as before), `image`/`audio` blocks become media parts (`ZEN_AGENT_MAX_MEDIA_BYTES`, default 10 MB decoded; oversize -> placeholder note). Transcript events keep the original blocks (Zed renders them); stored user messages keep plain-string content for pure-text prompts (cache-compatible) or part arrays otherwise. Media the active model cannot consume (per `getModelModalities`) degrades to placeholder text.
 2. Slash commands are intercepted first (see §8). Otherwise the user message — named after `git config user.name`, fallback `User` — is appended to history.
 3. Loop (max `ZEN_AGENT_MAX_TURN_STEPS`, default 25):
-   a. Call `runLlmStep(provider, ...)` with the system prompt, full history, and the single `bash` tool.
+   a. Call `runLlmStep(provider, ...)` with the system prompt, full history, and the session's tool list: `bash` always, plus `read_media` when the model accepts image/audio input (stable per session - the list is part of the cached prefix).
    b. Stream text deltas as `agent_message_chunk` and reasoning deltas as `agent_thought_chunk` (batched through `StreamThrottle`).
    c. For each tool call: emit `tool_call` (pending) → `tool_call_update` (in_progress) → execute via terminal (§5) → `tool_call_update` (completed/failed with terminal content and `rawOutput`); append assistant + tool messages to history.
    d. No tool calls → finish with the mapped stop reason (`length` → `max_tokens`, `content-filter` → `refusal`, `error` → throw, else `end_turn`).
@@ -124,6 +124,15 @@ Byte-identical across providers.
 - The bash tool runs on the host, so it needs its own sandbox: with `ZEN_AGENT_SANDBOX=1` (env policy) or `config.sandbox` (`/sandbox on`), each bash call is wrapped in its own `bwrap` with the same `/mnt` policy (`bashSandboxPrefix` in `tool-execution.ts`). The env policy always wins: `/sandbox off` is refused while `ZEN_AGENT_SANDBOX=1`.
 - Inside the bash sandbox, `rm`/`grep`/`find` are shadowed (read-only mount) by `bin/zen-agent-sandbox-block.sh`, which refuses to run and suggests `trash`/`rg`/`fdfind`; the host is unaffected. `ZEN_AGENT_SANDBOX_CMD` overrides the whole bwrap command; `ZEN_AGENT_SANDBOX_BLOCK_SHIM` overrides the shim path.
 
+### 5.2 `read_media` Tool (`src/media.ts`)
+
+Offered only on sessions whose model accepts image/audio input (OpenRouter `architecture.input_modalities`; unknown catalog entries count as text-only). The model calls it with a file path; the agent resolves it against the session cwd, maps extensions to MIME types (png/jpeg/webp/gif/bmp images, wav/mp3 audio), enforces the size limit, then:
+
+- returns a short metadata line as the normal tool result (keeps assistant tool_calls paired - DeepSeek 400s on unpaired calls), and
+- injects the base64 payload as parts of a synthetic **user** message right after the tool results (the OpenAI-compatible tool role only accepts string content).
+
+Failures (missing file, unsupported extension, modality not accepted by the model) produce a failed tool result without injection. With `read_media` present, the system prompt gains a media-handling paragraph telling the model to perceive attachments natively and to load referenced files itself instead of asking the user.
+
 ## 6. LLM Providers
 
 Both providers are OpenAI-compatible chat completions endpoints spoken to by one hand-rolled SSE client.
@@ -171,7 +180,7 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 - Sends `stream_options: { include_usage: true }` (OpenRouter omits usage otherwise). `parseOpenRouterUsage` reads generic `prompt_tokens`/`completion_tokens` plus optional passthrough cache (`prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`) and reasoning fields.
 - `reasoning_effort` uses the OpenAI vocabulary: `off` omits it, `high`/`max` → `high`.
 - Cost/context: `GET /models` (fetched once per base URL+key, cached) provides USD pricing and `context_length`; static fallbacks cover `openrouter/free` ($0) and generic defaults for unknown slugs. OpenRouter bills cached reads at the regular input rate. Balance verification: `GET /auth/key` (remaining = limit − usage).
-- **Model catalog**: the catalog is auto-fetched from `/models` (5s timeout) the first time an OpenRouter session's config options are requested, kept in memory per process, and persisted to `<cwd>/.sessions/client/models.openrouter.json` (versioned; best-effort). Offline starts load that file. The session `model` selector is built from the catalog — tool-capable models only (`supported_parameters` missing = assume yes), `openrouter/free` pinned first, then alphabetical — with the static list (`openrouter/free`) as final fallback.
+- **Model catalog**: the catalog is auto-fetched from `/models` (5s timeout) the first time an OpenRouter session's config options are requested, kept in memory per process, and persisted to `<cwd>/.sessions/client/models.openrouter.json` (versioned; best-effort). Offline starts load that file. The session `model` selector is built from the catalog — tool-capable models only (`supported_parameters` missing = assume yes), `openrouter/free` pinned first, then alphabetical — with the static list (`openrouter/free`) as final fallback. v2 cache files also carry `architecture.input_modalities`, exposed via `getOpenRouterModelModalities` / `provider.getModelModalities` to gate media input.
 
 ### 6.4 Dispatch (`src/provider.ts`)
 
@@ -216,6 +225,9 @@ zen-agent/
     agent.ts           ACP handlers, session store, turn lifecycle, stats
     storage.ts         session persistence under <cwd>/.sessions/
     llm-client.ts      shared OpenAI-compatible SSE client + bash schema
+    prompt-content.ts  ACP ContentBlock[] -> user-message parts (text + media)
+    media.ts           read_media path resolution/validation
+    media-limit.ts     shared ZEN_AGENT_MAX_MEDIA_BYTES limit
     deepseek.ts        DeepSeek provider (pricing, usage, balance)
     openrouter.ts      OpenRouter provider (models catalog, usage, balance)
     provider.ts        per-session provider dispatch + pricing/balance facade
@@ -243,6 +255,7 @@ zen-agent/
 - `deepseek.test.ts` / `openrouter.test.ts` — provider SSE behavior against local HTTP servers: live reasoning streaming (timing-sensitive), streaming tool calls, wire format, usage parsing, retries, balance/model endpoints.
 - `agent.test.ts` / `agent.graceful.test.ts` — session lifecycle, config options + locking, graceful cancel, stats lines (with `runLlmStep` mocked).
 - `skills.test.ts` / `skills-slash.test.ts` / `sandbox.test.ts` / `system-prompt.test.ts` / `tool-execution.test.ts` — skills, sandbox toggling, environment messages, terminal artifacts.
+- `media.test.ts` / `prompt-content.test.ts` / `user-parts.test.ts` / `media-flow.test.ts` - media path resolution, prompt-block intake, OpenAI wire mapping (image_url data URIs, input_audio), and the end-to-end read_media turn flow (provider mocked).
 
 ## 13. Decisions
 

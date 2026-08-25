@@ -5,6 +5,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 ## Features
 
 - Single `bash` tool; no approval prompts
+- Image/audio input on multimodal OpenRouter models: paste, drag & drop or @-mention images in Zed, and the model can load local screenshots/audio itself via a `read_media` tool
 - Live streaming of thinking and answers
 - DeepSeek (default) and OpenRouter providers, chosen per session
 - Persistent sessions (`<project>/.sessions/`) with resume/load across Zed restarts
@@ -74,6 +75,14 @@ Zed shows three selectors per session (also settable via `default_config_options
 | Thinking effort | `off`, `high`, `max` |
 
 Provider, model and thinking effort are **locked after the session's first message** — set them before you start the conversation.
+
+### Image & Audio Input
+
+Sessions on OpenRouter models whose catalog entry lists `image`/`audio` in `architecture.input_modalities` accept media:
+
+- **Attach**: paste from the clipboard, drag & drop into the panel, or @-mention an image file. Zed sends it as an ACP content block; the transcript shows the original image while the LLM message carries the payload (`image_url` data URI / `input_audio`).
+- **Self-directed reading**: vision/audio-capable sessions also get a `read_media` tool. When the user references a screenshot or recording by path, the model loads and perceives it itself instead of asking for a description; payloads ride in a synthetic user message right after the tool result.
+- On text-only models (all DeepSeek models, non-vision OpenRouter slugs) attached media degrades to a placeholder note in the prompt, so the turn still runs. Media above `ZEN_AGENT_MAX_MEDIA_BYTES` (default 10 MB decoded) is omitted with a note.
 
 ## Slash Commands
 

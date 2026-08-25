@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import {
   buildEnvironmentMessage,
   buildSessionContinuedMessage,
+  buildSystemPrompt,
   getUserMessageName,
   isEnvironmentMessage,
 } from "./system-prompt.js";
@@ -222,5 +223,45 @@ describe("isEnvironmentMessage", () => {
     ).toBe(false);
     expect(isEnvironmentMessage({ role: "user", content: "x" })).toBe(false);
     expect(isEnvironmentMessage({ role: "assistant", content: [] })).toBe(false);
+  });
+});
+
+describe("buildSystemPrompt media guidance", () => {
+  function makeSession(systemPrompt = ""): StoredSession {
+    return {
+      sessionId: "s",
+      cwd: "/tmp",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      title: null,
+      events: [],
+      llmMessages: [],
+      config: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        thinkingEffort: "off",
+        systemPrompt,
+        sandbox: false,
+      },
+      usage: emptySessionUsage(),
+      turnStats: [],
+    };
+  }
+
+  it("omits media guidance by default (byte-stable for existing sessions)", () => {
+    expect(buildSystemPrompt(makeSession())).not.toContain("read_media");
+    expect(buildSystemPrompt(makeSession(), {})).not.toContain("read_media");
+    expect(buildSystemPrompt(makeSession(), { media: false })).not.toContain("read_media");
+  });
+
+  it("appends media guidance for multimodal models", () => {
+    const prompt = buildSystemPrompt(makeSession(), { media: true });
+    expect(prompt).toContain("read_media");
+    expect(prompt).toContain("Media handling:");
+  });
+
+  it("appends guidance after a custom system prompt", () => {
+    const session = makeSession("custom prompt");
+    expect(buildSystemPrompt(session, { media: true }).startsWith("custom prompt\n\n")).toBe(true);
   });
 });
