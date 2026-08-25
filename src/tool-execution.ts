@@ -221,6 +221,41 @@ export async function executeLlmToolCall(
 ): Promise<ToolExecutionResult> {
   const { session, sandbox, clientCapabilities, emit, logRuntime } = context;
 
+  // A streamed tool call whose JSON arguments never parsed cannot be
+  // dispatched; report that clearly instead of a confusing per-tool
+  // "requires a string" error (the client used to assume bash).
+  const malformedArguments = (
+    call.input as { malformed_arguments?: unknown } | null
+  )?.malformed_arguments;
+  if (typeof malformedArguments === "string") {
+    const message = `Tool ${call.name} produced malformed JSON arguments: ${malformedArguments.slice(0, 200)}`;
+    await emit({
+      sessionUpdate: "tool_call",
+      toolCallId: call.id,
+      title: `Malformed arguments for ${call.name}`,
+      kind: "other",
+      status: "failed",
+      rawInput: call.input,
+    });
+    await emit({
+      sessionUpdate: "tool_call_update",
+      toolCallId: call.id,
+      status: "failed",
+      content: [{ type: "content", content: { type: "text", text: message } }],
+      rawOutput: { error: message },
+    });
+    void logRuntime("warn", "tool call had malformed JSON arguments", {
+      sessionId: session.sessionId,
+      toolCallId: call.id,
+      toolName: call.name,
+    });
+    return {
+      toolCallId: call.id,
+      toolName: call.name,
+      output: { type: "text", value: message },
+    };
+  }
+
   if (call.name === "read_media") {
     return executeReadMedia(context, cx, call);
   }

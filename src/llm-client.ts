@@ -281,6 +281,11 @@ export function toOpenAiMessages(
           role: "assistant",
           content: text || null,
         };
+        // Reasoning is replayed only alongside tool-call continuations:
+        // thinking-mode endpoints expect their reasoning field echoed back
+        // while they continue a tool exchange. Final-answer assistants omit
+        // it here; runChatCompletions backfills an empty reasoning field for
+        // thinking-mode sessions so the wire shape stays valid either way.
         if (toolCalls.length > 0 && parts.some((part) => part.type === "reasoning")) {
           assistantMessage[reasoningMessageField] = reasoning;
         }
@@ -725,7 +730,9 @@ export async function runChatCompletions(
       try {
         input = JSON.parse(partial.arguments || "{}");
       } catch {
-        input = { command: partial.arguments };
+        // Never parsed: keep the raw string under an explicit marker instead
+        // of guessing the tool's shape (executeLlmToolCall reports it).
+        input = { malformed_arguments: partial.arguments };
       }
       toolCalls.push({
         id: partial.id,
