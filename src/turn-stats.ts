@@ -5,7 +5,8 @@ export interface TurnStats {
   cacheReadTokens: number;
   cacheMissTokens: number;
   reasoningTokens: number;
-  costYuan: number;
+  /** Cost of the turn in the provider's billing currency (CNY or USD). */
+  cost: number;
   llmMs: number;
   thinkingMs: number;
   answeringMs: number;
@@ -20,7 +21,7 @@ export function emptyTurnStats(): TurnStats {
     cacheReadTokens: 0,
     cacheMissTokens: 0,
     reasoningTokens: 0,
-    costYuan: 0,
+    cost: 0,
     llmMs: 0,
     thinkingMs: 0,
     answeringMs: 0,
@@ -45,14 +46,14 @@ export function formatTokens(count: number): string {
   return String(count);
 }
 
-export function formatYuan(amount: number): string {
+export function formatCost(amount: number): string {
   if (amount > 0 && amount < 0.01) {
     return amount.toFixed(4);
   }
   return amount.toFixed(3);
 }
 
-export function roundYuan(amount: number): number {
+export function roundCost(amount: number): number {
   return Math.round(amount * 10_000) / 10_000;
 }
 

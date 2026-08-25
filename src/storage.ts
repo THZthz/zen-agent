@@ -127,8 +127,12 @@ export interface SessionUsage {
   cacheReadTokens: number;
   cacheMissTokens: number;
   reasoningTokens: number;
-  /** Cumulative cost in CNY. */
-  costYuan: number;
+  /**
+   * Cumulative cost in the session's billing currency (CNY for DeepSeek,
+   * USD for OpenRouter). Persisted as `costYuan` before OpenRouter existed;
+   * loading maps the legacy key.
+   */
+  cost: number;
   /** Cumulative LLM request wall time in ms. */
   llmMs: number;
   /** Cumulative thinking (reasoning) time in ms. */
@@ -154,7 +158,7 @@ export function emptySessionUsage(): SessionUsage {
     cacheReadTokens: 0,
     cacheMissTokens: 0,
     reasoningTokens: 0,
-    costYuan: 0,
+    cost: 0,
     llmMs: 0,
     thinkingMs: 0,
     answeringMs: 0,
@@ -424,6 +428,16 @@ function normalizeStoredSession(
       if (typeof value === "number" && Number.isFinite(value)) {
         usage[key] = value as never;
       }
+    }
+    // Legacy persisted shape named the cost field `costYuan` (from the
+    // CNY-only era); map it so old sessions keep their accumulated totals.
+    const legacyCost = (raw.usage as Record<string, unknown>).costYuan;
+    if (
+      typeof legacyCost === "number" &&
+      Number.isFinite(legacyCost) &&
+      usage.cost === emptyUsage.cost
+    ) {
+      usage.cost = legacyCost;
     }
   }
 

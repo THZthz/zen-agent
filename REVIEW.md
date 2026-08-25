@@ -43,7 +43,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 13. **Dead code: the whole tokenizer** — `src/tokenizer.ts` (633 lines) plus `data/deepseek-tokenizer.json.gz` (~MBs shipped in the repo) is imported by nothing in production code (no `countTokens`/`encode` callers outside tests; there isn't even a `tokenizer.test.ts`). It also carries stale branding: `ZEN_AGENT_*` is the convention everywhere else, yet this file uses `REASONIX_TOKENIZER_PATH` and resolves a `reasonix/package.json` dependency that isn't in `package.json`. Delete it or wire it up.
 
-- [ ] 14. **Misleading currency naming** — `costYuan` / `formatYuan` / `roundYuan` hold **USD** for OpenRouter sessions (`turn-stats.ts`, `storage.ts` SessionUsage, agent logging). Anyone reading `usage.costYuan` will assume CNY. Rename to currency-neutral (`cost`, `formatCost`) now while the persisted-shape compat story is already being managed.
+- [x] 14. **Misleading currency naming** — `costYuan` / `formatYuan` / `roundYuan` hold **USD** for OpenRouter sessions (`turn-stats.ts`, `storage.ts` SessionUsage, agent logging). Anyone reading `usage.costYuan` will assume CNY. Rename to currency-neutral (`cost`, `formatCost`) now while the persisted-shape compat story is already being managed.
 
 - [ ] 15. **Module-global state with hidden coupling**:
     - `rate-limit.ts`: `nextChatRequestAt` is process-global, shared across all sessions/providers, and a request aborted while waiting still consumes its reserved slot.

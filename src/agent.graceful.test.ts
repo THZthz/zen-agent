@@ -373,7 +373,7 @@ describe("debug log stats", () => {
         finishReason: "stop",
         toolCalls: 0,
       });
-      expect(typeof step!.costYuan).toBe("number");
+      expect(typeof step!.cost).toBe("number");
       expect(step!.llmMs).toBe(500);
       expect(step!.thinkingMs).toBe(300);
       expect(step!.answeringMs).toBe(200);

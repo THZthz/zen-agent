@@ -113,7 +113,7 @@ export function costYuan(usage: LlmUsage, pricing: ModelPricing): number {
 /**
  * Account balance snapshot from DeepSeek's `GET /user/balance` endpoint.
  *
- * Used to cross-check the locally estimated token cost (`costYuan`) against
+ * Used to cross-check the locally estimated token cost (`cost`, in CNY) against
  * what DeepSeek actually bills: the balance delta across a turn should match
  * the turn's estimated cost. Balance values come back as strings with two
  * decimals, so a single turn's delta is only accurate to ~¥0.01.

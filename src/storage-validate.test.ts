@@ -64,7 +64,7 @@ describe("readStoredSession validation", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         llmMessages: [{ role: "user", content: "hi" }],
         config: { systemPrompt: "" },
-        usage: { turns: 3, inputTokens: 100, costYuan: "oops" },
+        usage: { turns: 3, inputTokens: 100, costYuan: 3.5 },
       }),
     );
     const session = await readStoredSession(cwd, "sess_legacy");
@@ -77,7 +77,7 @@ describe("readStoredSession validation", () => {
     expect(session.title).toBeNull();
     expect(session.usage.turns).toBe(3);
     expect(session.usage.inputTokens).toBe(100);
-    expect(session.usage.costYuan).toBe(0); // non-numeric degraded to default
+    expect(session.usage.cost).toBe(3.5); // legacy costYuan key mapped
     expect(typeof session.updatedAt).toBe("string");
 
     // The normalized session round-trips through the real writer.

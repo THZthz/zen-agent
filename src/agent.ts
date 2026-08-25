@@ -65,8 +65,8 @@ import {
   emptyTurnStats,
   formatMs,
   formatTokens,
-  formatYuan,
-  roundYuan,
+  formatCost,
+  roundCost,
   showTurnStats,
   type TurnStats,
 } from "./turn-stats.js";
@@ -1141,7 +1141,7 @@ export class ZenAgent {
     turn.llmMs += usage.llmMs;
     turn.thinkingMs += usage.thinkingMs;
     turn.answeringMs += usage.answeringMs;
-    turn.costYuan += costFromUsage(
+    turn.cost += costFromUsage(
       usage,
       await getModelPricing(active.session.config.provider, active.session.config.model),
     );
@@ -1210,7 +1210,7 @@ export class ZenAgent {
     usage.cacheReadTokens += turn.cacheReadTokens;
     usage.cacheMissTokens += turn.cacheMissTokens;
     usage.reasoningTokens += turn.reasoningTokens;
-    usage.costYuan += turn.costYuan;
+    usage.cost += turn.cost;
     usage.llmMs += turn.llmMs;
     usage.thinkingMs += turn.thinkingMs;
     usage.answeringMs += turn.answeringMs;
@@ -1246,7 +1246,7 @@ export class ZenAgent {
       used: Math.min(contextUsed, size),
       size,
       cost: {
-        amount: roundYuan(active.session.usage.costYuan),
+        amount: roundCost(active.session.usage.cost),
         currency: this.costCurrency(active),
       },
     });
@@ -1279,7 +1279,7 @@ export class ZenAgent {
     const symbol = active.session.config.provider === "openrouter" ? "$" : "¥";
     const text = [
       `Turn ${active.session.usage.turns} · ${turn.steps} step${turn.steps === 1 ? "" : "s"} · think ${formatMs(turn.thinkingMs)} · answer ${formatMs(turn.answeringMs)} · tools ${formatMs(turn.toolMs)}`,
-      `in ${formatTokens(turn.inputTokens)} · out ${formatTokens(turn.outputTokens)} · cache hit ${cacheHitPercent(turn)} · ${symbol}${formatYuan(turn.costYuan)} (session ${symbol}${formatYuan(active.session.usage.costYuan)})`,
+      `in ${formatTokens(turn.inputTokens)} · out ${formatTokens(turn.outputTokens)} · cache hit ${cacheHitPercent(turn)} · ${symbol}${formatCost(turn.cost)} (session ${symbol}${formatCost(active.session.usage.cost)})`,
     ].join("\n");
     await this.emit(active, cx, {
       sessionUpdate: "agent_message_chunk",
@@ -1299,7 +1299,7 @@ export class ZenAgent {
    * DeepSeek's /user/balance (and OpenRouter's /auth/key) returns the current
    * account balance; the delta between this turn's snapshot and the previous
    * turn's snapshot should equal the turn's locally estimated cost
-   * (turn.costYuan, derived from the usage fields the provider streams back
+   * (turn.cost, derived from the usage fields the provider streams back
    * per step). A persistent mismatch means the pricing table or token
    * counting is wrong. Balance values are only two-decimal-precise, so
    * single-turn deltas are noisy — this is data gathering only, no behavior
@@ -1317,8 +1317,8 @@ export class ZenAgent {
         turn: active.session.usage.turns,
         provider,
         model: active.session.config.model,
-        estimatedTurnCost: roundYuan(turn.costYuan),
-        sessionEstimatedCost: roundYuan(active.session.usage.costYuan),
+        estimatedTurnCost: roundCost(turn.cost),
+        sessionEstimatedCost: roundCost(active.session.usage.cost),
         balanceIsAvailable: snapshot.isAvailable,
         balanceCurrency: snapshot.currency,
         balanceTotal: snapshot.total,
@@ -1328,8 +1328,8 @@ export class ZenAgent {
       if (before !== null && before.currency === snapshot.currency) {
         const balanceDelta = before.total - snapshot.total;
         details.balanceBefore = before.total;
-        details.balanceDelta = roundYuan(balanceDelta);
-        details.deltaVsEstimated = roundYuan(balanceDelta - turn.costYuan);
+        details.balanceDelta = roundCost(balanceDelta);
+        details.deltaVsEstimated = roundCost(balanceDelta - turn.cost);
       }
       this.lastObservedBalance = { currency: snapshot.currency, total: snapshot.total };
       await this.logRuntime(active.session.cwd, "info", "turn stats balance verify", details);
@@ -1474,7 +1474,7 @@ export class ZenAgent {
       cacheMissTokens: usage.cacheMissTokens,
       cacheHitPercent: cacheHitPercent(usage),
       reasoningTokens: usage.reasoningTokens,
-      costYuan: costFromUsage(usage, pricing),
+      cost: costFromUsage(usage, pricing),
       llmMs: usage.llmMs,
       thinkingMs: usage.thinkingMs,
       answeringMs: usage.answeringMs,
@@ -1507,7 +1507,7 @@ export class ZenAgent {
       cacheMissTokens: turn.cacheMissTokens,
       cacheHitPercent: cacheHitPercent(turn),
       reasoningTokens: turn.reasoningTokens,
-      costYuan: turn.costYuan,
+      cost: turn.cost,
       llmMs: turn.llmMs,
       thinkingMs: turn.thinkingMs,
       answeringMs: turn.answeringMs,
