@@ -12,6 +12,11 @@ export class LruCache<K, V> {
   }
 
   set(key: K, value: V): void {
+    // Degenerate configuration (limit <= 0): store nothing rather than
+    // silently keeping exactly one entry.
+    if (this.limit <= 0) {
+      return;
+    }
     if (this.map.has(key)) {
       this.map.delete(key);
     } else if (this.map.size >= this.limit) {

@@ -67,4 +67,4 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 - [x] 22. `retry.ts`: `Retry-After` HTTP-date format isn't handled (only delta-seconds); the abort listener added in `sleep()` is never removed on normal resolve.
 - [x] 23. `toOpenAiMessages` only returns stored reasoning when the assistant message has tool calls — intentional-looking but subtle; deserves the comment treatment since it interacts with the thinking-mode backfill logic right below.
 - [x] 24. Malformed streamed tool-call JSON falls back to `{ command: partial.arguments }` (`llm-client.ts`) — bash-specific assumption baked into the generic client; for `read_media` it produces a confusing "requires a non-empty string path" error instead of "malformed arguments".
-- [ ] 25. `tokenizer.ts` aside, `LruCache.set` evicts even when `limit <= 0` re-inserts… fine in practice, but `new LruCache(0)` degenerates silently.
+- [x] 25. `tokenizer.ts` aside, `LruCache.set` evicts even when `limit <= 0` re-inserts… fine in practice, but `new LruCache(0)` degenerates silently.
