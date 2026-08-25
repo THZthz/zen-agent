@@ -721,7 +721,11 @@ export class ZenAgent {
       });
       const slashCommand = this.parseSlashCommand(userText);
 
-      if (slashCommand) {
+      // Gate on KNOWN command names (builtins + installed skills): any other
+      // text that merely starts with "/" — e.g. "/etc/hosts permissions?" or
+      // a regex like "/foo.*bar/" — is an ordinary prompt for the model, not
+      // a failed command invocation.
+      if (slashCommand && (await this.isKnownSlashCommand(active.session, slashCommand.name))) {
         active.session.events.push({
           sessionUpdate: "user_message_chunk",
           content: { type: "text", text: userText },
@@ -1611,6 +1615,21 @@ export class ZenAgent {
       name: match[1].toLowerCase(),
       argument: match[2].trim(),
     };
+  }
+
+  /**
+   * Whether `name` resolves to a builtin command or an installed Agent Skill;
+   * gates slash-command handling so unknown "/words" stay normal prompts.
+   */
+  private async isKnownSlashCommand(
+    session: StoredSession,
+    name: string,
+  ): Promise<boolean> {
+    if (AVAILABLE_COMMANDS.some((command) => command.name === name)) {
+      return true;
+    }
+    const skills = await listSkills(session.cwd);
+    return skills.some((skill) => skill.name.toLowerCase() === name);
   }
 
   private async handleSlashCommand(

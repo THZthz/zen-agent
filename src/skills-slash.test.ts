@@ -158,21 +158,41 @@ describe("skill slash commands", () => {
     }
   });
 
-  it("falls back to 'Unknown slash command' when no skill matches", async () => {
+  it("treats unknown /names as ordinary prompts instead of failed commands", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "zen-agent-skills-slash-project-"));
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+      mockedRunLlmStep.mockResolvedValueOnce(answerStep("looking into /not-a-skill for you"));
       const response = await agent.prompt(
-        { sessionId, prompt: [{ type: "text", text: "/not-a-skill" }] },
+        { sessionId, prompt: [{ type: "text", text: "/not-a-skill explain this" }] },
         cx,
       );
+      // Forwarded to the model as a normal user message...
       expect(response.stopReason).toBe("end_turn");
-      expect(mockedRunLlmStep).not.toHaveBeenCalled();
+      expect(mockedRunLlmStep).toHaveBeenCalledTimes(1);
+      const firstCall = mockedRunLlmStep.mock.calls[0]?.[0] as { messages: Array<{ role: string; content: unknown }> };
+      const lastUser = [...firstCall.messages].reverse().find((m) => m.role === "user");
+      expect(lastUser?.content).toContain("/not-a-skill explain this");
+      // ...not answered with an "unknown command" bubble.
       const text = notifications
         .filter((n) => n.update.sessionUpdate === "agent_message_chunk")
         .map((n) => (n.update as { content?: { text?: string } }).content?.text ?? "")
         .join("\n");
-      expect(text).toContain("Unknown slash command: /not-a-skill");
+      expect(text).not.toContain("Unknown slash command");
+
+      // Builtins and installed skills still take the command path.
+      writeSkill(cwd, "grill-me", GRILL_ME);
+      mockedRunLlmStep.mockClear();
+      mockedRunLlmStep.mockResolvedValueOnce(
+        { text: "", reasoning: "", toolCalls: [], finishReason: "stop", usage: null, },
+      );
+      await agent.prompt({ sessionId, prompt: [{ type: "text", text: "/grill-me" }] }, cx);
+      const skillMessages = mockedRunLlmStep.mock.calls[0]?.[0].messages.filter(
+        (m) => m.role === "user" && typeof m.content === "string",
+      );
+      const skillInvocation = skillMessages?.at(-1)?.content as string;
+      expect(skillInvocation).toContain("<skill-invoked>");
+      expect(skillInvocation).toContain("Interview the user relentlessly");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
