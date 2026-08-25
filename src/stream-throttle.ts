@@ -13,6 +13,8 @@ export class StreamThrottle {
   private queue: Array<{ kind: StreamKind; text: string }> = [];
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  /** First emit failure, surfaced to drain() so a broken pipe ends the turn. */
+  private failure: { error: unknown } | null = null;
 
   constructor(
     private emit: (kind: StreamKind, text: string) => Promise<void>,
@@ -28,14 +30,28 @@ export class StreamThrottle {
     this.schedule();
   }
 
+  /**
+   * Resolves once every queued chunk has been emitted; rejects with the
+   * emit error when the consumer is gone (e.g. the client connection
+   * closed mid-stream), so callers stop instead of waiting on a queue that
+   * can never drain.
+   */
   async drain(): Promise<void> {
-    while (this.queue.length > 0) {
+    for (;;) {
+      // Checked unconditionally: on failure the queue is dropped, so a
+      // queue-only condition could mask the error.
+      if (this.failure) {
+        throw this.failure.error;
+      }
+      if (this.queue.length === 0) {
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, this.intervalMs));
     }
   }
 
   private schedule(): void {
-    if (this.running || this.timer) {
+    if (this.running || this.timer || this.failure) {
       return;
     }
     this.timer = setTimeout(() => {
@@ -51,20 +67,32 @@ export class StreamThrottle {
     }
 
     this.running = true;
-    let remaining = this.maxCharsPerTick;
+    try {
+      let remaining = this.maxCharsPerTick;
 
-    while (remaining > 0 && this.queue.length > 0) {
-      const item = this.queue[0];
-      if (item.text.length <= remaining) {
-        this.queue.shift();
-        await this.emit(item.kind, item.text);
-        remaining -= item.text.length;
-      } else {
-        const chunk = item.text.slice(0, remaining);
-        item.text = item.text.slice(remaining);
-        await this.emit(item.kind, chunk);
-        remaining = 0;
+      while (remaining > 0 && this.queue.length > 0) {
+        const item = this.queue[0]!;
+        if (item.text.length <= remaining) {
+          this.queue.shift();
+          await this.emit(item.kind, item.text);
+          remaining -= item.text.length;
+        } else {
+          const chunk = item.text.slice(0, remaining);
+          item.text = item.text.slice(remaining);
+          await this.emit(item.kind, chunk);
+          remaining = 0;
+        }
       }
+    } catch (error) {
+      // The emit callback failed (e.g. cx.notify on a closed connection).
+      // Drop the queued output and record the failure instead of letting the
+      // rejection escape `void this.tick()` — an unhandled rejection would
+      // crash the process, and leaving `running` stuck true would hang
+      // future schedule() calls and drain() forever.
+      this.queue = [];
+      this.failure ??= { error };
+      this.running = false;
+      return;
     }
 
     this.running = false;
