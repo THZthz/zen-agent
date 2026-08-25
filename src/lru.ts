@@ -1,6 +1,7 @@
 /** Insertion-ordered Map ⇒ LRU: re-insert on hit promotes the entry; eviction pops the oldest key. */
 export class LruCache<K, V> {
   private readonly map = new Map<K, V>();
+  // Parameter property: TS declares & assigns `this.limit` implicitly (no explicit body needed).
   constructor(private readonly limit: number) {}
 
   get(key: K): V | undefined {
