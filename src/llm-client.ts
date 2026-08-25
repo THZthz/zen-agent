@@ -38,6 +38,16 @@ export interface LlmStepResult {
 export interface LlmStepOptions {
   messages: LlmMessage[];
   /**
+   * Optional debug-log sink (wired to the session's log.jsonl by ZenAgent).
+   * Used for events worth correlating with a session, e.g. long client-side
+   * rate-limit waits. Fire-and-forget from the caller's perspective.
+   */
+  logRuntime?: (
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    details?: Record<string, unknown>,
+  ) => void;
+  /**
    * Tool schemas offered to the model. Defaults to the bash tool; sessions
    * on multimodal models append read_media (see ZenAgent.sessionTools). Must
    * stay stable within a session: the list is part of the cached prefix.
@@ -338,6 +348,12 @@ export interface ChatCompletionsOptions {
   extraHeaders?: Record<string, string>;
   /** Retry configuration for the initial chat request. Pass `{ maxAttempts: 1 }` to disable retries. */
   retry?: RetryOptions;
+  /** Debug-log sink for provider-internal diagnostics (see LlmStepOptions). */
+  logRuntime?: (
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    details?: Record<string, unknown>,
+  ) => void;
   /** Maps a thinking effort to extra body fields; return undefined to omit them. */
   effortBody?: (effort: ThinkingEffort) => Record<string, unknown> | undefined;
   signal?: AbortSignal;
@@ -359,6 +375,9 @@ export interface ChatCompletionsOptions {
  * closes the connection first (clean EOF → natural retry); this is the safety
  * net for genuinely hung sockets. Override with ZEN_AGENT_CHAT_TIMEOUT_MS.
  */
+/** Rate-limit waits longer than this are recorded via logRuntime (log.jsonl). */
+const RATE_LIMIT_WAIT_LOG_THRESHOLD_MS = 1_000;
+
 function parseChatTimeoutMs(): number {
   const raw = process.env.ZEN_AGENT_CHAT_TIMEOUT_MS;
   if (!raw) return 660_000;
@@ -447,18 +466,32 @@ export async function runChatCompletions(
   // safety net for genuinely hung sockets.
   const timeoutMs = parseChatTimeoutMs();
   const timeoutCtrl = new AbortController();
-  const timer = setTimeout(() => {
-    timeoutCtrl.abort(new Error(`${options.label} request timed out after ${timeoutMs}ms`));
-  }, timeoutMs);
-  timer.unref?.();
   // Combine — `options.signal ?? timeoutCtrl.signal` orphans the timer when
   // the caller passes a signal, so timeoutMs never reaches fetch.
   const signal = options.signal
     ? AbortSignal.any([options.signal, timeoutCtrl.signal])
     : timeoutCtrl.signal;
 
+  let timer: NodeJS.Timeout | undefined;
   try {
-    await waitForChatRateLimit(signal);
+    // Rate-limit waiting happens BEFORE the chat timeout starts ticking:
+    // queueing behind ZEN_AGENT_CHAT_RPM is not the request's time, and
+    // arming earlier would kill queued requests before they were ever sent.
+    // Only the caller's signal can interrupt the wait itself.
+    const rateLimitStart = Date.now();
+    await waitForChatRateLimit(options.signal);
+    const rateLimitedMs = Date.now() - rateLimitStart;
+    if (rateLimitedMs >= RATE_LIMIT_WAIT_LOG_THRESHOLD_MS) {
+      void options.logRuntime?.(
+        "info",
+        "chat request delayed by client-side rate limit",
+        { label: options.label, model: options.model, waitedMs: rateLimitedMs },
+      );
+    }
+    timer = setTimeout(() => {
+      timeoutCtrl.abort(new Error(`${options.label} request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    timer.unref?.();
 
     const response = await fetchWithRetry(
       fetch,
@@ -645,6 +678,8 @@ export async function runChatCompletions(
       usage: options.parseUsage(rawUsage, { llmMs, thinkingMs, answeringMs }),
     };
   } finally {
-    clearTimeout(timer);
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }

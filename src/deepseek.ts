@@ -252,6 +252,7 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
     signal: options.signal,
     onTextDelta: options.onTextDelta,
     onReasoningDelta: options.onReasoningDelta,
+    logRuntime: options.logRuntime,
     thinkingEffort: options.thinkingEffort,
     reasoningMessageField: "reasoning_content",
     reasoningDeltaFields: ["reasoning_content"],

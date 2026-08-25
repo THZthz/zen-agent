@@ -485,6 +485,7 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     signal: options.signal,
     onTextDelta: options.onTextDelta,
     onReasoningDelta: options.onReasoningDelta,
+    logRuntime: options.logRuntime,
     thinkingEffort: options.thinkingEffort,
     reasoningMessageField: "reasoning",
     reasoningDeltaFields: ["reasoning", "reasoning_content"],

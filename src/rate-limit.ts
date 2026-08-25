@@ -32,6 +32,11 @@ export async function waitForChatRateLimit(signal?: AbortSignal): Promise<void> 
   });
 }
 
+/** Test/startup hook: drop any reserved slot so the next request fires immediately. */
+export function resetChatRateLimit(): void {
+  nextChatRequestAt = 0;
+}
+
 function parseChatRpm(): number {
   const raw = process.env.ZEN_AGENT_CHAT_RPM;
   if (!raw) return 0;

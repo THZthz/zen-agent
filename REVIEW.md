@@ -4,14 +4,14 @@ Review complete. I read every source file (all 24 modules under `src/`, plus con
 
 ## High severity — likely bugs
 
-- [ ] 1. `StreamThrottle` turns a failed emit into a process crash or a hung turn
+- [x] 1. `StreamThrottle` turns a failed emit into a process crash or a hung turn
 `src/stream-throttle.ts` — `schedule()` starts the tick with `void this.tick()`. Inside `tick()`, `await this.emit(...)` is not wrapped in try/catch:
 - If the emit rejects (e.g., the JSON-RPC connection to Zed drops mid-stream — exactly what `cx.notify` does in `agent.ts`'s callback), the rejection is **unhandled**. On Node ≥ 15 the default behavior terminates the whole agent process. I reproduced this: a throwing emit crashes the runtime with `triggerUncaughtException`.
 - Even if the process survived, `this.running` stays `true` forever (the reset lines are after the throw) and the queue is never cleared, so `drain()` — awaited in `runTurn` — would spin/hang indefinitely.
 
 Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whether to drop the queue (connection gone) or propagate the error to `drain()`.
 
-- [ ] 2. OpenRouter model catalog caches a rejected promise forever
+- [x] 2. OpenRouter model catalog caches a rejected promise forever
 `src/openrouter.ts` — `fetchOpenRouterModels()` stores `{ key, promise }` and returns the cached promise whenever the key matches. If the first fetch fails (offline start, transient 5xx, bad key), the **rejected promise stays cached for the entire process lifetime**. Every later call — pricing (`getOpenRouterModelInfo`), modalities, model selector — silently falls back to static tables even long after the network recovers. Only `resetOpenRouterModelsCache()` (a test hook) clears it. Fix: on rejection, null out `modelsCache` so the next call retries.
 
 - [ ] 3. Negative modalities memoized per session
@@ -20,7 +20,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 - [ ] 4. Race: a new `prompt` mutates history while the aborted turn is still draining
 `ZenAgent.prompt()` calls `abortActiveSession()` (which does not await the old `runTurn`'s completion) and then immediately pushes the new user message and saves. The old turn's loop still runs until it reaches its next `signal.aborted` check and can push assistant/tool messages *after* the new user message — interleaved, misordered history (partially masked later by `healMessages` dropping the unpaired leftovers, i.e., losing real content). Similarly, two concurrent `writeSession` calls do whole-file read-modify-write with no serialization; last write wins. An in-flight per-session turn promise (awaited before starting a new turn) would close this.
 
-- [ ] 5. Chat timeout budget consumed by client-side rate limiting
+- [x] 5. Chat timeout budget consumed by client-side rate limiting
 `src/llm-client.ts`: the timeout `AbortController` timer is armed *before* `await waitForChatRateLimit(signal)`. With `ZEN_AGENT_CHAT_RPM` low and several queued requests, a request can be killed with "request timed out" before it was ever sent. Arm the timer after the rate-limit wait.
 
 ## Medium severity
