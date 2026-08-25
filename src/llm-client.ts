@@ -427,9 +427,15 @@ export async function runChatCompletions(
   // session's stored messages.
   const healed = healMessages(options.messages);
   if (healed.droppedAssistants > 0 || healed.droppedTools > 0) {
-    console.warn(
-      `${options.label}: dropped ${healed.droppedAssistants} assistant message(s) with unpaired tool calls and ${healed.droppedTools} stray tool message(s)`,
-    );
+    // Healing silently loses history by design; the drop must be visible in
+    // the session's log.jsonl (via the agent's logRuntime sink) rather than
+    // on stdout/stderr, which Zed swallows.
+    void options.logRuntime?.("warn", "healed message history before LLM request", {
+      label: options.label,
+      model: options.model,
+      droppedAssistants: healed.droppedAssistants,
+      droppedTools: healed.droppedTools,
+    });
   }
   const wireMessages = toOpenAiMessages(healed.messages, options.reasoningMessageField);
 

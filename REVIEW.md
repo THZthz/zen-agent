@@ -53,7 +53,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 16. **Lint hygiene** — no ESLint/configured lint at all; `tsconfig.json` doesn't enable `noUnusedLocals`. Consequences visible today: `agent.ts` imports `randomBytes`, `mkdir`, `readFile` unused, and has three separate import statements from `./llm-client.js`. Cheap wins.
 
-- [ ] 17. **`healMessages` silent data loss is only console.warn'd** — dropped assistant/tool messages go to stdout, not the session debug log (`logRuntime`). When healing kicks in after a crash you'll want it in `llm.jsonl`/`log.jsonl` correlated with the session, not on a stdout Zed may swallow.
+- [x] 17. **`healMessages` silent data loss is only console.warn'd** — dropped assistant/tool messages go to stdout, not the session debug log (`logRuntime`). When healing kicks in after a crash you'll want it in `llm.jsonl`/`log.jsonl` correlated with the session, not on a stdout Zed may swallow.
 
 - [ ] 18. **`listStoredSessions(cwd)` reads and JSON-parses every `state.json` in full** (including base64 media) just to produce id/title/date. Store title/updatedAt in the index or sidecar and listing stays O(entries) cheap.
 
