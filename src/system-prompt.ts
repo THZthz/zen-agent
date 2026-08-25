@@ -32,12 +32,27 @@ export function isEnvironmentMessage(message: LlmMessage): boolean {
 }
 
 /**
+ * Extra guidance appended when the session's model accepts image/audio
+ * input (and therefore has the read_media tool). Part of the cached prefix:
+ * stable per session because provider/model lock after the first message.
+ */
+export const MEDIA_GUIDANCE = `Media handling:
+- Images or audio the user attaches arrive directly inside their message; you perceive them natively and never need the user to describe them.
+- To view a local image or listen-relevant audio file yourself (screenshot, photo, diagram, recording), call the read_media tool with its path - do not ask the user to describe it and do not try to interpret it from bytes via bash.`;
+
+/**
  * The system prompt contains only the agent's instructions; environment
  * context (working directory, time, git state) is sent separately as a
  * user-role message named `environment` (see buildEnvironmentMessage).
+ *
+ * `options.media` appends the media-handling guidance for multimodal models.
  */
-export function buildSystemPrompt(session: StoredSession): string {
-  return session.config.systemPrompt || SYSTEM_PROMPT;
+export function buildSystemPrompt(
+  session: StoredSession,
+  options?: { media?: boolean },
+): string {
+  const base = session.config.systemPrompt || SYSTEM_PROMPT;
+  return options?.media ? `${base}\n\n${MEDIA_GUIDANCE}` : base;
 }
 
 /**

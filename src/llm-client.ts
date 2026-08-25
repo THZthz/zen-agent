@@ -1,4 +1,4 @@
-import type { LlmMessage, ModelId, ThinkingEffort } from "./storage.js";
+import type { LlmMessage, ModelId, ThinkingEffort, UserContentPart } from "./storage.js";
 import { healMessages } from "./heal.js";
 import { waitForChatRateLimit } from "./rate-limit.js";
 import { fetchWithRetry, type RetryOptions } from "./retry.js";
@@ -37,6 +37,12 @@ export interface LlmStepResult {
 
 export interface LlmStepOptions {
   messages: LlmMessage[];
+  /**
+   * Tool schemas offered to the model. Defaults to the bash tool; sessions
+   * on multimodal models append read_media (see ZenAgent.sessionTools). Must
+   * stay stable within a session: the list is part of the cached prefix.
+   */
+  tools?: unknown[];
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void | Promise<void>;
   onReasoningDelta?: (delta: string) => void | Promise<void>;
@@ -92,8 +98,89 @@ export const BASH_TOOL_SCHEMA = {
   },
 } as const;
 
+/** Audio formats accepted by OpenAI-compatible `input_audio` parts. */
+const INPUT_AUDIO_FORMATS: Record<string, string> = {
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/wave": "wav",
+  "audio/vnd.wave": "wav",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mpeg3": "mp3",
+};
+
+function inputAudioFormat(mimeType: string): string | null {
+  return INPUT_AUDIO_FORMATS[mimeType.toLowerCase()] ?? null;
+}
+
 /**
- * Convert our stored AI-SDK ModelMessage history to the OpenAI wire format.
+ * Multi-part user content to OpenAI-compatible wire parts: text stays text,
+ * images become `image_url` data URIs and audio becomes `input_audio`
+ * (base64 + format; URLs are not supported for audio by the API).
+ */
+export function userPartsToOpenAi(parts: UserContentPart[]): unknown[] {
+  const out: unknown[] = [];
+  for (const part of parts) {
+    switch (part.type) {
+      case "text":
+        out.push({ type: "text", text: part.text });
+        break;
+      case "image":
+        out.push({
+          type: "image_url",
+          image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+        });
+        break;
+      case "audio": {
+        const format = inputAudioFormat(part.mimeType);
+        if (format === null) {
+          // Unsupported container: degrade instead of failing the request.
+          out.push({
+            type: "text",
+            text: `[audio attached (${part.mimeType}) omitted: unsupported format]`,
+          });
+          break;
+        }
+        out.push({
+          type: "input_audio",
+          input_audio: { data: part.data, format },
+        });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The read_media tool: lets the model view an image or audio file by itself.
+ * Only offered when the active model accepts the modality; the harness reads
+ * the file and injects the payload as media parts in the following user
+ * message (the OpenAI tool role only allows text content).
+ */
+export const READ_MEDIA_TOOL_SCHEMA = {
+  type: "function",
+  function: {
+    name: "read_media",
+    description:
+      "Load a local image or audio file so you can see/hear its content yourself (no user description needed). Use for screenshots, photos, diagrams, recordings, or any media file the user references by path. Returns the media attached to the conversation; a short metadata line confirms what was loaded.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description:
+            "Path to the media file (absolute, or relative to the working directory). Must be an image (png/jpeg/webp/gif) or audio (wav/mp3) file.",
+        },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+} as const;
+
+/**
+ * Convert our stored message history to the OpenAI wire format.
  * `reasoningMessageField` is the provider-specific field used to send stored
  * reasoning back in assistant history messages ("reasoning_content" for
  * DeepSeek, "reasoning" for OpenRouter).
@@ -110,10 +197,7 @@ export function toOpenAiMessages(
         const content =
           typeof message.content === "string"
             ? message.content
-            : message.content
-                .filter((part) => part.type === "text")
-                .map((part) => (part as { text: string }).text)
-                .join("");
+            : userPartsToOpenAi(message.content);
         const userMessage: Record<string, unknown> = { role: "user", content };
         if ("name" in message && typeof message.name === "string" && message.name.length > 0) {
           userMessage.name = message.name;
@@ -237,6 +321,8 @@ export interface ChatCompletionsOptions {
   label: string;
   model: string;
   messages: LlmMessage[];
+  /** Tool schemas offered to the model; defaults to the bash tool. */
+  tools?: unknown[];
   system?: string;
   thinkingEffort?: ThinkingEffort;
   /**
@@ -332,7 +418,7 @@ export async function runChatCompletions(
         (message) => (message as { role?: string }).role !== "system",
       ) as Array<Record<string, unknown>>),
     ],
-    tools: [BASH_TOOL_SCHEMA],
+    tools: options.tools ?? [BASH_TOOL_SCHEMA],
     stream: true,
     ...options.extraBody,
     ...(options.effortBody?.(options.thinkingEffort ?? "off") ?? {}),

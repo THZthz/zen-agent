@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LlmToolCall } from "./deepseek.js";
+import { resolveMedia, type ResolvedMedia } from "./media.js";
 import { terminalDirectory, type StoredSession } from "./storage.js";
 import { formatMs } from "./turn-stats.js";
 
@@ -11,10 +12,20 @@ export interface ToolExecutionResult {
   toolCallId: string;
   toolName: string;
   output: { type: "text"; value: string };
+  /**
+   * Set by read_media: the media to inject as parts of the synthetic user
+   * message that follows the tool result (the tool role only allows text).
+   */
+  attachedMedia?: ResolvedMedia;
 }
 
 export interface ToolExecutorContext {
   session: StoredSession;
+  /**
+   * Input modalities of the active model. Gates read_media: the tool is
+   * only offered to (and executed for) models that accept image/audio.
+   */
+  mediaModalities: { image: boolean; audio: boolean };
   /**
    * Whether bash tool calls in this session run inside their own bwrap
    * sandbox. The agent computes this as `session.config.sandbox || env
@@ -212,6 +223,10 @@ export async function executeLlmToolCall(
   signal: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const { session, sandbox, clientCapabilities, emit, logRuntime } = context;
+
+  if (call.name === "read_media") {
+    return executeReadMedia(context, cx, call);
+  }
 
   if (call.name !== "bash") {
     const message = `Unknown tool: ${call.name}`;
@@ -512,5 +527,80 @@ export async function executeLlmToolCall(
     };
   } finally {
     signal.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * The read_media tool: load a local image/audio file into the conversation.
+ * The payload is returned via attachedMedia and injected as parts of the
+ * synthetic user message following the tool result - the OpenAI-compatible
+ * tool role only accepts text content.
+ */
+async function executeReadMedia(
+  context: ToolExecutorContext,
+  cx: acp.AgentContext,
+  call: LlmToolCall,
+): Promise<ToolExecutionResult> {
+  void cx;
+  const { session, mediaModalities, emit } = context;
+  const rawPath = (call.input as { path?: unknown }).path;
+  const displayPath = typeof rawPath === "string" ? rawPath : String(rawPath ?? "");
+
+  await emit({
+    sessionUpdate: "tool_call",
+    toolCallId: call.id,
+    title: `read_media ${displayPath}`,
+    kind: "read",
+    status: "pending",
+    rawInput: call.input,
+  });
+
+  try {
+    if (typeof rawPath !== "string" || rawPath.trim().length === 0) {
+      throw new Error("read_media requires a non-empty string path");
+    }
+    const allowed: Array<"image" | "audio"> = [];
+    if (mediaModalities.image) allowed.push("image");
+    if (mediaModalities.audio) allowed.push("audio");
+    const media = await resolveMedia(session.cwd, rawPath, allowed);
+
+    const summary = `loaded ${media.path} (${media.mimeType}, ${(media.decodedBytes / 1024).toFixed(1)} KB); media attached below`;
+    await emit({
+      sessionUpdate: "tool_call_update",
+      toolCallId: call.id,
+      status: "completed",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: summary },
+        },
+      ],
+      rawOutput: { path: media.path, mimeType: media.mimeType, bytes: media.decodedBytes },
+    });
+    return {
+      toolCallId: call.id,
+      toolName: "read_media",
+      output: { type: "text", value: summary },
+      attachedMedia: media,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await emit({
+      sessionUpdate: "tool_call_update",
+      toolCallId: call.id,
+      status: "failed",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: message },
+        },
+      ],
+      rawOutput: { error: message },
+    });
+    return {
+      toolCallId: call.id,
+      toolName: "read_media",
+      output: { type: "text", value: `read_media failed: ${message}` },
+    };
   }
 }

@@ -247,6 +247,7 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
     label: "DeepSeek",
     model: modelName,
     messages: options.messages,
+    tools: options.tools,
     system: options.system,
     signal: options.signal,
     onTextDelta: options.onTextDelta,

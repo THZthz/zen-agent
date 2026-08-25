@@ -2,21 +2,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { UserContentPart } from "./storage.js";
-
-/**
- * Upper bound on a single media block's base64 payload, in decoded bytes.
- * Blocks above the limit are degraded to placeholder text instead of being
- * forwarded to the LLM (protects request size and state.json). Override
- * with ZEN_AGENT_MAX_MEDIA_BYTES.
- */
-const DEFAULT_MAX_MEDIA_BYTES = 10_000_000;
-
-function maxMediaBytes(): number {
-  const raw = process.env.ZEN_AGENT_MAX_MEDIA_BYTES;
-  if (!raw) return DEFAULT_MAX_MEDIA_BYTES;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_MEDIA_BYTES;
-}
+import { maxMediaBytes } from "./media-limit.js";
 
 /** Base64 length to decoded-byte estimate (no padding round-trip needed). */
 function base64Bytes(data: string): number {

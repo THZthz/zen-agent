@@ -26,7 +26,7 @@ import {
 } from "./storage.js";
 import { appendJsonLine, makeLogEntry } from "./logger.js";
 import { promptBlocksToPromptContent } from "./prompt-content.js";
-import { executeLlmToolCall } from "./tool-execution.js";
+import { executeLlmToolCall, type ToolExecutionResult } from "./tool-execution.js";
 import {
   costFromUsage,
   fetchBalanceSnapshot,
@@ -39,8 +39,10 @@ import {
   type LlmUsage,
 } from "./provider.js";
 import { getOpenRouterModelOptions } from "./openrouter.js";
+import { READ_MEDIA_TOOL_SCHEMA } from "./llm-client.js";
 import { formatLlmError } from "./llm-errors.js";
 import { BASH_TOOL_SCHEMA } from "./llm-client.js";
+
 import {
   appendCacheDiagnostic,
   buildCacheDiagnostic,
@@ -72,6 +74,12 @@ import {
 interface ActiveSession {
   session: StoredSession;
   abortController: AbortController | null;
+  /**
+   * Lazily resolved input modalities of the session's model (provider/model
+   * are locked after the first message, so this is stable per session).
+   * Drives the read_media tool offering and prompt media gating.
+   */
+  mediaModalities: { image: boolean; audio: boolean } | null;
   /**
    * Set when the client sends `session/cancel`. Instead of aborting the
    * current unit of work immediately (which would kill an in-flight bash
@@ -316,7 +324,32 @@ export class ZenAgent {
       abortController: null,
       gracefulCancel: false,
       cancelTimer: null,
+      mediaModalities: null,
     };
+  }
+
+  /**
+   * Input modalities of the session's model (memoized on the active session:
+   * provider and model are locked after the first message).
+   */
+  private async mediaModalities(active: ActiveSession) {
+    active.mediaModalities ??= await getModelModalities(
+      active.session.config.provider,
+      active.session.config.model,
+    );
+    return active.mediaModalities;
+  }
+
+  /**
+   * Tool schemas for the session's LLM requests. read_media is appended when
+   * the model accepts image or audio input; the list is part of the cached
+   * prefix, so it must stay stable within a session.
+   */
+  private async sessionToolSchemas(active: ActiveSession): Promise<unknown[]> {
+    const modalities = await this.mediaModalities(active);
+    return modalities.image || modalities.audio
+      ? [BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA]
+      : [BASH_TOOL_SCHEMA];
   }
 
   /** Clears any pending graceful-cancel state (flag + hard-abort timer). */
@@ -745,6 +778,7 @@ export class ZenAgent {
   ): Promise<acp.PromptResponse> {
     const turn = emptyTurnStats();
     let contextUsed: number | undefined;
+    const tools = await this.sessionToolSchemas(active);
 
     const finalize = async (
       stopReason: acp.StopReason,
@@ -773,7 +807,10 @@ export class ZenAgent {
       // Captured once per step: the system prompt is part of the byte-stable
       // prefix the provider's context cache keys on, so it must be identical
       // for the request, the transcript, and the cache diagnostics.
-      const system = buildSystemPrompt(active.session);
+      const mediaModalities = await this.mediaModalities(active);
+      const system = buildSystemPrompt(active.session, {
+        media: mediaModalities.image || mediaModalities.audio,
+      });
 
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
         type: "llm_request",
@@ -802,6 +839,7 @@ export class ZenAgent {
 
       const llmResult = await runLlmStep(active.session.config.provider, {
         messages: active.session.llmMessages,
+        tools,
         signal,
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
@@ -884,11 +922,7 @@ export class ZenAgent {
       if (llmResult.text.length > 0) {
         assistantParts.push({ type: "text", text: llmResult.text });
       }
-      const toolResults: Array<{
-        toolCallId: string;
-        toolName: string;
-        output: { type: "text"; value: string };
-      }> = [];
+      const toolResults: ToolExecutionResult[] = [];
 
       for (const call of llmResult.toolCalls) {
         // The bash tool runs to completion even when a graceful cancel is
@@ -930,6 +964,29 @@ export class ZenAgent {
           output: result.output,
         })),
       });
+      // read_media payload injection: the OpenAI-compatible tool role only
+      // allows text content, so the actual image/audio parts ride in a
+      // synthetic user message right after the tool results (the same trick
+      // Claude Code's Read tool uses). The tool role messages above keep the
+      // assistant's tool_calls paired - DeepSeek 400s on unpaired calls.
+      const mediaResults = toolResults.filter((result) => result.attachedMedia);
+      if (mediaResults.length > 0) {
+        active.session.llmMessages.push({
+          role: "user",
+          content: mediaResults.flatMap((result) => {
+            const media = result.attachedMedia!;
+            return [
+              {
+                type: "text" as const,
+                text: `[read_media] ${media.path} (${media.mimeType}, ${media.decodedBytes} bytes):`,
+              },
+              media.modality === "image"
+                ? { type: "image" as const, mimeType: media.mimeType, data: media.data }
+                : { type: "audio" as const, mimeType: media.mimeType, data: media.data },
+            ];
+          }),
+        });
+      }
       await this.save(active);
 
       // The completed tool call's results were persisted above, so the next
@@ -980,7 +1037,7 @@ export class ZenAgent {
     );
     const prefix = prefixDiagnosticHashes({
       system,
-      toolSpecs: [BASH_TOOL_SCHEMA],
+      toolSpecs: await this.sessionToolSchemas(active),
       env: active.session.llmMessages.find(isEnvironmentMessage) ?? null,
     });
     const entry = buildCacheDiagnostic({
@@ -1218,15 +1275,12 @@ export class ZenAgent {
     cx: acp.AgentContext,
     call: LlmToolCall,
     signal: AbortSignal,
-  ): Promise<{
-    toolCallId: string;
-    toolName: string;
-    output: { type: "text"; value: string };
-  }> {
+  ): Promise<ToolExecutionResult> {
     return executeLlmToolCall(
       {
         session: active.session,
         sandbox: this.sessionSandboxEnabled(active.session),
+        mediaModalities: await this.mediaModalities(active),
         clientCapabilities: this.clientCapabilities,
         emit: (update) => this.emit(active, cx, update),
         logRuntime: (level, message, details) =>

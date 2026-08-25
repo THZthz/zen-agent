@@ -471,6 +471,7 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     label: "OpenRouter",
     model: modelName,
     messages: options.messages,
+    tools: options.tools,
     system: options.system,
     signal: options.signal,
     onTextDelta: options.onTextDelta,
