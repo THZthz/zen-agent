@@ -84,6 +84,12 @@ function computeWait(
     if (Number.isFinite(seconds) && seconds > 0) {
       return Math.min(seconds * 1000, cap);
     }
+    // HTTP-date form ("Wed, 21 Oct 2026 07:28:00 GMT"): wait until then.
+    const at = Date.parse(retryAfter);
+    if (!Number.isNaN(at)) {
+      const secondsUntil = Math.max(0, (at - Date.now()) / 1000);
+      return Math.min(secondsUntil * 1000, cap);
+    }
   }
   const exp = initial * 2 ** attempt;
   // Jitter range [75%, 125%] to spread retries out when many clients hit 429 together.
@@ -94,12 +100,16 @@ function computeWait(
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError(signal!));
+    };
+    const timer = setTimeout(() => {
+      // Normal resolution must not leak the abort listener.
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
     if (signal) {
-      const onAbort = () => {
-        clearTimeout(timer);
-        reject(abortError(signal));
-      };
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }

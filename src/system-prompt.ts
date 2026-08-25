@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile);
 
 const GIT_TIMEOUT_MS = 5_000;
 
-export const SYSTEM_PROMPT = `You are an experiened software engineer.
+export const SYSTEM_PROMPT = `You are an experienced software engineer.
 
 You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.
 
