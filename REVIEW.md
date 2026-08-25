@@ -41,7 +41,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 ## Maintainability findings
 
-- [ ] 13. **Dead code: the whole tokenizer** — `src/tokenizer.ts` (633 lines) plus `data/deepseek-tokenizer.json.gz` (~MBs shipped in the repo) is imported by nothing in production code (no `countTokens`/`encode` callers outside tests; there isn't even a `tokenizer.test.ts`). It also carries stale branding: `ZEN_AGENT_*` is the convention everywhere else, yet this file uses `REASONIX_TOKENIZER_PATH` and resolves a `reasonix/package.json` dependency that isn't in `package.json`. Delete it or wire it up.
+- [x] 13. **Dead code: the whole tokenizer** — `src/tokenizer.ts` (633 lines) plus `data/deepseek-tokenizer.json.gz` (~MBs shipped in the repo) is imported by nothing in production code (no `countTokens`/`encode` callers outside tests; there isn't even a `tokenizer.test.ts`). It also carries stale branding: `ZEN_AGENT_*` is the convention everywhere else, yet this file uses `REASONIX_TOKENIZER_PATH` and resolves a `reasonix/package.json` dependency that isn't in `package.json`. Delete it or wire it up.
 
 - [ ] 14. **Misleading currency naming** — `costYuan` / `formatYuan` / `roundYuan` hold **USD** for OpenRouter sessions (`turn-stats.ts`, `storage.ts` SessionUsage, agent logging). Anyone reading `usage.costYuan` will assume CNY. Rename to currency-neutral (`cost`, `formatCost`) now while the persisted-shape compat story is already being managed.
 
