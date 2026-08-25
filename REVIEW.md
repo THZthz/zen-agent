@@ -17,7 +17,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 - [x] 3. Negative modalities memoized per session
 `src/agent.ts` `mediaModalities()` does `active.mediaModalities ??= await getModelModalities(...)`. Combined with issue 2 (and plain transient failures), a single failed lookup at the first message pins `{ image: false, audio: false }` for the whole session: `read_media` is never offered and attached images/audio degrade to placeholder notes, permanently. Consider retrying on failure instead of caching a negative result.
 
-- [ ] 4. Race: a new `prompt` mutates history while the aborted turn is still draining
+- [x] 4. Race: a new `prompt` mutates history while the aborted turn is still draining
 `ZenAgent.prompt()` calls `abortActiveSession()` (which does not await the old `runTurn`'s completion) and then immediately pushes the new user message and saves. The old turn's loop still runs until it reaches its next `signal.aborted` check and can push assistant/tool messages *after* the new user message — interleaved, misordered history (partially masked later by `healMessages` dropping the unpaired leftovers, i.e., losing real content). Similarly, two concurrent `writeSession` calls do whole-file read-modify-write with no serialization; last write wins. An in-flight per-session turn promise (awaited before starting a new turn) would close this.
 
 - [x] 5. Chat timeout budget consumed by client-side rate limiting

@@ -95,6 +95,13 @@ interface ActiveSession {
   gracefulCancel: boolean;
   /** Hard-abort escape hatch scheduled when a graceful cancel is requested. */
   cancelTimer: NodeJS.Timeout | null;
+  /**
+   * The in-flight turn started by the current prompt (null when idle). New
+   * prompts and load/resume/close/delete await it after a hard abort, so the
+   * old turn's final history mutations and state.json saves complete before
+   * anyone else touches the same session.
+   */
+  turnPromise: Promise<acp.PromptResponse> | null;
   /** Set while modality lookups keep failing, so the warn is logged once. */
   mediaModalitiesUnknownLogged: boolean;
 }
@@ -327,6 +334,7 @@ export class ZenAgent {
       gracefulCancel: false,
       cancelTimer: null,
       mediaModalities: null,
+      turnPromise: null,
       mediaModalitiesUnknownLogged: false,
     };
   }
@@ -479,7 +487,12 @@ export class ZenAgent {
     cx: acp.AgentContext,
   ): Promise<acp.LoadSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
+    // The previous ActiveSession (same id, older in-memory storage object)
+    // may still be unwinding a hard-aborted turn that saves to state.json;
+    // let it finish before writing the freshly loaded session to disk.
+    const previous = this.sessions.get(params.sessionId);
     this.abortActiveSession(params.sessionId);
+    await this.settlePreviousTurn(previous);
     await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session loaded", {
@@ -507,7 +520,10 @@ export class ZenAgent {
     cx: acp.AgentContext,
   ): Promise<acp.ResumeSessionResponse> {
     const session = await readStoredSession(params.cwd, params.sessionId);
+    // See loadSession: wait out the aborted turn before rewriting disk state.
+    const previous = this.sessions.get(params.sessionId);
     this.abortActiveSession(params.sessionId);
+    await this.settlePreviousTurn(previous);
     await this.prepareResumedSession(session);
     this.sessions.set(params.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, "info", "session resumed", {
@@ -535,6 +551,9 @@ export class ZenAgent {
       throw new Error(`Session ${params.sessionId} not found`);
     }
     this.abortActiveSession(params.sessionId);
+    // The aborted turn would otherwise recreate state.json on its final save
+    // after we deleted it.
+    await this.settlePreviousTurn(active);
     this.sessions.delete(params.sessionId);
     await deleteStoredSession(cwd, params.sessionId);
     return {};
@@ -543,7 +562,9 @@ export class ZenAgent {
   async closeSession(
     params: acp.CloseSessionRequest,
   ): Promise<acp.CloseSessionResponse> {
+    const previous = this.sessions.get(params.sessionId);
     this.abortActiveSession(params.sessionId);
+    await this.settlePreviousTurn(previous);
     this.sessions.delete(params.sessionId);
     return {};
   }
@@ -679,8 +700,12 @@ export class ZenAgent {
 
     // A new prompt can only arrive after the previous turn's response in
     // Zed's flow (it awaits the cancelled turn first), but defensively abort
-    // any still-running turn and always start with a clean cancel state.
+    // any still-running turn and WAIT until it fully settles before touching
+    // the shared history: until it unwinds, the old turn keeps mutating
+    // llmMessages/events and re-saving state.json, and interleaved writes
+    // would interleave two turns' entries in one conversation.
     this.abortActiveSession(params.sessionId);
+    await this.settlePreviousTurn(active);
     this.clearGracefulCancel(active);
     const controller = new AbortController();
     active.abortController = controller;
@@ -782,7 +807,7 @@ export class ZenAgent {
       // asynchronously outside the function), which would null
       // active.abortController while the turn is still running and break
       // graceful cancel (cancel() would see no controller).
-      const response = await this.runTurn(active, cx, controller.signal);
+      const response = await this.runTurnTracked(active, cx, controller.signal);
       return response;
     } catch (error) {
       if (controller.signal.aborted) {
@@ -806,11 +831,62 @@ export class ZenAgent {
       }
       throw error;
     } finally {
-      active.abortController = null;
+      if (active.abortController === controller) {
+        active.abortController = null;
+      }
       this.clearGracefulCancel(active);
       active.session.updatedAt = new Date().toISOString();
       await this.save(active).catch(() => {});
     }
+  }
+
+  /**
+   * Runs one turn and records its promise on the session so concurrent entry
+   * points (new prompt, load/resume, close/delete) can wait out the old unit
+   * of work instead of racing it on the shared history.
+   */
+  private runTurnTracked(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    signal: AbortSignal,
+  ): Promise<acp.PromptResponse> {
+    const turn = this.runTurn(active, cx, signal).finally(() => {
+      if (active.turnPromise === turn) {
+        active.turnPromise = null;
+      }
+    });
+    active.turnPromise = turn;
+    return turn;
+  }
+
+  /**
+   * Waits out a still-running turn (already hard-aborted by the caller) so
+   * its final history mutations and state.json saves complete before the
+   * caller starts mutating the same session. No-op when idle or undefined.
+   */
+  private async settlePreviousTurn(
+    active: ActiveSession | undefined,
+  ): Promise<void> {
+    const inflight = active?.turnPromise;
+    if (!inflight) {
+      return;
+    }
+    const startedAt = Date.now();
+    void this.logRuntime(
+      active.session.cwd,
+      "warn",
+      "previous turn still running; waiting for it to settle",
+      { sessionId: active.session.sessionId },
+    );
+    try {
+      await inflight;
+    } catch {
+      // The aborted turn's own caller handles (and logs) its error.
+    }
+    void this.logRuntime(active.session.cwd, "info", "previous turn settled", {
+      sessionId: active.session.sessionId,
+      waitedMs: Date.now() - startedAt,
+    });
   }
 
   private async runTurn(
@@ -883,6 +959,9 @@ export class ZenAgent {
         messages: active.session.llmMessages,
         tools,
         signal,
+        logRuntime: (level, message, details) => {
+          void this.logRuntime(active.session.cwd, level, message, details);
+        },
         model: active.session.config.model,
         thinkingEffort: active.session.config.thinkingEffort,
         system,
@@ -1596,7 +1675,7 @@ export class ZenAgent {
     });
 
     const signal = active.abortController?.signal ?? new AbortController().signal;
-    return this.runTurn(active, cx, signal);
+    return this.runTurnTracked(active, cx, signal);
   }
 
   private async handlePromptSlashCommand(
