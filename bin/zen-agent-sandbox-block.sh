@@ -20,5 +20,5 @@ case "$name" in
   *)     substitute="" ;;
 esac
 
-echo "zen-agent sandbox: '$name' is blocked; use '$substitute' instead (rm->trash, grep->rg, find->fdfind)" >&2
+echo "'$name' is blocked; use '$substitute' instead (rm->trash, grep->rg, find->fdfind)" >&2
 exit 1

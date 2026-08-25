@@ -112,6 +112,7 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 | `OPENROUTER_API_KEY` | — | OpenRouter API key (required for OpenRouter sessions) |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
 | `OPENROUTER_MODEL` | `openrouter/free` | Fallback OpenRouter model slug |
+| `OPENROUTER_PROVIDER_SORT` | `price` | OpenRouter provider routing sort (`price`, `throughput`, `latency`; empty disables the `provider` block) |
 | `OPENROUTER_SITE_URL` | — | Sent as `HTTP-Referer` (app attribution) |
 | `OPENROUTER_APP_NAME` | — | Sent as `X-Title` (app attribution) |
 | `ZEN_AGENT_MAX_TURN_STEPS` | `25` | Max LLM/tool rounds per user prompt |
@@ -127,7 +128,7 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 
 - Context usage ring and cost in the agent panel header (ACP `usage_update`)
 - Per-turn stats line: steps, thinking/answering/tool time, cache hit ratio, tokens, cost (`ZEN_AGENT_SHOW_STATS`)
-- Tool call cards with terminal-style output and duration (`⏱ 3.2s`)
+- Tool call cards with terminal-style output and duration
 
 Stats are display-only (never sent to the model) and survive Zed restarts via the persisted session.
 

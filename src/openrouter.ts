@@ -29,6 +29,24 @@ function getOpenRouterBaseUrl(): string {
 }
 
 /**
+ * Default OpenRouter provider-routing sort key (https://openrouter.ai/docs/guides/routing/provider-selection).
+ * `price` routes to the cheapest provider for the model; `throughput` and
+ * `latency` are the other supported values. Empty string opts out of sending
+ * the `provider` block entirely.
+ */
+const DEFAULT_OPENROUTER_PROVIDER_SORT = "price";
+
+/** Provider sort key from OPENROUTER_PROVIDER_SORT; null disables the block. */
+function getOpenRouterProviderSort(): string | null {
+  const raw = process.env.OPENROUTER_PROVIDER_SORT;
+  if (raw === undefined) {
+    return DEFAULT_OPENROUTER_PROVIDER_SORT;
+  }
+  const sort = raw.trim();
+  return sort.length > 0 ? sort : null;
+}
+
+/**
  * Per-model metadata (USD per 1M tokens, context window).
  *
  * The live `GET /models` endpoint is the source of truth (fetched once per
@@ -383,6 +401,8 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
  *   routes), and stored reasoning is sent back as `reasoning` in history
  * - `stream_options.include_usage` requests the final usage chunk (OpenRouter
  *   does not send usage otherwise)
+ * - `provider.sort` defaults to `price` so requests route to the cheapest
+ *   provider for the model (OPENROUTER_PROVIDER_SORT overrides; empty disables)
  * - `reasoning_effort` uses the OpenAI vocabulary (low/medium/high), so
  *   DeepSeek's `max` maps to `high`
  * - optional `HTTP-Referer` / `X-Title` headers identify the app
@@ -403,6 +423,7 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
   if (appName) {
     extraHeaders["X-Title"] = appName;
   }
+  const providerSort = getOpenRouterProviderSort();
 
   return runChatCompletions({
     baseUrl,
@@ -421,7 +442,10 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
       effort === "off"
         ? undefined
         : { reasoning_effort: effort === "max" ? "high" : effort },
-    extraBody: { stream_options: { include_usage: true } },
+    extraBody: {
+      stream_options: { include_usage: true },
+      ...(providerSort ? { provider: { sort: providerSort } } : {}),
+    },
     extraHeaders,
     parseUsage: (raw, timing) => parseOpenRouterUsage(raw as OpenRouterUsage, timing),
   });

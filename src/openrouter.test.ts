@@ -76,6 +76,7 @@ describe("runOpenRouterStep (live SSE)", () => {
     delete process.env.OPENROUTER_MODEL;
     delete process.env.OPENROUTER_SITE_URL;
     delete process.env.OPENROUTER_APP_NAME;
+    delete process.env.OPENROUTER_PROVIDER_SORT;
   });
 
   afterEach(() => {
@@ -215,10 +216,12 @@ describe("runOpenRouterStep (live SSE)", () => {
     expect(bodies).toHaveLength(2);
     expect(bodies[0]?.reasoning_effort).toBe("high");
     expect(bodies[0]?.stream_options).toEqual({ include_usage: true });
+    expect(bodies[0]?.provider).toEqual({ sort: "price" });
     expect(bodies[0]?.stream).toBe(true);
     expect((bodies[0]?.tools as unknown[]).length).toBe(1);
     expect(bodies[0]?.model).toBe(DEFAULT_OPENROUTER_MODEL);
     expect(bodies[1]?.reasoning_effort).toBeUndefined();
+    expect(bodies[1]?.provider).toEqual({ sort: "price" });
   });
 
   it("sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL", async () => {
@@ -257,6 +260,43 @@ describe("runOpenRouterStep (live SSE)", () => {
     expect(headers?.["http-referer"]).toBe("https://zed.dev");
     expect(headers?.["x-title"]).toBe("Zen Agent");
     expect(body?.model).toBe("openai/gpt-5");
+  });
+
+  it("honors OPENROUTER_PROVIDER_SORT and allows opting out", async () => {
+    let bodies: Array<Record<string, unknown>> = [];
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer(
+        (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+          const chunks: Buffer[] = [];
+          req.on("data", (c: Buffer) => chunks.push(c));
+          req.on("end", () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            res.write(makeChunk({ content: "ok" }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
+            res.write("data: [DONE]\n\n");
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+
+    process.env.OPENROUTER_PROVIDER_SORT = "latency";
+    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
+
+    process.env.OPENROUTER_PROVIDER_SORT = "";
+    await runOpenRouterStep({ messages: [{ role: "user", content: "hi" }], thinkingEffort: "off" });
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]?.provider).toEqual({ sort: "latency" });
+    expect(bodies[1]?.provider).toBeUndefined();
   });
 
   it("requires OPENROUTER_API_KEY", async () => {
