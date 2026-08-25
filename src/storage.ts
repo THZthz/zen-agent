@@ -351,6 +351,102 @@ export async function writeSession(session: StoredSession): Promise<void> {
   await rememberSession(session);
 }
 
+function defaultConfig(provider: ProviderId = DEFAULT_PROVIDER): SessionConfig {
+  return {
+    provider,
+    model: provider === "openrouter" ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+    thinkingEffort: DEFAULT_THINKING_EFFORT,
+    systemPrompt: "",
+    sandbox: false,
+  };
+}
+
+const THINKING_EFFORTS: readonly ThinkingEffort[] = ["off", "high", "max"];
+
+/**
+ * Validate a parsed state.json and backfill fields missing from older
+ * sessions or partially damaged files, so one bad field degrades to its
+ * default instead of a TypeError deep inside the agent. Unrecoverable shapes
+ * (wrong session id / cwd / not an object) throw a clean, actionable error.
+ */
+function normalizeStoredSession(
+  parsed: unknown,
+  cwd: string,
+  sessionId: string,
+): StoredSession {
+  const corrupt = (detail: string): Error =>
+    new Error(`Session file for ${sessionId} is corrupted: ${detail}`);
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw corrupt("not a session object");
+  }
+  const raw = parsed as Record<string, unknown>;
+
+  if (raw.sessionId !== sessionId) {
+    throw new Error(`Session file ${sessionId} has an invalid sessionId`);
+  }
+  if (raw.cwd !== cwd) {
+    throw new Error(`Session ${sessionId} belongs to ${String(raw.cwd)}, not ${cwd}`);
+  }
+
+  // --- config ---
+  const rawConfig =
+    typeof raw.config === "object" && raw.config !== null
+      ? (raw.config as Record<string, unknown>)
+      : {};
+  // Sessions created before providers existed have no `provider`; they are
+  // DeepSeek sessions by definition (the only provider back then).
+  const provider: ProviderId =
+    rawConfig.provider === "deepseek" || rawConfig.provider === "openrouter"
+      ? rawConfig.provider
+      : DEFAULT_PROVIDER;
+  const config: SessionConfig = {
+    provider,
+    model:
+      typeof rawConfig.model === "string" && rawConfig.model.length > 0
+        ? rawConfig.model
+        : defaultConfig(provider).model,
+    thinkingEffort: THINKING_EFFORTS.includes(rawConfig.thinkingEffort as ThinkingEffort)
+      ? (rawConfig.thinkingEffort as ThinkingEffort)
+      : DEFAULT_THINKING_EFFORT,
+    systemPrompt: typeof rawConfig.systemPrompt === "string" ? rawConfig.systemPrompt : "",
+    // Older sessions predate the flag; absent means off.
+    sandbox: rawConfig.sandbox === true,
+  };
+
+  // --- usage: keep every known numeric field, default anything else ---
+  const emptyUsage = emptySessionUsage();
+  const usage: SessionUsage = { ...emptyUsage };
+  if (typeof raw.usage === "object" && raw.usage !== null) {
+    for (const key of Object.keys(emptyUsage) as Array<keyof SessionUsage>) {
+      if (key === "estimated") continue;
+      const value = (raw.usage as Record<string, unknown>)[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        usage[key] = value as never;
+      }
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  return {
+    sessionId,
+    cwd,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : nowIso,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso,
+    title: typeof raw.title === "string" ? raw.title : null,
+    events: Array.isArray(raw.events) ? (raw.events as StoredSession["events"]) : [],
+    llmMessages: Array.isArray(raw.llmMessages)
+      ? (raw.llmMessages as StoredSession["llmMessages"])
+      : [],
+    config,
+    usage,
+    turnStats: Array.isArray(raw.turnStats) ? (raw.turnStats as StoredSession["turnStats"]) : [],
+    cacheDiagnostics: Array.isArray(raw.cacheDiagnostics)
+      ? (raw.cacheDiagnostics as StoredSession["cacheDiagnostics"])
+      : [],
+  };
+}
+
 export async function readStoredSession(
   cwd: string,
   sessionId: string,
@@ -361,19 +457,16 @@ export async function readStoredSession(
   } catch {
     throw new Error(`Session file not found for ${sessionId}`);
   }
-  const parsed = JSON.parse(raw) as StoredSession;
-  if (parsed.sessionId !== sessionId) {
-    throw new Error(`Session file ${sessionId} has an invalid sessionId`);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `Session file for ${sessionId} is corrupted: not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+    );
   }
-  if (parsed.cwd !== cwd) {
-    throw new Error(`Session ${sessionId} belongs to ${parsed.cwd}, not ${cwd}`);
-  }
-  // Sessions created before providers existed have no `provider`; they are
-  // DeepSeek sessions by definition (the only provider back then).
-  if (parsed.config.provider !== "deepseek" && parsed.config.provider !== "openrouter") {
-    parsed.config.provider = DEFAULT_PROVIDER;
-  }
-  return parsed;
+  return normalizeStoredSession(parsed, cwd, sessionId);
 }
 
 export async function findSessionCwd(sessionId: string): Promise<string | undefined> {

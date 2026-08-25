@@ -35,9 +35,9 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 10. **`readResourceLink` has no size cap** (`src/prompt-content.ts`) — `file://` resource links are read fully as utf8 into the conversation, unlike media paths which are capped by `ZEN_AGENT_MAX_MEDIA_BYTES`. A large or binary linked file blows the context (binary as mojibake). Cap it and detect non-text content.
 
-- [ ] 11. **SSE CRLF handling breaks at chunk boundaries** — `buffer += decode(value).replace(/\r\n/g, "\n")` is applied per chunk; a `\r\n` split across two network chunks survives normalization and the event never splits on `\n\n`. Normalize after assembling, or split events on a regex tolerant of `\r`.
+- [x] 11. **SSE CRLF handling breaks at chunk boundaries** — `buffer += decode(value).replace(/\r\n/g, "\n")` is applied per chunk; a `\r\n` split across two network chunks survives normalization and the event never splits on `\n\n`. Normalize after assembling, or split events on a regex tolerant of `\r`.
 
-- [ ] 12. **`readStoredSession` trusts the file shape** — `JSON.parse(raw) as StoredSession` with no validation; a truncated/corrupt file (see issue 6) throws a bare TypeError from deep inside instead of a clean "session corrupt" error. Legacy sessions missing `config.sandbox` also silently carry `undefined` typed as `boolean`.
+- [x] 12. **`readStoredSession` trusts the file shape** — `JSON.parse(raw) as StoredSession` with no validation; a truncated/corrupt file (see issue 6) throws a bare TypeError from deep inside instead of a clean "session corrupt" error. Legacy sessions missing `config.sandbox` also silently carry `undefined` typed as `boolean`.
 
 ## Maintainability findings
 
