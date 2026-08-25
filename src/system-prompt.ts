@@ -33,7 +33,18 @@ export function isEnvironmentMessage(message: LlmMessage): boolean {
  * user-role message named `environment` (see buildEnvironmentMessage).
  */
 export function buildSystemPrompt(session: StoredSession, options?: { media?: boolean }): string {
-  return session.config.systemPrompt || SYSTEM_PROMPT;
+  const base = session.config.systemPrompt || SYSTEM_PROMPT;
+  if (options?.media) {
+    const mediaGuidance = `
+
+Media handling:
+- Use read_media to view images and audio files the user references.
+- Always check the transcript for attached media before responding.
+- Never describe media without using read_media to inspect it first.
+`;
+    return base + mediaGuidance;
+  }
+  return base;
 }
 
 /**

@@ -891,10 +891,7 @@ export class ZenAgent {
       // Captured once per step: the system prompt is part of the byte-stable
       // prefix the provider's context cache keys on, so it must be identical
       // for the request, the transcript, and the cache diagnostics.
-      const mediaModalities = await this.mediaModalities(active);
-      const system = buildSystemPrompt(active.session, {
-        media: mediaModalities.image || mediaModalities.audio,
-      });
+const system = buildSystemPrompt(active.session);
 
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
         type: 'llm_request',
