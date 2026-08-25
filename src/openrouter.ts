@@ -122,7 +122,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
   if (modelsCache?.key === key) {
     return modelsCache.promise;
   }
-  const promise = (async () => {
+  const promise: Promise<Map<string, CatalogEntry>> = (async () => {
     const response = await fetch(`${baseUrl}/models`, {
       headers: { authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
@@ -163,6 +163,15 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
     return models;
   })();
   modelsCache = { key, promise };
+  // A rejected fetch must not be cached for the process lifetime (an offline
+  // start would otherwise pin the fallback tables forever): drop the entry so
+  // the next call retries. The catch also prevents an unhandled rejection if
+  // no caller is attached yet.
+  promise.catch(() => {
+    if (modelsCache?.promise === promise) {
+      modelsCache = null;
+    }
+  });
   return promise;
 }
 

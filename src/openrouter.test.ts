@@ -362,6 +362,51 @@ describe("getOpenRouterModelInfo", () => {
     const info = await getOpenRouterModelInfo("vendor/model");
     expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
   });
+
+  it("retries the /models fetch after a failed attempt instead of caching the rejection", async () => {
+    let requests = 0;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require("node:http").createServer(
+        (_req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+          requests += 1;
+          if (requests === 1) {
+            res.writeHead(500);
+            res.end("boom");
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              data: [
+                {
+                  id: "vendor/model",
+                  context_length: 123456,
+                  pricing: { prompt: "0.5", completion: "1.5" },
+                },
+              ],
+            }),
+          );
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import("node:net").AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_API_KEY = "test";
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+
+    // First call hits the failure and falls back WITHOUT poisoning the cache.
+    const fallback = await getOpenRouterModelInfo("vendor/model");
+    expect(fallback.contextLength).toBe(200_000);
+
+    // Second call retries the live fetch and sees the catalog.
+    const info = await getOpenRouterModelInfo("vendor/model");
+    expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
+    expect(requests).toBe(2);
+  });
 });
 
 describe("getOpenRouterModelOptions", () => {
