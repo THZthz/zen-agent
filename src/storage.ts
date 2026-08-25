@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { SessionInfo, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { CacheDiagnosticEntry } from "./cache-diagnostics.js";
 import type { TurnStats } from "./turn-stats.js";
@@ -254,6 +254,26 @@ async function ensureDirectory(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
+/**
+ * Crash-safe file write: write to a unique temp file in the destination
+ * directory, then atomically rename over the target. A crash mid-write can
+ * at worst leave a stray .tmp file — never a truncated/corrupt target. This
+ * matters for state.json, which holds the full session history including
+ * base64 media and is rewritten multiple times per turn.
+ */
+async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
+  await ensureDirectory(dirname(filePath));
+  const tmp = `${filePath}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, contents, "utf8");
+    await rename(tmp, filePath);
+  } catch (error) {
+    // Best-effort cleanup so failed writes do not litter the directory.
+    await unlink(tmp).catch(() => {});
+    throw error;
+  }
+}
+
 function indexDirectory(): string {
   const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
   return join(dataHome, "zen-agent");
@@ -273,8 +293,7 @@ async function readIndex(): Promise<SessionIndex> {
 }
 
 async function writeIndex(index: SessionIndex): Promise<void> {
-  await ensureDirectory(indexDirectory());
-  await writeFile(indexPath(), `${JSON.stringify(index, null, 2)}\n`, "utf8");
+  await writeFileAtomic(indexPath(), `${JSON.stringify(index, null, 2)}\n`);
 }
 
 async function rememberSession(session: StoredSession): Promise<void> {
@@ -325,11 +344,9 @@ export async function createStoredSession(
 }
 
 export async function writeSession(session: StoredSession): Promise<void> {
-  await ensureDirectory(sessionRootDirectory(session.cwd, session.sessionId));
-  await writeFile(
+  await writeFileAtomic(
     sessionPath(session.cwd, session.sessionId),
     `${JSON.stringify(session, null, 2)}\n`,
-    "utf8",
   );
   await rememberSession(session);
 }

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   clientModelsPath,
@@ -251,8 +251,19 @@ async function writeModelsFile(cwd: string, catalog: Map<string, CatalogEntry>):
       baseUrl: getOpenRouterBaseUrl(),
       models: [...catalog.values()],
     };
-    await mkdir(dirname(clientModelsPath(cwd)), { recursive: true });
-    await writeFile(clientModelsPath(cwd), `${JSON.stringify(payload)}\n`, "utf8");
+    // Atomic replace: a crash mid-write must never leave a truncated cache
+    // file behind (readModelsFile would discard it anyway, but only after
+    // logging nothing and silently losing the offline fallback).
+    const target = clientModelsPath(cwd);
+    await mkdir(dirname(target), { recursive: true });
+    const tmp = `${target}.${process.pid}.tmp`;
+    try {
+      await writeFile(tmp, `${JSON.stringify(payload)}\n`, "utf8");
+      await rename(tmp, target);
+    } catch (error) {
+      await unlink(tmp).catch(() => {});
+      throw error;
+    }
     modelsPersistedCwd = cwd;
   } catch {
     // Caching must never break session creation.
