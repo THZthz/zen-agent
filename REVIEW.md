@@ -27,7 +27,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
 
 - [x] 6. **Non-atomic persistence** — `storage.ts` `writeSession()`/`writeIndex()` write directly with `writeFile`. A crash mid-write corrupts `state.json`, which holds the full history including base64 media — an unrecoverable session. Write-to-temp + rename is the standard fix, and matters more here because saves happen multiple times per turn.
 
-- [ ] 7. **Unbounded `state.json` growth / redundant storage** — every bash call persists the full output **three times**: `rawOutput.output`, `_meta.terminal_output.data` (same text again), and the on-disk log; media payloads are stored both in `events` and in `llmMessages`. And `save()` rewrites the entire JSON document on every step. Long multimodal sessions make each save multi-MB and turn I/O effectively quadratic.
+- [x] 7. **Unbounded `state.json` growth / redundant storage** — every bash call persists the full output **three times**: `rawOutput.output`, `_meta.terminal_output.data` (same text again), and the on-disk log; media payloads are stored both in `events` and in `llmMessages`. And `save()` rewrites the entire JSON document on every step. Long multimodal sessions make each save multi-MB and turn I/O effectively quadratic.
 
 - [ ] 8. **`deleteStoredSession` leaks artifacts** — it removes only `state.json`; `terminals/*.log|sh` and `llm.jsonl` stay on disk forever, and the index forgets the cwd so nothing can find them later. Remove `sessionRootDirectory` recursively.
 

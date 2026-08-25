@@ -1831,7 +1831,42 @@ Usage: /sandbox on | off`,
       sessionId: active.session.sessionId,
       update,
     });
-    active.session.events.push(update);
+    active.session.events.push(this.eventForTranscript(update));
+  }
+
+  /**
+   * Transcript copy of an update for state.json.
+   *
+   * The final bash `tool_call_update` carries the full terminal output THREE
+   * times on the wire (rawOutput.output, _meta.terminal_output.data and the
+   * terminal log file on disk). The transcript keeps only rawOutput.output:
+   * replay (prepareReplayEvents/remapTerminalContent) re-derives
+   * _meta.terminal_output/_meta.terminal_exit from it when they are missing —
+   * exactly its legacy-session path — so replayed cards are byte-identical
+   * while state.json halves in size per bash call. Attached media is still
+   * stored twice by design (transcript blocks for Zed rendering + llmMessages
+   * for the model); deduplicating that would change what either side sees.
+   */
+  private eventForTranscript(update: acp.SessionUpdate): acp.SessionUpdate {
+    if (update.sessionUpdate !== "tool_call_update") {
+      return update;
+    }
+    const meta = (update as { _meta?: Record<string, unknown> })._meta;
+    if (!meta || !("terminal_output" in meta || "terminal_exit" in meta)) {
+      return update;
+    }
+    const stripped = Object.fromEntries(
+      Object.entries(meta).filter(
+        ([key]) => key !== "terminal_output" && key !== "terminal_exit",
+      ),
+    );
+    // Spread order matters: the base must exclude _meta, otherwise an empty
+    // replacement silently keeps the original payload.
+    const { _meta: _dropped, ...rest } = update as typeof update & Record<string, unknown>;
+    return {
+      ...rest,
+      ...(Object.keys(stripped).length > 0 ? { _meta: stripped } : {}),
+    } as acp.SessionUpdate;
   }
 
   private async save(active: ActiveSession): Promise<void> {
