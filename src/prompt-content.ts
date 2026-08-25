@@ -1,5 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk";
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { UserContentPart } from "./storage.js";
 import { maxMediaBytes } from "./media-limit.js";
@@ -7,6 +7,28 @@ import { maxMediaBytes } from "./media-limit.js";
 /** Base64 length to decoded-byte estimate (no padding round-trip needed). */
 function base64Bytes(data: string): number {
   return Math.floor((data.length * 3) / 4);
+}
+
+/**
+ * Upper bound on bytes read from a `file://` resource link. Without it, a
+ * linked multi-GB log would be read fully into memory and pushed verbatim
+ * into the LLM context (media blocks have an equivalent ceiling in
+ * media-limit.ts). Override with ZEN_AGENT_MAX_RESOURCE_BYTES.
+ */
+export const DEFAULT_MAX_RESOURCE_BYTES = 262_144;
+
+function maxResourceBytes(): number {
+  const raw = process.env.ZEN_AGENT_MAX_RESOURCE_BYTES;
+  if (!raw) {
+    return DEFAULT_MAX_RESOURCE_BYTES;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_RESOURCE_BYTES;
+}
+
+/** A NUL byte in the head of the file is the classic text-vs-binary sniff. */
+function looksBinary(data: Buffer): boolean {
+  return data.subarray(0, 8_192).includes(0);
 }
 
 export interface PromptContent {
@@ -132,11 +154,31 @@ async function readResourceLink(block: {
     return block.name ?? block.uri;
   }
 
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
     const path = fileURLToPath(block.uri);
-    const content = await readFile(path, "utf8");
-    return `File: ${path}\n${content}`;
+    // Read at most limit+1 bytes directly: a huge file must neither land in
+    // memory nor in the context in full.
+    const limit = maxResourceBytes();
+    handle = await open(path, "r");
+    const buf = Buffer.alloc(limit + 1);
+    const { bytesRead } = await handle.read(buf, 0, limit + 1, 0);
+    const data = buf.subarray(0, bytesRead);
+
+    if (looksBinary(data)) {
+      return `[File: ${path} omitted: binary content is not readable as text]`;
+    }
+    if (bytesRead > limit) {
+      const totalBytes = await handle.stat().then((st) => st.size, () => bytesRead);
+      return (
+        `File: ${path}\n${data.subarray(0, limit).toString("utf8")}\n\n` +
+        `[File truncated: showing ${limit} of ${totalBytes} bytes (ZEN_AGENT_MAX_RESOURCE_BYTES). Read the rest with bash.]`
+      );
+    }
+    return `File: ${path}\n${data.toString("utf8")}`;
   } catch {
     return block.name ?? block.uri;
+  } finally {
+    await handle?.close().catch(() => {});
   }
 }

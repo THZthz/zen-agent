@@ -99,4 +99,33 @@ describe("runChatCompletions", () => {
       expect.objectContaining({ label: "Test", waitedMs: expect.any(Number) }),
     );
   });
+
+  it("splits CRLF events whose terminator spans two network chunks", async () => {
+    const port = await startServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const chunk = JSON.stringify({
+        choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }],
+      });
+      // First write ends in the MIDDLE of the "\r\n\r\n" terminator.
+      res.write(`data: ${chunk}\r\n\r`);
+      setTimeout(() => {
+        res.write(`\ndata: [DONE]\r\n\r\n`);
+        res.end();
+      }, 30);
+    });
+
+    const result = await runChatCompletions({
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKey: "test",
+      label: "Test",
+      model: "test-model",
+      messages: [],
+      system: "system",
+      thinkingEffort: "off",
+      reasoningMessageField: "reasoning_content",
+      reasoningDeltaFields: ["reasoning_content"],
+      parseUsage: () => null,
+    });
+    expect(result.text).toBe("hi");
+  });
 });

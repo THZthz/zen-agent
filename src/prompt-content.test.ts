@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as acp from "@agentclientprotocol/sdk";
 import { promptBlocksToPromptContent, promptBlocksToText } from "./prompt-content.js";
 
 const PNG = Buffer.from([0x89, 0x50]).toString("base64");
@@ -46,5 +47,63 @@ describe("promptBlocksToPromptContent", () => {
   it("keeps the legacy text-only helper working", async () => {
     const text = await promptBlocksToText([{ type: "text", text: "hello" }]);
     expect(text).toBe("hello");
+  });
+});
+
+describe("readResourceLink caps and sniffs file:// links", () => {
+  const { mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+  const { join } = require("node:path");
+
+  let dir: string;
+  const previousEnv = process.env.ZEN_AGENT_MAX_RESOURCE_BYTES;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "zen-resource-link-"));
+  });
+
+  afterEach(() => {
+    if (previousEnv === undefined) delete process.env.ZEN_AGENT_MAX_RESOURCE_BYTES;
+    else process.env.ZEN_AGENT_MAX_RESOURCE_BYTES = previousEnv;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function link(name: string): acp.ContentBlock {
+    return { type: "resource_link", uri: `file://${join(dir, name)}`, name };
+  }
+
+  it("reads small text files in full", async () => {
+    writeFileSync(join(dir, "small.txt"), "hello world");
+    const { parts, text } = await promptBlocksToPromptContent([link("small.txt")]);
+    expect(parts[0]).toEqual({ type: "text", text: expect.stringContaining("hello world") });
+    expect(text).toContain("File:");
+  });
+
+  it("truncates large files instead of blowing the context", async () => {
+    process.env.ZEN_AGENT_MAX_RESOURCE_BYTES = "64";
+    writeFileSync(join(dir, "big.log"), `${"a".repeat(100)}\nEND-OF-FILE\n`);
+    const { parts } = await promptBlocksToPromptContent([link("big.log")]);
+    const content = (parts[0] as { type: string; text: string }).text;
+    expect(content).toContain("a".repeat(64));
+    // Nothing beyond the cap leaks into the context.
+    expect(content).not.toContain("END-OF-FILE");
+    expect(content).toMatch(/\[File truncated: showing 64 of \d+ bytes/);
+  });
+
+  it("omits binary files with a note instead of mojibake", async () => {
+    writeFileSync(join(dir, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d]));
+    const { parts } = await promptBlocksToPromptContent([link("img.png")]);
+    const content = (parts[0] as { type: string; text: string }).text;
+    expect(content).toContain("binary content is not readable as text");
+  });
+
+  it("falls back to the link name for unreadable paths", async () => {
+    const block: acp.ContentBlock = {
+      type: "resource_link",
+      uri: "file:///definitely/missing/path.txt",
+      name: "missing.txt",
+    };
+    const { text } = await promptBlocksToPromptContent([block]);
+    expect(text).toBe("missing.txt");
   });
 });

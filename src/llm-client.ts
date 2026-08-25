@@ -386,6 +386,24 @@ function parseChatTimeoutMs(): number {
 }
 
 /**
+ * Locates the next SSE event terminator in the ASSEMBLED buffer ("\n\n", or
+ * CRLF "\r\n\r\n"). Terminators must be searched after assembly: normalizing
+ * each network chunk separately misses a "\r\n\r\n" that is split across two
+ * reads, which would glue consecutive events together.
+ */
+function findEventSeparator(buffer: string): { index: number; length: number } | null {
+  const lf = buffer.indexOf("\n\n");
+  const crlf = buffer.indexOf("\r\n\r\n");
+  if (crlf !== -1 && (lf === -1 || crlf < lf)) {
+    return { index: crlf, length: 4 };
+  }
+  if (lf !== -1) {
+    return { index: lf, length: 2 };
+  }
+  return null;
+}
+
+/**
  * Calls an OpenAI-compatible chat completions API DIRECTLY and parses the SSE
  * stream ourselves.
  *
@@ -528,7 +546,7 @@ export async function runChatCompletions(
       // SSE spec: consecutive `data:` lines are joined with \n. Some servers
       // emit one data line per event; DeepSeek and OpenRouter use single lines.
       const dataLines: string[] = [];
-      for (const line of rawEvent.split("\n")) {
+      for (const line of rawEvent.split(/\r?\n/)) {
         if (line.startsWith("data:")) {
           dataLines.push(line.slice(5).trimStart());
         }
@@ -631,12 +649,17 @@ export async function runChatCompletions(
         }
         break;
       }
-      // Normalize CRLF so events split on \n\n regardless of server style.
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-      let separator: number;
-      while ((separator = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, separator);
-        buffer = buffer.slice(separator + 2);
+      buffer += decoder.decode(value, { stream: true });
+      // Split on event terminators found in the assembled buffer (see
+      // findEventSeparator): works for LF and CRLF servers regardless of how
+      // the bytes land in chunks.
+      for (;;) {
+        const separator = findEventSeparator(buffer);
+        if (!separator) {
+          break;
+        }
+        const rawEvent = buffer.slice(0, separator.index);
+        buffer = buffer.slice(separator.index + separator.length);
         done = await processEvent(rawEvent);
         if (done) {
           break;
