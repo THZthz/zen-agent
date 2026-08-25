@@ -1,9 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk";
-import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { isAbsolute, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute } from "node:path";
 import { Sonyflake } from 'sonyflake';
 import {
   createStoredSession,
@@ -16,7 +14,6 @@ import {
   readStoredSession,
   clientLogPath,
   sessionLlmLogPath,
-  terminalDirectory,
   writeSession,
   type NamedUserMessage,
   type ProviderId,
@@ -39,9 +36,11 @@ import {
   type LlmUsage,
 } from "./provider.js";
 import { getOpenRouterModelOptions } from "./openrouter.js";
-import { READ_MEDIA_TOOL_SCHEMA } from "./llm-client.js";
 import { formatLlmError } from "./llm-errors.js";
-import { BASH_TOOL_SCHEMA } from "./llm-client.js";
+import {
+  BASH_TOOL_SCHEMA,
+  READ_MEDIA_TOOL_SCHEMA,
+} from "./llm-client.js";
 
 import {
   appendCacheDiagnostic,

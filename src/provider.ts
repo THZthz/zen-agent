@@ -1,10 +1,7 @@
 import {
-  costFromUsage,
   type GenericPricing,
   type LlmStepOptions,
   type LlmStepResult,
-  type LlmToolCall,
-  type LlmUsage,
 } from "./llm-client.js";
 import {
   fetchDeepSeekBalance,

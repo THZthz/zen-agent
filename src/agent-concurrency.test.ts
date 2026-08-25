@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +68,7 @@ describe("concurrent prompts are serialized per session", () => {
       throw Object.assign(new Error("aborted"), { name: "AbortError" });
     });
     // Turn B runs normally once it gets the floor.
-    mockedRunLlmStep.mockImplementationOnce(async (_provider, options: LlmStepOptions) => {
+    mockedRunLlmStep.mockImplementationOnce(async (_provider, _options: LlmStepOptions) => {
       // B's step must only start after A fully settled (its turn promise
       // cleared). A's own entry is gone from the history by now.
       expect(active.turnPromise).not.toBeNull();

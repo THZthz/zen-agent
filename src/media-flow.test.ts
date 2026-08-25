@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
@@ -15,7 +15,7 @@ vi.mock("./provider.js", async (importOriginal) => {
 });
 
 import { ZenAgent } from "./agent.js";
-import { runLlmStep, type LlmStepOptions, type LlmStepResult } from "./provider.js";
+import { runLlmStep, type LlmStepResult } from "./provider.js";
 import { READ_MEDIA_TOOL_SCHEMA } from "./llm-client.js";
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);

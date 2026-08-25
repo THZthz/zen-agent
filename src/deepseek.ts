@@ -1,6 +1,5 @@
-import type { ModelId, ThinkingEffort } from "./storage.js";
+import type { ModelId } from "./storage.js";
 import {
-  BASH_TOOL_SCHEMA,
   costFromUsage,
   runChatCompletions,
   type LlmStepOptions,

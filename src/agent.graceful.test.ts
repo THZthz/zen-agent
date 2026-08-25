@@ -122,7 +122,7 @@ describe("graceful cancel in runTurn", () => {
   it("lets the in-flight bash tool finish, persists results, then returns cancelled", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
     try {
-      const { agent, cx, notifications, request, sessionId } = await setupAgent(cwd);
+      const { agent, sessionId } = await setupAgent(cwd);
       const exit = deferred<{ exitCode: number | null; signal: number | null }>();
       const ctx = makeAgentContext({ waitForExit: exit.promise });
 
@@ -172,7 +172,7 @@ describe("graceful cancel in runTurn", () => {
   it("discards tool calls proposed by an LLM step that finished after cancel", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
     try {
-      const { agent, cx, notifications, request, sessionId } = await setupAgent(cwd);
+      const { agent, notifications, sessionId } = await setupAgent(cwd);
       const step = deferred<LlmStepResult>();
       mockedRunLlmStep.mockReturnValueOnce(step.promise);
 
@@ -203,7 +203,7 @@ describe("graceful cancel in runTurn", () => {
   it("keeps a completed final answer and returns cancelled", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "zen-agent-test-"));
     try {
-      const { agent, cx, sessionId } = await setupAgent(cwd);
+      const { agent, sessionId } = await setupAgent(cwd);
       const step = deferred<LlmStepResult>();
       streamingStepMock(step.promise);
 

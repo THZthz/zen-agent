@@ -51,7 +51,7 @@ Fix: wrap the tick body in try/catch, always reset `running`/`timer`, decide whe
     - `openrouter.ts` `modelsPersistedCwd` is a process-global keyed on one cwd.
     These are fine today (single-process ACP agent) but are traps for anyone adding concurrency; at minimum they deserve comments where they exist (some have none).
 
-- [ ] 16. **Lint hygiene** — no ESLint/configured lint at all; `tsconfig.json` doesn't enable `noUnusedLocals`. Consequences visible today: `agent.ts` imports `randomBytes`, `mkdir`, `readFile` unused, and has three separate import statements from `./llm-client.js`. Cheap wins.
+- [x] 16. **Lint hygiene** — no ESLint/configured lint at all; `tsconfig.json` doesn't enable `noUnusedLocals`. Consequences visible today: `agent.ts` imports `randomBytes`, `mkdir`, `readFile` unused, and has three separate import statements from `./llm-client.js`. Cheap wins.
 
 - [ ] 17. **`healMessages` silent data loss is only console.warn'd** — dropped assistant/tool messages go to stdout, not the session debug log (`logRuntime`). When healing kicks in after a crash you'll want it in `llm.jsonl`/`log.jsonl` correlated with the session, not on a stdout Zed may swallow.
 
