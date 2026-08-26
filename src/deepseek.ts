@@ -209,17 +209,18 @@ export function parseDeepSeekUsage(
 }
 
 /**
- * DeepSeek's supported `reasoning_effort` vocabulary: `low` / `high` / `max`
- * (no `minimal`/`medium`/`xhigh`). Session efforts outside this set are
- * clamped to the nearest tier when sent (`off` omits the field).
+ * DeepSeek's `reasoning_effort` vocabulary is `low` / `high` / `max` (no
+ * `minimal`/`medium`/`xhigh`). Values outside the vocabulary map per
+ * DeepSeek's official table: `minimal`→`low`, `medium`→`high`, `xhigh`→`high`
+ * (only `max` maps to `max`).
  */
 export const DEEPSEEK_EFFORT_MAP: Record<Exclude<ThinkingEffort, 'off'>, string> = {
   minimal: 'low',
   low: 'low',
   medium: 'high',
   high: 'high',
+  xhigh: 'high',
   max: 'max',
-  xhigh: 'max',
 };
 
 /**
@@ -251,7 +252,17 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
     reasoningMessageField: 'reasoning_content',
     reasoningDeltaFields: ['reasoning_content'],
     effortBody: (effort) =>
-      effort === 'off' ? undefined : { reasoning_effort: DEEPSEEK_EFFORT_MAP[effort] ?? 'high' },
+      // DeepSeek defaults thinking mode to ENABLED, so omitting
+      // reasoning_effort is not enough to turn it off: `off` must send
+      // thinking.type=disabled (non-thinking mode, no reasoning_effort key).
+      // Non-off efforts send thinking.type=enabled plus the mapped
+      // reasoning_effort.
+      effort === 'off'
+        ? { thinking: { type: 'disabled' } }
+        : {
+            thinking: { type: 'enabled' },
+            reasoning_effort: DEEPSEEK_EFFORT_MAP[effort] ?? 'high',
+          },
     parseUsage: (raw, timing) => parseDeepSeekUsage(raw as DeepSeekUsage, timing),
   });
 }

@@ -155,7 +155,7 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 - Reasoning streams as `delta.reasoning_content`; stored reasoning is echoed back as `reasoning_content` in assistant history (only alongside tool calls).
 - Usage parsed from the raw chunk: `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`.
-- `thinking_effort` maps to DeepSeek's `reasoning_effort` vocabulary (`low`/`high`/`max`; `off` omits the field). Session values outside that set are clamped to the nearest tier (`minimal`→`low`, `medium`→`high`, `xhigh`→`max`).
+- `thinking_effort` maps to DeepSeek's thinking controls. DeepSeek defaults thinking mode to **enabled**, so `off` must send `thinking: {type: 'disabled'}` (non-thinking mode, no `reasoning_effort` key) — omitting the field alone would still think. Non-off efforts send `thinking: {type: 'enabled'}` plus `reasoning_effort`, mapped per DeepSeek's official table (`minimal`→`low`, `low`→`low`, `medium`→`high`, `high`→`high`, `xhigh`→`high`, `max`→`max`).
 - Cost: static CNY rate table with Beijing peak/off-peak windows (peak 09:00-12:00 and 14:00-18:00; off-peak = half), CNY per 1M tokens:
 
 | Model               | Period   | Cache hit in | Cache miss in | Output |

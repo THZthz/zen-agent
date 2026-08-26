@@ -367,6 +367,8 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       content: 'file.txt',
     });
     expect(requestBody?.reasoning_effort).toBeUndefined();
+    // DeepSeek defaults thinking ON, so off must explicitly disable it.
+    expect(requestBody?.thinking).toEqual({ type: 'disabled' });
   });
 
   it('sends reasoning_effort when thinking is enabled', async () => {
@@ -401,21 +403,56 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
     });
 
     expect(requestBody?.reasoning_effort).toBe('high');
+    expect(requestBody?.thinking).toEqual({ type: 'enabled' });
     expect(requestBody?.stream).toBe(true);
     expect((requestBody?.tools as unknown[]).length).toBe(1);
   });
 
-  it('clamps session efforts outside the low/high/max vocabulary to the nearest tier', async () => {
-    const efforts: string[] = [];
+  it('disables thinking mode for off (thinking.type=disabled, no reasoning_effort)', async () => {
+    let requestBody: Record<string, unknown> | undefined;
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
         (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
           let body = '';
           req.on('data', (d: Buffer) => (body += d.toString()));
           req.on('end', () => {
-            efforts.push(
-              (JSON.parse(body) as { reasoning_effort?: string }).reasoning_effort ?? '',
-            );
+            requestBody = JSON.parse(body);
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    await runLlmStep({
+      messages: [{ role: 'user', content: 'hi' }],
+      model: 'deepseek-v4-flash',
+      thinkingEffort: 'off',
+    });
+
+    expect(requestBody?.thinking).toEqual({ type: 'disabled' });
+    expect(requestBody?.reasoning_effort).toBeUndefined();
+  });
+
+  it("maps session efforts per DeepSeek's official table (xhigh→high) and always enables thinking", async () => {
+    const requests: Array<{ reasoning_effort?: string; thinking?: unknown }> = [];
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          let body = '';
+          req.on('data', (d: Buffer) => (body += d.toString()));
+          req.on('end', () => {
+            const parsed = JSON.parse(body) as { reasoning_effort?: string; thinking?: unknown };
+            requests.push({ reasoning_effort: parsed.reasoning_effort, thinking: parsed.thinking });
             res.writeHead(200, { 'content-type': 'text/event-stream' });
             res.write(makeChunk({ content: 'ok' }));
             res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
@@ -440,7 +477,19 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       });
     }
 
-    expect(efforts).toEqual(['low', 'low', 'high', 'high', 'max', 'max']);
+    // Official mapping: minimal→low, low→low, medium→high, high→high,
+    // xhigh→high, max→max — and every non-off request enables thinking.
+    expect(requests.map((r) => r.reasoning_effort)).toEqual([
+      'low',
+      'low',
+      'high',
+      'high',
+      'high',
+      'max',
+    ]);
+    for (const request of requests) {
+      expect(request.thinking).toEqual({ type: 'enabled' });
+    }
   });
 
   it('handles CRLF-delimited SSE events (some servers use \r\n)', async () => {
