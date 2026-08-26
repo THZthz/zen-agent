@@ -129,7 +129,7 @@ describe('/tools slash command', () => {
     expect(recordedSteps[0]?.system).not.toContain('DISABLED');
   });
 
-  it('turns tools off: no schemas sent, tools-disabled note added, state persists', async () => {
+  it('turns tools off: no schemas sent, no system-prompt notice, state persists', async () => {
     const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
 
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);
@@ -142,7 +142,9 @@ describe('/tools slash command', () => {
     recordStep(textStep('ok'));
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
     expect(recordedSteps[0]?.tools).toEqual([]);
-    expect(recordedSteps[0]?.system).toContain('Tools are currently DISABLED');
+    // The system prompt stays byte-identical (cache-friendly); disabling
+    // tools is conveyed purely by the empty tool list.
+    expect(recordedSteps[0]?.system).not.toContain('DISABLED');
   });
 
   it('turns tools back on and restores tool schemas', async () => {

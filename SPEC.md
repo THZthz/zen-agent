@@ -131,7 +131,7 @@ Offered only on sessions whose model accepts image/audio input (OpenRouter `arch
 - returns a short metadata line as the normal tool result (keeps assistant tool_calls paired - DeepSeek 400s on unpaired calls), and
 - injects the base64 payload as parts of a synthetic **user** message right after the tool results (the OpenAI-compatible tool role only accepts string content).
 
-Failures (missing file, unsupported extension, modality not accepted by the model) produce a failed tool result without injection. With `read_media` present, the system prompt gains a media-handling paragraph telling the model to perceive attachments natively and to load referenced files itself instead of asking the user.
+Failures (missing file, unsupported extension, modality not accepted by the model) produce a failed tool result without injection. The system prompt is not modified for media; the model learns about `read_media` from the tool schema alone.
 
 ## 6. LLM Providers
 
