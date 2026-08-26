@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 
 /**
- * Per-turn cache diagnostics, ported from Reasonix's
- * telemetry/cache-diagnostics.ts. DeepSeek reports only hit/miss token counts;
+ * Per-turn cache diagnostics, DeepSeek reports only hit/miss token counts;
  * the miss reason is inferred locally from hashes of the stable prefix
  * components (system prompt, tool schemas, frozen environment snapshot) that
  * must stay byte-identical for the context cache to keep hitting across steps.

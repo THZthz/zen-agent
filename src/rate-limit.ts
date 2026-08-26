@@ -1,10 +1,9 @@
 import { envPositiveInt } from './env.js';
 
 /**
- * Client-side spacing of chat requests, ported from Reasonix's
- * waitForChatRateLimit. Throttles to at most one request per 60000/rpm ms so
- * bursts do not trip the provider's 429. Disabled unless ZEN_AGENT_CHAT_RPM
- * is set (0 disables it explicitly).
+ * Client-side spacing of chat requests. Throttles to at most one request
+ * per 60000/rpm ms so bursts do not trip the provider's 429. Disabled unless
+ * ZEN_AGENT_CHAT_RPM is set (0 disables it explicitly).
  */
 
 // Process-global on purpose: the throttle exists to keep THIS process from

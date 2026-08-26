@@ -2,10 +2,9 @@ import { fetchDeepSeekBalance } from './deepseek.js';
 import type { ProviderId } from './storage.js';
 
 /**
- * Classify an LLM API failure into user-facing guidance, ported from
- * Reasonix's loop/errors.ts. Errors thrown by runChatCompletions carry the
- * message shape `<label> API error <status>: <body>`; anything else is
- * returned unchanged.
+ * Classify an LLM API failure into user-facing guidance. Errors thrown
+ * by runChatCompletions carry the message shape `<label> API error <status>: <body>`;
+ * anything else is returned unchanged.
  */
 
 const API_ERROR_RE = /^([A-Za-z]+) API error (\d{3}): ([\s\S]*)$/;

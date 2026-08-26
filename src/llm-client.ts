@@ -422,7 +422,7 @@ export interface ChatCompletionsOptions {
 const RATE_LIMIT_WAIT_LOG_THRESHOLD_MS = 1_000;
 
 function parseChatTimeoutMs(): number {
-  return envPositiveInt('ZEN_AGENT_CHAT_TIMEOUT_MS', 660_000);
+  return envPositiveInt('ZEN_AGENT_CHAT_TIMEOUT_MS', 6_600_000);
 }
 
 /**

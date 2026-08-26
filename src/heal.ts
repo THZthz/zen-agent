@@ -1,10 +1,10 @@
 import type { LlmMessage } from './storage.js';
 
 /**
- * Heal message history before it is sent to the LLM API, ported from
- * Reasonix's loop/healing.ts. DeepSeek 400s on unpaired assistant tool_calls
- * and on stray tool messages; a hard abort or crash can leave either shape in
- * a persisted session. Healthy histories pass through unchanged.
+ * Heal message history before it is sent to the LLM API. DeepSeek 400s on
+ * unpaired assistant tool_calls and on stray tool messages; a hard abort
+ * or crash can leave either shape in a persisted session. Healthy histories
+ * pass through unchanged.
  */
 
 export interface HealResult {

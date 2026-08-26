@@ -1,5 +1,5 @@
 /**
- * Retrying HTTP calls to the LLM API, ported from Reasonix's retry strategy.
+ * Retrying HTTP calls to the LLM API.
  *
  * Rules:
  * - Only `retryableStatuses` (408/429/5xx by default) are retried. A
