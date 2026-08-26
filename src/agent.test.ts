@@ -586,6 +586,49 @@ describe('loadSession environment backfill', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('injects no environment messages when the session has tools off', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { vi } = await import('vitest');
+
+    const dir = mkdtempSync(join(tmpdir(), 'zen-agent-load-noenv-'));
+    try {
+      const agent = new ZenAgent() as unknown as TestAgent & {
+        loadSession(
+          params: { cwd: string; sessionId: string },
+          cx: {
+            notify: (
+              method: string,
+              params: { sessionId: string; update: unknown },
+            ) => Promise<void>;
+          },
+        ): Promise<unknown>;
+      };
+
+      const session = makeSession('sess_noenv');
+      session.cwd = dir;
+      session.config.toolsEnabled = false;
+      session.llmMessages = [];
+      mkdirSync(join(dir, '.sessions', 'sess_noenv'), { recursive: true });
+      writeFileSync(
+        join(dir, '.sessions', 'sess_noenv', 'state.json'),
+        JSON.stringify(session),
+        'utf8',
+      );
+
+      const notify = vi.fn(async () => {});
+      const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
+
+      await agent.loadSession({ cwd: dir, sessionId: 'sess_noenv' }, cx);
+
+      const loaded = agent.sessions.get('sess_noenv')!.session;
+      expect(loaded.llmMessages).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('prepareReplayEvents with display-only terminal info', () => {

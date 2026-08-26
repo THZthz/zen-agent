@@ -451,11 +451,15 @@ export class ZenAgent {
     // stay byte-identical for the provider's context cache to keep hitting
     // across steps and restarts (a per-request regenerated message — e.g.
     // with a changing git status — would break the whole cached prefix).
-    session.llmMessages.push({
-      role: 'user',
-      name: ENVIRONMENT_MESSAGE_NAME,
-      content: await buildEnvironmentMessage(session),
-    });
+    // With /tools off the model has no tools to act on the environment, so
+    // the snapshot is omitted entirely (chat-only session).
+    if (session.config.toolsEnabled !== false) {
+      session.llmMessages.push({
+        role: 'user',
+        name: ENVIRONMENT_MESSAGE_NAME,
+        content: await buildEnvironmentMessage(session),
+      });
+    }
     await writeSession(session);
     this.sessions.set(session.sessionId, this.makeActiveSession(session));
     void this.logRuntime(params.cwd, 'info', 'session created', {
@@ -1347,18 +1351,23 @@ export class ZenAgent {
    *    stay byte-identical, so the provider's context cache keeps hitting.
    */
   private async prepareResumedSession(session: StoredSession): Promise<void> {
-    if (session.llmMessages.length === 0 || !isEnvironmentMessage(session.llmMessages[0]!)) {
-      session.llmMessages.unshift({
+    // With /tools off the session is chat-only: no environment snapshot is
+    // injected (see newSession), so there is nothing to backfill and no
+    // continuation notice to append either.
+    if (session.config.toolsEnabled !== false) {
+      if (session.llmMessages.length === 0 || !isEnvironmentMessage(session.llmMessages[0]!)) {
+        session.llmMessages.unshift({
+          role: 'user',
+          name: ENVIRONMENT_MESSAGE_NAME,
+          content: await buildEnvironmentMessage(session),
+        });
+      }
+      session.llmMessages.push({
         role: 'user',
         name: ENVIRONMENT_MESSAGE_NAME,
-        content: await buildEnvironmentMessage(session),
+        content: await buildSessionContinuedMessage(session),
       });
     }
-    session.llmMessages.push({
-      role: 'user',
-      name: ENVIRONMENT_MESSAGE_NAME,
-      content: await buildSessionContinuedMessage(session),
-    });
     await writeSession(session);
   }
 

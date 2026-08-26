@@ -183,6 +183,50 @@ describe('/tools slash command', () => {
     expect(active.session.config.toolsEnabled).toBe(true);
   });
 
+  it('appends no environment continuation notice on resume while tools are off', async () => {
+    const { agent, cx, sessionId } = await setupAgent(cwd);
+
+    // Creation froze an environment snapshot (tools were on by default).
+    let active = (
+      agent as unknown as {
+        sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
+      }
+    ).sessions.get(sessionId)!;
+    expect(
+      active.session.llmMessages.some((m) => String(m.content).includes('<working-directory>')),
+    ).toBe(true);
+
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);
+
+    // Resume from disk: with tools off the continuation notice must not be
+    // appended (and nothing is backfilled).
+    const before = (
+      agent as unknown as {
+        sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
+      }
+    ).sessions.get(sessionId)!.session.llmMessages.length;
+    await (
+      agent as unknown as {
+        resumeSession(
+          params: { cwd: string; sessionId: string },
+          context: unknown,
+        ): Promise<unknown>;
+      }
+    ).resumeSession({ cwd, sessionId }, cx);
+
+    active = (
+      agent as unknown as {
+        sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
+      }
+    ).sessions.get(sessionId)!;
+    expect(active.session.llmMessages.length).toBe(before);
+    expect(
+      active.session.llmMessages.some((m) =>
+        String(m.content).includes('<session-state>resumed</session-state>'),
+      ),
+    ).toBe(false);
+  });
+
   it('refuses tool calls the model still emits while tools are off', async () => {
     const { agent, cx, request, sessionId } = await setupAgent(cwd);
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);

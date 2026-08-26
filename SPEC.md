@@ -55,9 +55,9 @@ Layout under the project's `.sessions/` directory:
 
 `state.json` holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`, `toolsEnabled`), `usage` and `turnStats` (cumulative + per-turn statistics). A global index at `$XDG_DATA_HOME/zen-agent/index.json` maps session ids to their `cwd`.
 
-- **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
+- **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. With `/tools off` the environment message is omitted (chat-only session). Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
 - **`session/load`** replays persisted events through `prepareReplayEvents` (see §5.2) and returns the current `configOptions`; **`session/resume`** loads without replay.
-- On load/resume, a fresh environment _continuation_ message is appended at the **end** of the conversation (the cached prefix is untouched).
+- On load/resume, a fresh environment _continuation_ message is appended at the **end** of the conversation (the cached prefix is untouched); for `/tools off` sessions nothing is appended or backfilled.
 - Sessions created before the `provider` field existed default to `deepseek`.
 
 ### 3.1 Config Options
@@ -202,7 +202,7 @@ After `session/new`/`load`/`resume`, an `available_commands_update` notification
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model.                                                                                                             |
 | `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                      |
-| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in `state.json`; off sends no tool schemas and refuses any emitted tool call.                                                                                                         |
+| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in `state.json`; off sends no tool schemas, omits the environment message, and refuses any emitted tool call.                                                                         |
 | `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`. |
 
 Unknown commands reply `Unknown slash command` and return `end_turn`.
