@@ -52,6 +52,7 @@ function makeSession(cwd: string): StoredSession {
       thinkingEffort: 'off',
       systemPrompt: '',
       sandbox: false,
+      toolsEnabled: true,
     },
     usage: emptySessionUsage(),
     turnStats: [],

@@ -110,6 +110,13 @@ export interface SessionConfig {
    * applies even when this flag is off (see tool-execution.ts).
    */
   sandbox: boolean;
+  /**
+   * Whether the session may use tools at all (bash + read_media). Toggled
+   * at runtime with the `/tools` slash command and persisted so a session
+   * resumed after a restart keeps its choice. When off, no tool schemas are
+   * sent to the model and any tool call is refused with a failed result.
+   */
+  toolsEnabled: boolean;
 }
 
 /**
@@ -343,6 +350,7 @@ export async function createStoredSession(
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: '',
       sandbox: false,
+      toolsEnabled: true,
     },
     usage: emptySessionUsage(),
     turnStats: [],
@@ -368,6 +376,7 @@ function defaultConfig(provider: ProviderId = DEFAULT_PROVIDER): SessionConfig {
     thinkingEffort: DEFAULT_THINKING_EFFORT,
     systemPrompt: '',
     sandbox: false,
+    toolsEnabled: true,
   };
 }
 
@@ -418,6 +427,8 @@ function normalizeStoredSession(parsed: unknown, cwd: string, sessionId: string)
     systemPrompt: typeof rawConfig.systemPrompt === 'string' ? rawConfig.systemPrompt : '',
     // Older sessions predate the flag; absent means off.
     sandbox: rawConfig.sandbox === true,
+    // Older sessions predate the flag; absent means enabled (the default).
+    toolsEnabled: rawConfig.toolsEnabled !== false,
   };
 
   // --- usage: keep every known numeric field, default anything else ---

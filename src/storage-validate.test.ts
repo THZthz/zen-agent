@@ -64,6 +64,8 @@ describe('readStoredSession validation', () => {
     expect(session.config.model).toBe('deepseek-v4-flash');
     expect(session.config.thinkingEffort).toBe('off');
     expect(session.config.sandbox).toBe(false);
+    // Older sessions predate the tools flag; absent means enabled.
+    expect(session.config.toolsEnabled).toBe(true);
     expect(session.events).toEqual([]);
     expect(session.turnStats).toEqual([]);
     expect(session.title).toBeNull();
@@ -76,6 +78,27 @@ describe('readStoredSession validation', () => {
     await import('./storage.js').then(({ writeSession }) => writeSession(session));
     const reloaded = await readStoredSession(cwd, 'sess_legacy');
     expect(reloaded.config.sandbox).toBe(false);
+    expect(reloaded.config.toolsEnabled).toBe(true);
+  });
+
+  it('keeps a disabled tools flag (toolsEnabled: false) across a round trip', async () => {
+    await writeState(
+      'sess_tools_off',
+      JSON.stringify({
+        sessionId: 'sess_tools_off',
+        cwd,
+        createdAt: '2026-08-20T00:00:00.000Z',
+        llmMessages: [],
+        config: { systemPrompt: '', sandbox: false, toolsEnabled: false },
+        usage: {},
+      }),
+    );
+    const session = await readStoredSession(cwd, 'sess_tools_off');
+    expect(session.config.toolsEnabled).toBe(false);
+
+    await import('./storage.js').then(({ writeSession }) => writeSession(session));
+    const reloaded = await readStoredSession(cwd, 'sess_tools_off');
+    expect(reloaded.config.toolsEnabled).toBe(false);
   });
 
   it('keeps loading healthy sessions unchanged', async () => {
@@ -85,6 +108,7 @@ describe('readStoredSession validation', () => {
     expect(reloaded.sessionId).toBe(session.sessionId);
     expect(reloaded.config.provider).toBe('deepseek');
     expect(reloaded.config.sandbox).toBe(false);
+    expect(reloaded.config.toolsEnabled).toBe(true);
     expect(reloaded.usage.turns).toBe(0);
   });
 });
