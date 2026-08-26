@@ -231,13 +231,29 @@ describe('buildSystemPrompt tools gating', () => {
     expect(prompt).toContain('You have exactly one tool: bash');
   });
 
-  it('omits the bash-tool paragraph when /tools off', () => {
+  it('omits every tool reference when /tools off', () => {
     const session = makeSession(dir);
     session.config.toolsEnabled = false;
     const prompt = buildSystemPrompt(session);
     expect(prompt).not.toContain('You have exactly one tool: bash');
+    expect(prompt).not.toContain('use shell tools such as cat, sed, awk, or tee');
+    expect(prompt).not.toMatch(/bash/i);
     expect(prompt).toContain('You are an experienced software engineer');
     expect(prompt).toContain('Always use utf-8');
+  });
+
+  it('keeps the enabled prompt byte-identical with and without the no-tools split', () => {
+    // The /tools-off prompt must not change the tools-on prompt: the system
+    // prompt is part of the provider's cache prefix.
+    const session = makeSession(dir);
+    session.config.toolsEnabled = true;
+    const prompt = buildSystemPrompt(session);
+    expect(prompt).toBe(
+      'You are an experienced software engineer.\n\n' +
+        'You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.\n\n' +
+        'When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.\n\n' +
+        '> Always use utf-8, no emojis unless needed by your task.',
+    );
   });
 
   it('leaves a custom system prompt untouched regardless of tools', () => {

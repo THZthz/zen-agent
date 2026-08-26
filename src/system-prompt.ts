@@ -9,11 +9,11 @@ const GIT_TIMEOUT_MS = 5_000;
 
 const SYSTEM_PROMPT_HEAD = `You are an experienced software engineer.`;
 
-const SYSTEM_PROMPT_TOOLS = `You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.`;
+const SYSTEM_PROMPT_TOOLS = `You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.
 
-const SYSTEM_PROMPT_TAIL = `When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.
+When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.`;
 
-> Always use utf-8, no emojis unless needed by your task.`;
+const SYSTEM_PROMPT_TAIL = `> Always use utf-8, no emojis unless needed by your task.`;
 
 export const SYSTEM_PROMPT = `${SYSTEM_PROMPT_HEAD}
 
@@ -23,8 +23,10 @@ ${SYSTEM_PROMPT_TAIL}`;
 
 /**
  * Default system prompt for sessions with `/tools off`: identical to
- * {@link SYSTEM_PROMPT} minus the bash-tool paragraph, which would
- * contradict the empty tool list the model receives.
+ * {@link SYSTEM_PROMPT} minus every tool reference — the bash paragraph AND
+ * the "use shell tools such as cat, sed, awk, or tee" file-modification
+ * guidance, both of which would contradict the empty tool list the model
+ * receives. The enabled prompt stays byte-identical.
  */
 export const SYSTEM_PROMPT_NO_TOOLS = `${SYSTEM_PROMPT_HEAD}
 
