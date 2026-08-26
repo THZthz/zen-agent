@@ -9,10 +9,10 @@ const GIT_TIMEOUT_MS = 5_000;
 
 const SYSTEM_PROMPT_HEAD = `You are an experienced software engineer.`;
 
-const SYSTEM_PROMPT_TOOLS = `You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. Prefer small, targeted bash commands. Avoid large output from using bash tool. When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.
-`;
+const SYSTEM_PROMPT_TOOLS = `You have exactly one tool: bash. You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. There is no approval gate: every command you run is executed immediately. Prefer small, targeted bash commands. Avoid large output from using bash tool.`;
 
-const SYSTEM_PROMPT_TAIL = `
+const SYSTEM_PROMPT_TAIL = `When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.
+
 > Always use utf-8, no emojis unless needed by your task.`;
 
 export const SYSTEM_PROMPT = `${SYSTEM_PROMPT_HEAD}
