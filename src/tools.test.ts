@@ -126,7 +126,7 @@ describe('/tools slash command', () => {
     recordStep(textStep('ok'));
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
     expect(recordedSteps[0]?.tools).toEqual([BASH_TOOL_SCHEMA]);
-    expect(recordedSteps[0]?.system).toContain('You have exactly one tool: bash');
+    expect(recordedSteps[0]?.system).toContain('You can use bash to inspect files');
   });
 
   it('turns tools off: no schemas sent, no system-prompt notice, state persists', async () => {
@@ -143,7 +143,7 @@ describe('/tools slash command', () => {
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
     expect(recordedSteps[0]?.tools).toEqual([]);
     // The bash paragraph must not appear when tools are off.
-    expect(recordedSteps[0]?.system).not.toContain('You have exactly one tool: bash');
+    expect(recordedSteps[0]?.system).not.toContain('You can use bash to inspect files');
     expect(recordedSteps[0]?.system).toContain('You are an experienced software engineer');
   });
 
@@ -199,7 +199,7 @@ describe('/tools slash command', () => {
     recordStep(textStep('ok'));
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
     expect(recordedSteps[0]?.tools).toEqual([BASH_TOOL_SCHEMA]);
-    expect(recordedSteps[0]?.system).toContain('You have exactly one tool: bash');
+    expect(recordedSteps[0]?.system).toContain('You can use bash to inspect files');
   });
 
   it('shows OFF in the status after disabling', async () => {
