@@ -147,6 +147,31 @@ describe('/tools slash command', () => {
     expect(recordedSteps[0]?.system).toContain('You are an experienced software engineer');
   });
 
+  it('keeps the cache prefix byte-stable across steps while tools are off', async () => {
+    const { agent, cx, sessionId } = await setupAgent(cwd);
+
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);
+
+    recordStep(textStep('ok'));
+    recordStep(textStep('ok again'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello again' }] }, cx);
+
+    // The provider cache key = system + tool schemas + frozen env message +
+    // history. Tools-off steps must send the identical system prompt and
+    // tool list, and must not disturb the persisted env snapshot.
+    expect(recordedSteps[0]?.system).toBe(recordedSteps[1]?.system);
+    expect(recordedSteps[0]?.tools).toEqual([]);
+    expect(recordedSteps[1]?.tools).toEqual([]);
+
+    const active = (
+      agent as unknown as {
+        sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
+      }
+    ).sessions.get(sessionId)!;
+    expect(String(active.session.llmMessages[0]!.content)).toContain('<working-directory>');
+  });
+
   it('turns tools back on and restores tool schemas', async () => {
     const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
 
