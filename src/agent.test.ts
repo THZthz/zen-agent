@@ -822,6 +822,59 @@ describe('loadSession environment backfill', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('strips stale environment messages from a tools-off session on load', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { vi } = await import('vitest');
+
+    const dir = mkdtempSync(join(tmpdir(), 'zen-agent-load-stale-env-'));
+    try {
+      const agent = new ZenAgent() as unknown as TestAgent & {
+        loadSession(
+          params: { cwd: string; sessionId: string },
+          cx: {
+            notify: (
+              method: string,
+              params: { sessionId: string; update: unknown },
+            ) => Promise<void>;
+          },
+        ): Promise<unknown>;
+      };
+
+      // A tools-off session written by an older build still carries the
+      // environment snapshot from its tools-on creation; loading must make
+      // it chat-only again.
+      const session = makeSession('sess_stale');
+      session.cwd = dir;
+      session.config.toolsEnabled = false;
+      session.llmMessages = [
+        {
+          role: 'user',
+          name: 'Environment',
+          content: '<environment><working-directory>/tmp</working-directory></environment>',
+        },
+        { role: 'user', content: 'hello' },
+      ];
+      mkdirSync(join(dir, '.sessions', 'sess_stale'), { recursive: true });
+      writeFileSync(
+        join(dir, '.sessions', 'sess_stale', 'state.json'),
+        JSON.stringify(session),
+        'utf8',
+      );
+
+      const notify = vi.fn(async () => {});
+      const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
+
+      await agent.loadSession({ cwd: dir, sessionId: 'sess_stale' }, cx);
+
+      const loaded = agent.sessions.get('sess_stale')!.session;
+      expect(loaded.llmMessages).toEqual([{ role: 'user', content: 'hello' }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('prepareReplayEvents with display-only terminal info', () => {

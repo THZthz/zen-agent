@@ -74,7 +74,7 @@ Zed shows three selectors per session (also settable via `default_config_options
 | Model           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: live model catalog (auto-fetched, cached in `<project>/.sessions/client/models.openrouter.json`; `openrouter/free` default, any slug via env or `set_config_option`)            |
 | Thinking effort | DeepSeek: `off`, `low`, `high`, `max` · OpenRouter: `off` plus the selected model's supported levels, sorted ascending (`off`, `low`, `medium`, `high`, `xhigh`, `max`; `minimal` is folded into `low`, every value when the model is unknown) |
 
-Provider, model and thinking effort are **locked after the session's first message** — set them before you start the conversation.
+Provider, model, thinking effort, the `/tools` toggle and the `/prompt` system-prompt setter are **locked after the session's first message** — set them before you start the conversation (status queries stay available).
 
 ### Image & Audio Input
 
@@ -86,12 +86,12 @@ Sessions on OpenRouter models whose catalog entry lists `image`/`audio` in `arch
 
 ## Slash Commands
 
-| Command                 | Description                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------ |
-| `/prompt <text>`        | Replace the session's system prompt (no argument: print the current one)                   |
-| `/sandbox on\|off`      | Toggle the per-session bash sandbox (no argument: show status)                             |
-| `/tools on\|off`        | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status) |
-| `/<skill-name> <input>` | Invoke an installed Agent Skill                                                            |
+| Command                 | Description                                                                                                                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/prompt <text>`        | Replace the session's system prompt (no argument: print the current one); locked after the first user message                                                                                                         |
+| `/sandbox on\|off`      | Toggle the per-session bash sandbox (no argument: show status)                                                                                                                                                        |
+| `/tools on\|off`        | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status); locked after the first user message. `off` makes the session chat-only (environment messages dropped); `on` restores them |
+| `/<skill-name> <input>` | Invoke an installed Agent Skill                                                                                                                                                                                       |
 
 ## Skills
 

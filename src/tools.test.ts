@@ -157,9 +157,9 @@ describe('/tools slash command', () => {
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello again' }] }, cx);
 
-    // The provider cache key = system + tool schemas + frozen env message +
-    // history. Tools-off steps must send the identical system prompt and
-    // tool list, and must not disturb the persisted env snapshot.
+    // The provider cache key = system + tool schemas + history. Tools-off
+    // steps must send the identical system prompt and empty tool list, and
+    // the chat-only session must carry NO environment snapshot at all.
     expect(recordedSteps[0]?.system).toBe(recordedSteps[1]?.system);
     expect(recordedSteps[0]?.tools).toEqual([]);
     expect(recordedSteps[1]?.tools).toEqual([]);
@@ -169,7 +169,9 @@ describe('/tools slash command', () => {
         sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
       }
     ).sessions.get(sessionId)!;
-    expect(String(active.session.llmMessages[0]!.content)).toContain('<working-directory>');
+    expect(
+      active.session.llmMessages.some((m) => String(m.content).includes('<working-directory>')),
+    ).toBe(false);
   });
 
   it('turns tools back on and restores tool schemas', async () => {
@@ -182,6 +184,17 @@ describe('/tools slash command', () => {
     );
     const active = (agent as unknown as TestAgent).sessions.get(sessionId)!;
     expect(active.session.config.toolsEnabled).toBe(true);
+
+    // Chat-only -> tools-on restores the frozen environment snapshot so the
+    // model has the working directory / git state to act on again.
+    const withEnv = (
+      agent as unknown as {
+        sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
+      }
+    ).sessions.get(sessionId)!;
+    expect(
+      withEnv.session.llmMessages.some((m) => String(m.content).includes('<working-directory>')),
+    ).toBe(true);
 
     recordStep(textStep('ok'));
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
@@ -223,13 +236,19 @@ describe('/tools slash command', () => {
 
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);
 
-    // Resume from disk: with tools off the continuation notice must not be
-    // appended (and nothing is backfilled).
-    const before = (
+    // Chat-only: /tools off dropped the creation snapshot from the history.
+    active = (
       agent as unknown as {
         sessions: Map<string, { session: { llmMessages: Array<{ content: unknown }> } }>;
       }
-    ).sessions.get(sessionId)!.session.llmMessages.length;
+    ).sessions.get(sessionId)!;
+    expect(
+      active.session.llmMessages.some((m) => String(m.content).includes('<working-directory>')),
+    ).toBe(false);
+
+    // Resume from disk: with tools off no continuation notice is appended
+    // and nothing is backfilled.
+    const before = active.session.llmMessages.length;
     await (
       agent as unknown as {
         resumeSession(
@@ -275,5 +294,119 @@ describe('/tools slash command', () => {
       .flatMap((m) => (m as { content: Array<{ output?: { value?: string } }> }).content)[0];
     expect(toolResult?.output?.value).toContain('disabled');
     expect(toolResult?.output?.value).toContain('/tools on');
+  });
+
+  it('rejects /tools off after the first user message without changing state', async () => {
+    const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+    recordStep(textStep('ok'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);
+    expect(agentMessages(notifications).join('\n')).toContain(
+      'Tools cannot be changed after the first message of a session.',
+    );
+    const active = (agent as unknown as TestAgent).sessions.get(sessionId)!;
+    expect(active.session.config.toolsEnabled).toBe(true);
+    // No LLM step ran for the rejected toggle.
+    expect(recordedSteps).toHaveLength(1);
+  });
+
+  it('rejects /tools on after the first user message even when tools are off', async () => {
+    const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+    // Toggle off BEFORE the first user message (allowed), then send one.
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools off' }] }, cx);
+    recordStep(textStep('ok'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/tools on' }] }, cx);
+    expect(agentMessages(notifications).join('\n')).toContain(
+      'Tools cannot be changed after the first message of a session.',
+    );
+    const active = (agent as unknown as TestAgent).sessions.get(sessionId)!;
+    expect(active.session.config.toolsEnabled).toBe(false);
+  });
+
+  it('still allows /tools status after the first user message', async () => {
+    const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+    recordStep(textStep('ok'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+
+    const response = await agent.prompt(
+      { sessionId, prompt: [{ type: 'text', text: '/tools' }] },
+      cx,
+    );
+    expect(response.stopReason).toBe('end_turn');
+    expect(agentMessages(notifications).join('\n')).toContain('Tools (bash, read_media): ON');
+  });
+});
+
+describe('/prompt slash command', () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'zen-agent-prompt-'));
+    mockedRunLlmStep.mockReset();
+    recordedSteps.length = 0;
+  });
+
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('sets the system prompt before the first user message', async () => {
+    const { agent, cx, sessionId } = await setupAgent(cwd);
+    await agent.prompt(
+      { sessionId, prompt: [{ type: 'text', text: '/prompt custom instructions' }] },
+      cx,
+    );
+
+    const active = (
+      agent as unknown as {
+        sessions: Map<string, { session: { config: { systemPrompt: string } } }>;
+      }
+    ).sessions.get(sessionId)!;
+    expect(active.session.config.systemPrompt).toBe('custom instructions');
+
+    // The custom prompt is what gets sent to the model.
+    recordStep(textStep('ok'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+    expect(recordedSteps[0]?.system).toBe('custom instructions');
+  });
+
+  it('rejects changing the system prompt after the first user message', async () => {
+    const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+    recordStep(textStep('ok'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+
+    await agent.prompt(
+      { sessionId, prompt: [{ type: 'text', text: '/prompt late instructions' }] },
+      cx,
+    );
+    expect(agentMessages(notifications).join('\n')).toContain(
+      'System prompt cannot be changed after the first message of a session.',
+    );
+    const active = (
+      agent as unknown as {
+        sessions: Map<string, { session: { config: { systemPrompt: string } } }>;
+      }
+    ).sessions.get(sessionId)!;
+    expect(active.session.config.systemPrompt).toBe('');
+    expect(recordedSteps).toHaveLength(1);
+  });
+
+  it('still prints the current system prompt after the first user message', async () => {
+    const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+    recordStep(textStep('ok'));
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);
+
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/prompt' }] }, cx);
+    expect(agentMessages(notifications).join('\n')).toContain(
+      'You are an experienced software engineer',
+    );
   });
 });

@@ -57,7 +57,7 @@ Layout under the project's `.sessions/` directory:
 
 - **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. With `/tools off` the environment message is omitted (chat-only session). Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
 - **`session/load`** replays persisted events through `prepareReplayEvents` (see §5.2) and returns the current `configOptions`; **`session/resume`** loads without replay.
-- On load/resume, a fresh environment _continuation_ message is appended at the **end** of the conversation (the cached prefix is untouched); for `/tools off` sessions nothing is appended or backfilled.
+- On load/resume, a fresh environment _continuation_ message is appended at the **end** of the conversation (the cached prefix is untouched); for `/tools off` sessions nothing is appended or backfilled, and any environment message left in the history by an older build is stripped (chat-only invariant).
 - Sessions created before the `provider` field existed default to `deepseek`.
 
 ### 3.1 Config Options
@@ -68,7 +68,7 @@ Layout under the project's `.sessions/` directory:
 | `model`           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug via `set_config_option`)                                                                 |
 | `thinking_effort` | DeepSeek: `off`, `low`, `high`, `max` · OpenRouter: `off` plus the model's `supported_efforts`, sorted ascending (`low`/`medium`/`high`/`xhigh`/`max`; `minimal` folded into `low`) |
 
-`provider`, `model` and `thinking_effort` are **locked once the conversation contains a user message** (environment messages don't count): `session/set_config_option` then rejects the change with an error. Sessions default to `deepseek`.
+`provider`, `model` and `thinking_effort` are **locked once the conversation contains a user message** (environment messages don't count): `session/set_config_option` then rejects the change with an error. The `/tools on|off` toggle and the `/prompt <new-prompt>` setter are locked the same way (their state is part of the cache prefix); `/tools`, `/tools status` and `/prompt` printing stay available. Sessions default to `deepseek`.
 
 ## 4. Agent Turn Lifecycle (`session/prompt`)
 
@@ -198,12 +198,12 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 After `session/new`/`load`/`resume`, an `available_commands_update` notification advertises:
 
-| Command        | Behavior                                                                                                                                                                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model.                                                                                                             |
-| `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                      |
-| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in `state.json`; off sends no tool schemas, omits the environment message, and refuses any emitted tool call.                                                                         |
-| `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`. |
+| Command        | Behavior                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model. The set form is locked after the first user message (the system prompt is part of the cache prefix); printing stays open.                                                                                                                                                  |
+| `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                                                                                                                                                                                     |
+| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in `state.json`; locked after the first user message (tool list + environment are part of the cache prefix), status stays open. Off makes the session chat-only: the environment snapshot is dropped from the history and nothing is injected on load/resume; on restores the snapshot. Off sends no tool schemas and refuses any emitted tool call. |
+| `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`.                                                                                                                                                                |
 
 Unknown commands reply `Unknown slash command` and return `end_turn`.
 

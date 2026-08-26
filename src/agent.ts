@@ -692,6 +692,26 @@ export class ZenAgent {
     );
   }
 
+  /** Drop every auto-generated environment snapshot/continuation message. */
+  private removeEnvironmentMessages(session: StoredSession): void {
+    session.llmMessages = session.llmMessages.filter((message) => !isEnvironmentMessage(message));
+  }
+
+  /**
+   * Inject the frozen environment snapshot at the FRONT of the conversation
+   * (right after the system prompt, where newSession places it) when it is
+   * missing. Used when a chat-only session re-enables tools.
+   */
+  private async ensureEnvironmentMessage(session: StoredSession): Promise<void> {
+    if (!session.llmMessages.some(isEnvironmentMessage)) {
+      session.llmMessages.unshift({
+        role: 'user',
+        name: ENVIRONMENT_MESSAGE_NAME,
+        content: await buildEnvironmentMessage(session),
+      });
+    }
+  }
+
   /**
    * Graceful cancel (ACP `session/cancel`).
    *
@@ -1420,7 +1440,9 @@ export class ZenAgent {
   private async prepareResumedSession(session: StoredSession): Promise<void> {
     // With /tools off the session is chat-only: no environment snapshot is
     // injected (see newSession), so there is nothing to backfill and no
-    // continuation notice to append either.
+    // continuation notice to append either. Any environment message left in
+    // the history by an older build (or by a tools-on creation before the
+    // toggle) is stripped so the invariant holds across restarts.
     if (session.config.toolsEnabled !== false) {
       if (session.llmMessages.length === 0 || !isEnvironmentMessage(session.llmMessages[0]!)) {
         session.llmMessages.unshift({
@@ -1434,6 +1456,8 @@ export class ZenAgent {
         name: ENVIRONMENT_MESSAGE_NAME,
         content: await buildSessionContinuedMessage(session),
       });
+    } else {
+      this.removeEnvironmentMessages(session);
     }
     await writeSession(session);
   }
@@ -1729,11 +1753,26 @@ export class ZenAgent {
     argument: string,
   ): Promise<acp.StopReason> {
     if (!argument) {
+      // No argument = status: print the current system prompt. Always allowed.
       await this.emit(active, cx, {
         sessionUpdate: 'agent_message_chunk',
         content: {
           type: 'text',
           text: buildSystemPrompt(active.session),
+        },
+      });
+      return 'end_turn';
+    }
+
+    // The system prompt is part of the provider's cache prefix: once the
+    // conversation has a real user message, changing it would break every
+    // cache hit. Lock the set form like provider/model/thinking_effort.
+    if (this.sessionHasStarted(active.session)) {
+      await this.emit(active, cx, {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: 'System prompt cannot be changed after the first message of a session.',
         },
       });
       return 'end_turn';
@@ -1847,7 +1886,11 @@ Usage: /sandbox on | off`,
    * The flag lives on the per-session `config.toolsEnabled` and persists in
    * `state.json`, so a resumed session keeps its choice across restarts.
    * With tools off, `sessionToolSchemas` sends no tool schemas to the model
-   * and `executeLlmToolCall` refuses any tool call that still arrives.
+   * and `executeLlmToolCall` refuses any tool call that still arrives. The
+   * session becomes chat-only: every environment snapshot/continuation is
+   * dropped from the history, and nothing is injected on load/resume.
+   * `on|off` is locked after the first user message (the tool list and
+   * environment snapshot are part of the cache prefix); status stays open.
    */
   private async handleToolsSlashCommand(
     active: ActiveSession,
@@ -1886,6 +1929,21 @@ Usage: /tools on | off`,
       return 'end_turn';
     }
 
+    // The tool list and environment snapshot are part of the provider's
+    // cache prefix: once the conversation has a real user message, toggling
+    // them would break every cache hit. Lock on|off like
+    // provider/model/thinking_effort; status stays open.
+    if (this.sessionHasStarted(active.session)) {
+      await this.emit(active, cx, {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: 'Tools cannot be changed after the first message of a session.',
+        },
+      });
+      return 'end_turn';
+    }
+
     if (enabled === active.session.config.toolsEnabled) {
       await this.emit(active, cx, {
         sessionUpdate: 'agent_message_chunk',
@@ -1900,6 +1958,15 @@ Usage: /tools on | off`,
     }
 
     active.session.config.toolsEnabled = enabled;
+    if (enabled) {
+      // Chat-only -> tools-on: restore the frozen environment snapshot so
+      // the model has the working directory / git state to act on.
+      await this.ensureEnvironmentMessage(active.session);
+    } else {
+      // Tools-on -> chat-only: drop every environment snapshot/continuation
+      // so the conversation really is environment-free.
+      this.removeEnvironmentMessages(active.session);
+    }
     await this.save(active);
     void this.logRuntime(active.session.cwd, 'info', 'tools toggled', {
       sessionId: active.session.sessionId,
