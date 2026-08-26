@@ -53,7 +53,7 @@ Layout under the project's `.sessions/` directory:
   client/models.openrouter.json               cached OpenRouter model catalog
 ```
 
-`state.json` holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`), `usage` and `turnStats` (cumulative + per-turn statistics). A global index at `$XDG_DATA_HOME/zen-agent/index.json` maps session ids to their `cwd`.
+`state.json` holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`, `toolsEnabled`), `usage` and `turnStats` (cumulative + per-turn statistics). A global index at `$XDG_DATA_HOME/zen-agent/index.json` maps session ids to their `cwd`.
 
 - **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
 - **`session/load`** replays persisted events through `prepareReplayEvents` (see §5.2) and returns the current `configOptions`; **`session/resume`** loads without replay.
@@ -75,7 +75,7 @@ Layout under the project's `.sessions/` directory:
 1. Look up the session; convert `ContentBlock[]` via `promptBlocksToPromptContent`: text and resource links become text parts (as before), `image`/`audio` blocks become media parts (`ZEN_AGENT_MAX_MEDIA_BYTES`, default 10 MB decoded; oversize -> placeholder note). Transcript events keep the original blocks (Zed renders them); stored user messages keep plain-string content for pure-text prompts (cache-compatible) or part arrays otherwise. Media the active model cannot consume (per `getModelModalities`) degrades to placeholder text.
 2. Slash commands are intercepted first (see §8). Otherwise the user message — named after `git config user.name`, fallback `User` — is appended to history.
 3. Loop (max `ZEN_AGENT_MAX_TURN_STEPS`, default 25):
-   a. Call `runLlmStep(provider, ...)` with the system prompt, full history, and the session's tool list: `bash` always, plus `read_media` when the model accepts image/audio input (stable per session - the list is part of the cached prefix).
+   a. Call `runLlmStep(provider, ...)` with the system prompt, full history, and the session's tool list: `bash` always, plus `read_media` when the model accepts image/audio input (stable per session - the list is part of the cached prefix). With `config.toolsEnabled` off (`/tools off`), the list is empty and any tool call the model still emits is refused with a failed result.
    b. Stream text deltas as `agent_message_chunk` and reasoning deltas as `agent_thought_chunk` (batched through `StreamThrottle`).
    c. For each tool call: emit `tool_call` (pending) → `tool_call_update` (in_progress) → execute via terminal (§5) → `tool_call_update` (completed/failed with terminal content and `rawOutput`); append assistant + tool messages to history.
    d. No tool calls → finish with the mapped stop reason (`length` → `max_tokens`, `content-filter` → `refusal`, `error` → throw, else `end_turn`).
@@ -202,6 +202,7 @@ After `session/new`/`load`/`resume`, an `available_commands_update` notification
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model.                                                                                                             |
 | `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                      |
+| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in `state.json`; off sends no tool schemas and refuses any emitted tool call.                                                                                                         |
 | `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`. |
 
 Unknown commands reply `Unknown slash command` and return `end_turn`.
@@ -254,7 +255,7 @@ zen-agent/
 
 - `deepseek.test.ts` / `openrouter.test.ts` — provider SSE behavior against local HTTP servers: live reasoning streaming (timing-sensitive), streaming tool calls, wire format, usage parsing, retries, balance/model endpoints.
 - `agent.test.ts` / `agent.graceful.test.ts` — session lifecycle, config options + locking, graceful cancel, stats lines (with `runLlmStep` mocked).
-- `skills.test.ts` / `skills-slash.test.ts` / `sandbox.test.ts` / `system-prompt.test.ts` / `tool-execution.test.ts` — skills, sandbox toggling, environment messages, terminal artifacts.
+- `skills.test.ts` / `skills-slash.test.ts` / `sandbox.test.ts` / `tools.test.ts` / `system-prompt.test.ts` / `tool-execution.test.ts` — skills, sandbox toggling, tools toggling + refusal, environment messages, terminal artifacts.
 - `media.test.ts` / `prompt-content.test.ts` / `user-parts.test.ts` / `media-flow.test.ts` - media path resolution, prompt-block intake, OpenAI wire mapping (image_url data URIs, input_audio), and the end-to-end read_media turn flow (provider mocked).
 
 ## 13. Decisions

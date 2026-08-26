@@ -9,7 +9,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Live streaming of thinking and answers
 - DeepSeek (default) and OpenRouter providers, chosen per session
 - Persistent sessions (`<project>/.sessions/`) with resume/load across Zed restarts
-- Slash commands: `/prompt`, `/sandbox`, one per installed skill
+- Slash commands: `/prompt`, `/sandbox`, `/tools`, one per installed skill
 - [Agent Skills](https://www.skills.sh/) support
 - Token usage, cache-hit ratio, cost and timing reporting (CNY for DeepSeek, USD for OpenRouter)
 - Optional [bubblewrap](#sandboxing) sandboxing with read-only `/mnt`
@@ -86,11 +86,12 @@ Sessions on OpenRouter models whose catalog entry lists `image`/`audio` in `arch
 
 ## Slash Commands
 
-| Command                 | Description                                                              |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `/prompt <text>`        | Replace the session's system prompt (no argument: print the current one) |
-| `/sandbox on\|off`      | Toggle the per-session bash sandbox (no argument: show status)           |
-| `/<skill-name> <input>` | Invoke an installed Agent Skill                                          |
+| Command                 | Description                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------ |
+| `/prompt <text>`        | Replace the session's system prompt (no argument: print the current one)                   |
+| `/sandbox on\|off`      | Toggle the per-session bash sandbox (no argument: show status)                             |
+| `/tools on\|off`        | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status) |
+| `/<skill-name> <input>` | Invoke an installed Agent Skill                                                            |
 
 ## Skills
 
