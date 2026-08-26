@@ -62,11 +62,11 @@ Layout under the project's `.sessions/` directory:
 
 ### 3.1 Config Options
 
-| Option            | Values                                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `provider`        | `deepseek`, `openrouter` — switching resets `model` to the provider default                                         |
-| `model`           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug via `set_config_option`) |
-| `thinking_effort` | `off`, `high`, `max`                                                                                                |
+| Option            | Values                                                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`        | `deepseek`, `openrouter` — switching resets `model` to the provider default                                                                    |
+| `model`           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: `openrouter/free` (any slug via `set_config_option`)                            |
+| `thinking_effort` | DeepSeek: `off`, `low`, `high`, `max` · OpenRouter: `off` plus the model's `supported_efforts` (`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) |
 
 `provider`, `model` and `thinking_effort` are **locked once the conversation contains a user message** (environment messages don't count): `session/set_config_option` then rejects the change with an error. Sessions default to `deepseek`.
 
@@ -155,7 +155,7 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 - Reasoning streams as `delta.reasoning_content`; stored reasoning is echoed back as `reasoning_content` in assistant history (only alongside tool calls).
 - Usage parsed from the raw chunk: `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`.
-- `thinking_effort` maps directly to `reasoning_effort` (`off` omits the field).
+- `thinking_effort` maps to DeepSeek's `reasoning_effort` vocabulary (`low`/`high`/`max`; `off` omits the field). Session values outside that set are clamped to the nearest tier (`minimal`→`low`, `medium`→`high`, `xhigh`→`max`).
 - Cost: static CNY rate table with Beijing peak/off-peak windows (peak 09:00-12:00 and 14:00-18:00; off-peak = half), CNY per 1M tokens:
 
 | Model               | Period   | Cache hit in | Cache miss in | Output |
@@ -178,9 +178,9 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 
 - Reasoning streams as `delta.reasoning` (with `reasoning_content` accepted as passthrough for DeepSeek routes); stored reasoning is echoed back as `reasoning`.
 - Sends `stream_options: { include_usage: true }` (OpenRouter omits usage otherwise). `parseOpenRouterUsage` reads generic `prompt_tokens`/`completion_tokens` plus optional passthrough cache (`prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`) and reasoning fields.
-- `reasoning_effort` uses the OpenAI vocabulary: `off` omits it, `high`/`max` → `high`.
+- `reasoning_effort` honors the model's `reasoning.supported_efforts` allowlist from the catalog (see §6.3 catalog): the session's `off`/`high`/`max` and the other gateway values (`minimal`/`low`/`medium`/`xhigh`) map to the model's own vocabulary, so e.g. `max` reaches models that support `xhigh` or `max` natively instead of being collapsed to `high`. `off` sends `none` when supported; on mandatory-reasoning models it sends the lowest supported effort; otherwise the field is omitted.
 - Cost/context: `GET /models` (fetched once per base URL+key, cached) provides USD pricing and `context_length`; static fallbacks cover `openrouter/free` ($0) and generic defaults for unknown slugs. OpenRouter bills cached reads at the regular input rate. Balance verification: `GET /auth/key` (remaining = limit − usage).
-- **Model catalog**: the catalog is auto-fetched from `/models` (5s timeout) the first time an OpenRouter session's config options are requested, kept in memory per process, and persisted to `<cwd>/.sessions/client/models.openrouter.json` (versioned; best-effort). Offline starts load that file. The session `model` selector is built from the catalog — tool-capable models only (`supported_parameters` missing = assume yes), `openrouter/free` pinned first, then alphabetical — with the static list (`openrouter/free`) as final fallback. v2 cache files also carry `architecture.input_modalities`, exposed via `getOpenRouterModelModalities` / `provider.getModelModalities` to gate media input.
+- **Model catalog**: the catalog is auto-fetched from `/models` (5s timeout) the first time an OpenRouter session's config options are requested, kept in memory per process, and persisted to `<cwd>/.sessions/client/models.openrouter.json` (versioned; best-effort). Offline starts load that file. The session `model` selector is built from the catalog — tool-capable models only (`supported_parameters` missing = assume yes), `openrouter/free` pinned first, then alphabetical — with the static list (`openrouter/free`) as final fallback. v2 cache files also carry `architecture.input_modalities`, exposed via `getOpenRouterModelModalities` / `provider.getModelModalities` to gate media input. v3 cache files additionally carry each model's `reasoning.supported_efforts`/`default_effort`/`mandatory` (parsed from the catalog's `reasoning` object, `getOpenRouterReasoning`), which drive the thinking-effort selector and the per-model `reasoning_effort` mapping (`mapOpenRouterEffort`).
 
 ### 6.4 Dispatch (`src/provider.ts`)
 

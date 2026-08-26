@@ -72,7 +72,7 @@ Zed shows three selectors per session (also settable via `default_config_options
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Provider        | `deepseek`, `openrouter`                                                                                                                                                                                                            |
 | Model           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: live model catalog (auto-fetched, cached in `<project>/.sessions/client/models.openrouter.json`; `openrouter/free` default, any slug via env or `set_config_option`) |
-| Thinking effort | `off`, `high`, `max`                                                                                                                                                                                                                |
+| Thinking effort | DeepSeek: `off`, `low`, `high`, `max` · OpenRouter: `off` plus the selected model's `supported_efforts` from the catalog (`minimal`/`low`/`medium`/`high`/`xhigh`/`max`; every value when the model is unknown)                     |
 
 Provider, model and thinking effort are **locked after the session's first message** — set them before you start the conversation.
 
