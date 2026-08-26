@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import {
   buildEnvironmentMessage,
   buildSessionContinuedMessage,
+  buildSystemPrompt,
   getUserMessageName,
   isEnvironmentMessage,
 } from './system-prompt.js';
@@ -221,5 +222,28 @@ describe('isEnvironmentMessage', () => {
     expect(isEnvironmentMessage({ role: 'user', content: 'x', name: 'Amias' })).toBe(false);
     expect(isEnvironmentMessage({ role: 'user', content: 'x' })).toBe(false);
     expect(isEnvironmentMessage({ role: 'assistant', content: [] })).toBe(false);
+  });
+});
+
+describe('buildSystemPrompt tools gating', () => {
+  it('includes the bash-tool paragraph when tools are enabled', () => {
+    const prompt = buildSystemPrompt(makeSession(dir));
+    expect(prompt).toContain('You have exactly one tool: bash');
+  });
+
+  it('omits the bash-tool paragraph when /tools off', () => {
+    const session = makeSession(dir);
+    session.config.toolsEnabled = false;
+    const prompt = buildSystemPrompt(session);
+    expect(prompt).not.toContain('You have exactly one tool: bash');
+    expect(prompt).toContain('You are an experienced software engineer');
+    expect(prompt).toContain('Always use utf-8');
+  });
+
+  it('leaves a custom system prompt untouched regardless of tools', () => {
+    const session = makeSession(dir);
+    session.config.systemPrompt = 'custom instructions';
+    session.config.toolsEnabled = false;
+    expect(buildSystemPrompt(session)).toBe('custom instructions');
   });
 });
