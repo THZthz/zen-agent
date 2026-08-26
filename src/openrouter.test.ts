@@ -352,6 +352,59 @@ describe('runOpenRouterStep (live SSE)', () => {
     expect(bodies.map((body) => body.reasoning_effort)).toEqual(['none', 'minimal']);
   });
 
+  it('keeps the reasoning_effort body stable across consecutive steps (cache-safe)', async () => {
+    let bodies: Array<Record<string, unknown>> = [];
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, [
+              {
+                id: 'vendor/stable',
+                reasoning: {
+                  supported_efforts: ['max', 'high', 'medium', 'low', 'minimal', 'none'],
+                  default_effort: 'medium',
+                },
+              },
+            ]);
+            return;
+          }
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_MODEL = 'vendor/stable';
+
+    // Two steps at the same effort: the allowlist lookup is cached in memory,
+    // so the request body (including reasoning_effort) is deterministic. The
+    // provider's context cache keys on system + tools + messages, none of
+    // which vary between steps.
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'max' });
+
+    expect(bodies).toHaveLength(3);
+    expect(bodies[0]?.reasoning_effort).toBe('none');
+    expect(bodies[1]?.reasoning_effort).toBe('none');
+    expect(bodies[2]?.reasoning_effort).toBe('max');
+  });
+
   it('sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL', async () => {
     let headers: import('node:http').IncomingHttpHeaders | undefined;
     let body: Record<string, unknown> | undefined;

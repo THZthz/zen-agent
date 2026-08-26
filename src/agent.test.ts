@@ -269,7 +269,7 @@ describe('setSessionConfigOption', () => {
       });
       const thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
         { options?: Array<{ value: string }> } | undefined;
-      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'max', 'high', 'low']);
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'low', 'high', 'max']);
       expect(session.config.thinkingEffort).toBe('max');
       expect(catalogHits).toBeGreaterThan(0);
     } finally {
@@ -277,6 +277,102 @@ describe('setSessionConfigOption', () => {
       server = undefined;
       // The models cache is keyed by baseUrl, so the next test's port gets a
       // fresh lookup; nothing else to reset here.
+    }
+  });
+
+  it('folds minimal into low in the thinking selector and sorts ascending', async () => {
+    let server: import('node:http').Server | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                data: [
+                  {
+                    // gemini-style: minimal but no low tier.
+                    id: 'vendor/gemini',
+                    reasoning: {
+                      supported_efforts: ['high', 'minimal'],
+                      default_effort: 'medium',
+                    },
+                  },
+                  {
+                    // gpt-5-style: both minimal and low.
+                    id: 'vendor/gpt5',
+                    reasoning: {
+                      supported_efforts: ['high', 'medium', 'low', 'minimal'],
+                      default_effort: 'medium',
+                    },
+                  },
+                ],
+              }),
+            );
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({}));
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    try {
+      process.env.OPENROUTER_API_KEY = 'test';
+      process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+      const agent = new ZenAgent();
+      const session = makeSession();
+      register(agent, session);
+
+      await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'provider',
+        value: 'openrouter',
+      });
+
+      await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'model',
+        value: 'vendor/gemini',
+      });
+      let res = await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'thinking_effort',
+        value: 'low',
+      });
+      let thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
+        { options?: Array<{ value: string }> } | undefined;
+      // Minimal-only model still offers Low (maps to minimal on the wire),
+      // and the list is ascending — no duplicate low-ish tier.
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'low', 'high']);
+
+      await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'model',
+        value: 'vendor/gpt5',
+      });
+      res = await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'thinking_effort',
+        value: 'medium',
+      });
+      thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
+        { options?: Array<{ value: string }> } | undefined;
+      // minimal never appears as its own option alongside low.
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual([
+        'off',
+        'low',
+        'medium',
+        'high',
+      ]);
+    } finally {
+      server?.close();
+      server = undefined;
     }
   });
 });
