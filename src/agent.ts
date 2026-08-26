@@ -227,6 +227,13 @@ const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
       hint: 'on | off | (empty for status)',
     },
   },
+  {
+    name: 'tools',
+    description: 'Enable or disable all tools (bash, read_media) for this session',
+    input: {
+      hint: 'on | off | (empty for status)',
+    },
+  },
 ];
 
 /**
@@ -377,6 +384,11 @@ export class ZenAgent {
    * prefix, so it must stay stable within a session.
    */
   private async sessionToolSchemas(active: ActiveSession): Promise<unknown[]> {
+    // /tools off disables every tool: no schemas are sent, so the model
+    // cannot legitimately propose a tool call this turn.
+    if (!active.session.config.toolsEnabled) {
+      return [];
+    }
     const modalities = await this.mediaModalities(active);
     return modalities.image || modalities.audio
       ? [BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA]
@@ -891,7 +903,7 @@ export class ZenAgent {
       // Captured once per step: the system prompt is part of the byte-stable
       // prefix the provider's context cache keys on, so it must be identical
       // for the request, the transcript, and the cache diagnostics.
-const system = buildSystemPrompt(active.session);
+      const system = buildSystemPrompt(active.session);
 
       void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
         type: 'llm_request',
@@ -1360,6 +1372,7 @@ const system = buildSystemPrompt(active.session);
       {
         session: active.session,
         sandbox: this.sessionSandboxEnabled(active.session),
+        toolsEnabled: active.session.config.toolsEnabled,
         mediaModalities: await this.mediaModalities(active),
         clientCapabilities: this.clientCapabilities,
         emit: (update) => this.emit(active, cx, update),
@@ -1576,6 +1589,10 @@ const system = buildSystemPrompt(active.session);
         return {
           stopReason: await this.handleSandboxSlashCommand(active, cx, command.argument),
         };
+      case 'tools':
+        return {
+          stopReason: await this.handleToolsSlashCommand(active, cx, command.argument),
+        };
       default: {
         const skillStop = await this.handleSkillSlashCommand(active, cx, command);
         if (skillStop) {
@@ -1742,6 +1759,84 @@ Usage: /sandbox on | off`,
         text: enabled
           ? 'Bash tool calls are now sandboxed with bubblewrap for this session.'
           : 'Bash tool sandbox disabled for this session.',
+      },
+    });
+
+    return 'end_turn';
+  }
+
+  /**
+   * `/tools` toggles every tool (bash + read_media) for this session.
+   *
+   * The flag lives on the per-session `config.toolsEnabled` and persists in
+   * `state.json`, so a resumed session keeps its choice across restarts.
+   * With tools off, `sessionToolSchemas` sends no tool schemas to the model
+   * and `executeLlmToolCall` refuses any tool call that still arrives.
+   */
+  private async handleToolsSlashCommand(
+    active: ActiveSession,
+    cx: acp.AgentContext,
+    argument: string,
+  ): Promise<acp.StopReason> {
+    const normalized = argument.trim().toLowerCase();
+
+    if (normalized === '' || normalized === 'status') {
+      const state = active.session.config.toolsEnabled ? 'ON' : 'OFF';
+      await this.emit(active, cx, {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: `Tools (bash, read_media): ${state}
+Usage: /tools on | off`,
+        },
+      });
+      return 'end_turn';
+    }
+
+    const enabled =
+      normalized === 'on' || normalized === '1' || normalized === 'true' || normalized === 'yes';
+    const disabled =
+      normalized === 'off' || normalized === '0' || normalized === 'false' || normalized === 'no';
+
+    if (!enabled && !disabled) {
+      await this.emit(active, cx, {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: `Unknown /tools argument: ${argument}
+Usage: /tools on | off`,
+        },
+      });
+      return 'end_turn';
+    }
+
+    if (enabled === active.session.config.toolsEnabled) {
+      await this.emit(active, cx, {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: enabled
+            ? 'Tools are already enabled for this session.'
+            : 'Tools are already disabled for this session.',
+        },
+      });
+      return 'end_turn';
+    }
+
+    active.session.config.toolsEnabled = enabled;
+    await this.save(active);
+    void this.logRuntime(active.session.cwd, 'info', 'tools toggled', {
+      sessionId: active.session.sessionId,
+      toolsEnabled: enabled,
+    });
+
+    await this.emit(active, cx, {
+      sessionUpdate: 'agent_message_chunk',
+      content: {
+        type: 'text',
+        text: enabled
+          ? 'Tools (bash, read_media) are now enabled for this session.'
+          : 'Tools (bash, read_media) are now disabled for this session.',
       },
     });
 

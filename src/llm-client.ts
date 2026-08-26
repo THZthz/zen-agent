@@ -499,11 +499,18 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
         (message) => (message as { role?: string }).role !== 'system',
       ) as Array<Record<string, unknown>>),
     ],
-    tools: options.tools ?? [BASH_TOOL_SCHEMA],
     stream: true,
     ...options.extraBody,
     ...(options.effortBody?.(options.thinkingEffort ?? 'off') ?? {}),
   };
+  // `tools: []` is rejected by some providers (and pointless): omit the
+  // field entirely when the session has no tools (/tools off), and keep the
+  // bash-only default when the caller did not specify a list.
+  if (options.tools === undefined) {
+    body.tools = [BASH_TOOL_SCHEMA];
+  } else if (options.tools.length > 0) {
+    body.tools = options.tools;
+  }
 
   // Timing: "thinking" is the wall time from request start until the first
   // answer (non-reasoning) token arrives — i.e. TTFB, dominated by the

@@ -129,3 +129,61 @@ describe('runChatCompletions', () => {
     expect(result.text).toBe('hi');
   });
 });
+
+describe('runChatCompletions tools field', () => {
+  beforeEach(() => {
+    process.env.ZEN_AGENT_CHAT_TIMEOUT_MS = '2000';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    resetChatRateLimit();
+    server?.closeAllConnections?.();
+    server?.close();
+    server = undefined;
+  });
+
+  /** Starts a server that records the request body, then runs one request. */
+  async function captureBody(tools: unknown[] | undefined): Promise<Record<string, unknown>> {
+    let resolveBody!: (body: Record<string, unknown>) => void;
+    const bodyPromise = new Promise<Record<string, unknown>>((resolve) => {
+      resolveBody = resolve;
+    });
+    const port = await startServer((req, res) => {
+      let raw = '';
+      req.on('data', (chunk) => (raw += chunk));
+      req.on('end', () => {
+        resolveBody(JSON.parse(raw));
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const chunk = JSON.stringify({
+          choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: 'stop' }],
+        });
+        res.end(`data: ${chunk}\n\ndata: [DONE]\n\n`);
+      });
+    });
+    await runChatCompletions({
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKey: 'test',
+      label: 'Test',
+      model: 'test-model',
+      messages: [],
+      system: 'system',
+      thinkingEffort: 'off',
+      tools,
+      reasoningMessageField: 'reasoning_content',
+      reasoningDeltaFields: ['reasoning_content'],
+      parseUsage: () => null,
+    });
+    return bodyPromise;
+  }
+
+  it('defaults to the bash tool schema when tools are not specified', async () => {
+    const body = await captureBody(undefined);
+    expect((body.tools as unknown[]).length).toBe(1);
+  });
+
+  it('omits the tools field entirely when the list is empty (/tools off)', async () => {
+    const body = await captureBody([]);
+    expect(body.tools).toBeUndefined();
+  });
+});

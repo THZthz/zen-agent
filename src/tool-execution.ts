@@ -33,6 +33,12 @@ export interface ToolExecutorContext {
    * ZEN_AGENT_SANDBOX=1`, so the environment policy always applies.
    */
   sandbox: boolean;
+  /**
+   * Whether the session may use tools at all (set by the `/tools` slash
+   * command). When false, executeLlmToolCall refuses every call with a
+   * failed result and never touches the terminal or media stack.
+   */
+  toolsEnabled: boolean;
   clientCapabilities: acp.ClientCapabilities;
   emit: (update: acp.SessionUpdate) => Promise<void>;
   logRuntime: (
@@ -212,6 +218,45 @@ export async function executeLlmToolCall(
   signal: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const { session, sandbox, clientCapabilities, emit, logRuntime } = context;
+
+  // Defensive guard: with `/tools off` no tool schema is offered to the
+  // model, but a resumed session's stale history (or a model that calls a
+  // tool anyway) must never reach the terminal or media stack. Refuse with
+  // a failed result so the LLM message history stays paired and the turn
+  // can recover instead of erroring.
+  if (context.toolsEnabled === false) {
+    const message = `Tool ${call.name} is disabled: all tools are turned off for this session (/tools on to re-enable).`;
+    await emit({
+      sessionUpdate: 'tool_call',
+      toolCallId: call.id,
+      title: `Tools disabled (${call.name})`,
+      kind: 'other',
+      status: 'failed',
+      rawInput: call.input,
+    });
+    await emit({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call.id,
+      status: 'failed',
+      content: [
+        {
+          type: 'content',
+          content: { type: 'text', text: message },
+        },
+      ],
+      rawOutput: { error: message },
+    });
+    void logRuntime('warn', 'refused tool call: tools disabled for session', {
+      sessionId: session.sessionId,
+      toolCallId: call.id,
+      toolName: call.name,
+    });
+    return {
+      toolCallId: call.id,
+      toolName: call.name,
+      output: { type: 'text', value: message },
+    };
+  }
 
   // A streamed tool call whose JSON arguments never parsed cannot be
   // dispatched; report that clearly instead of a confusing per-tool

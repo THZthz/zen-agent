@@ -34,7 +34,11 @@ export function isEnvironmentMessage(message: LlmMessage): boolean {
  */
 export function buildSystemPrompt(session: StoredSession, options?: { media?: boolean }): string {
   const base = session.config.systemPrompt || SYSTEM_PROMPT;
-  if (options?.media) {
+  // With /tools off the model gets no tool schemas at all; make sure it
+  // does not try to reach for bash/read_media (the base prompt describes
+  // them) and answers conversationally instead.
+  const toolsDisabled = session.config.toolsEnabled === false;
+  if (!toolsDisabled && options?.media) {
     const mediaGuidance = `
 
 Media handling:
@@ -43,6 +47,14 @@ Media handling:
 - Never describe media without using read_media to inspect it first.
 `;
     return base + mediaGuidance;
+  }
+  if (toolsDisabled) {
+    return (
+      base +
+      `
+
+> Tools are currently DISABLED for this session (/tools off). You have no tools: you cannot run bash or read_media. Answer conversationally using only what you already know; the user can re-enable tools with /tools on.`
+    );
   }
   return base;
 }
