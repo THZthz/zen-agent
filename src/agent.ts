@@ -7,7 +7,6 @@ import {
   createStoredSession,
   DEFAULT_DEEPSEEK_MODEL,
   DEFAULT_PROVIDER,
-  DEFAULT_THINKING_EFFORT,
   deleteStoredSession,
   findSessionCwd,
   listStoredSessions,
@@ -36,7 +35,11 @@ import {
   type LlmToolCall,
   type LlmUsage,
 } from './provider.js';
-import { getOpenRouterModelOptions } from './openrouter.js';
+import {
+  getOpenRouterModelOptions,
+  getOpenRouterReasoning,
+  OPENROUTER_EFFORT_VALUES,
+} from './openrouter.js';
 import { formatLlmError } from './llm-errors.js';
 import { BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA } from './llm-client.js';
 
@@ -198,19 +201,60 @@ async function modelConfigOption(provider: ProviderId, cwd: string) {
   };
 }
 
-const THINKING_CONFIG_OPTION = {
-  id: 'thinking_effort',
-  name: 'Thinking Effort',
-  description: 'Reasoning effort used by the model',
-  category: 'thought_level',
-  type: 'select',
-  currentValue: DEFAULT_THINKING_EFFORT,
-  options: [
-    { value: 'off', name: 'Off', description: 'Disable extended thinking' },
-    { value: 'high', name: 'High', description: 'Use high reasoning effort' },
-    { value: 'max', name: 'Max', description: 'Use maximum reasoning effort' },
-  ],
+/** Human labels for every session thinking-effort level. */
+const THINKING_EFFORT_OPTIONS: Record<ThinkingEffort, { name: string; description: string }> = {
+  off: { name: 'Off', description: 'Disable extended thinking' },
+  minimal: { name: 'Minimal', description: 'Minimal reasoning effort' },
+  low: { name: 'Low', description: 'Use low reasoning effort' },
+  medium: { name: 'Medium', description: 'Use medium reasoning effort' },
+  high: { name: 'High', description: 'Use high reasoning effort' },
+  xhigh: { name: 'X-High', description: 'Use extra-high reasoning effort' },
+  max: { name: 'Max', description: 'Use maximum reasoning effort' },
 };
+
+/** Effort selector order: off first, then descending gateway effort. */
+const THINKING_EFFORT_ORDER: readonly ThinkingEffort[] = [
+  'off',
+  'max',
+  'xhigh',
+  'high',
+  'medium',
+  'low',
+  'minimal',
+];
+
+function thinkingEffortOption(value: ThinkingEffort) {
+  const meta = THINKING_EFFORT_OPTIONS[value];
+  return { value, name: meta.name, description: meta.description };
+}
+
+/**
+ * Thinking-effort selector for a session. DeepSeek offers its own vocabulary
+ * (`off`/`low`/`high`/`max`); OpenRouter offers `off` plus the selected
+ * model's `supported_efforts` allowlist from the catalog (every gateway
+ * value when the model/catalog is unknown), so models that accept
+ * `minimal`/`medium`/`xhigh`/`max` advertise them instead of collapsing
+ * everything into off/high/max.
+ */
+async function thinkingConfigOption(session: StoredSession) {
+  let efforts: readonly ThinkingEffort[] = ['off', 'low', 'high', 'max'];
+  if (session.config.provider === 'openrouter') {
+    const reasoning = await getOpenRouterReasoning(session.config.model, session.cwd);
+    const supported = reasoning.supportedEfforts ?? OPENROUTER_EFFORT_VALUES;
+    efforts = THINKING_EFFORT_ORDER.filter(
+      (effort) => effort === 'off' || supported.includes(effort),
+    );
+  }
+  return {
+    id: 'thinking_effort',
+    name: 'Thinking Effort',
+    description: 'Reasoning effort used by the model',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: session.config.thinkingEffort,
+    options: efforts.map(thinkingEffortOption),
+  };
+}
 
 const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
   {
@@ -598,7 +642,7 @@ export class ZenAgent {
         break;
       }
       case 'thinking_effort': {
-        if (value !== 'off' && value !== 'high' && value !== 'max') {
+        if (!THINKING_EFFORT_ORDER.includes(value as ThinkingEffort)) {
           throw new Error(`Unknown thinking effort: ${value}`);
         }
         active.session.config.thinkingEffort = value as ThinkingEffort;
@@ -1870,10 +1914,7 @@ Usage: /tools on | off`,
         ...(await modelConfigOption(session.config.provider, session.cwd)),
         currentValue: session.config.model,
       } as acp.SessionConfigOption,
-      {
-        ...THINKING_CONFIG_OPTION,
-        currentValue: session.config.thinkingEffort,
-      } as acp.SessionConfigOption,
+      (await thinkingConfigOption(session)) as acp.SessionConfigOption,
     ];
   }
 

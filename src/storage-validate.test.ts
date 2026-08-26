@@ -101,6 +101,34 @@ describe('readStoredSession validation', () => {
     expect(reloaded.config.toolsEnabled).toBe(false);
   });
 
+  it('accepts the full thinking-effort vocabulary and rejects unknown values', async () => {
+    await writeState(
+      'sess_xhigh',
+      JSON.stringify({
+        sessionId: 'sess_xhigh',
+        cwd,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        llmMessages: [{ role: 'user', content: 'hi' }],
+        config: { systemPrompt: '', thinkingEffort: 'xhigh' },
+      }),
+    );
+    const session = await readStoredSession(cwd, 'sess_xhigh');
+    expect(session.config.thinkingEffort).toBe('xhigh');
+
+    await writeState(
+      'sess_bad_effort',
+      JSON.stringify({
+        sessionId: 'sess_bad_effort',
+        cwd,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        llmMessages: [{ role: 'user', content: 'hi' }],
+        config: { systemPrompt: '', thinkingEffort: 'turbo' },
+      }),
+    );
+    const bad = await readStoredSession(cwd, 'sess_bad_effort');
+    expect(bad.config.thinkingEffort).toBe('off');
+  });
+
   it('keeps loading healthy sessions unchanged', async () => {
     const session: StoredSession = await createStoredSession(cwd);
     created.push(session.cwd);

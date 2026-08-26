@@ -8,7 +8,10 @@ import {
   fetchOpenRouterBalance,
   getOpenRouterModelInfo,
   getOpenRouterModelOptions,
+  getOpenRouterReasoning,
+  mapOpenRouterEffort,
   parseOpenRouterUsage,
+  parseReasoning,
   resetOpenRouterModelsCache,
   runOpenRouterStep,
 } from './openrouter.js';
@@ -71,6 +74,16 @@ describe('runOpenRouterStep (live SSE)', () => {
       ...extra,
     })}\n\n`;
 
+  /**
+   * runOpenRouterStep now consults GET /models for the model's
+   * reasoning-effort allowlist (cached in memory). The SSE servers must
+   * answer that request with a JSON catalog instead of a stream.
+   */
+  const serveCatalog = (res: import('node:http').ServerResponse, entries: unknown[]) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ data: entries }));
+  };
+
   beforeEach(() => {
     process.env.OPENROUTER_API_KEY = 'test';
     delete process.env.OPENROUTER_MODEL;
@@ -88,7 +101,13 @@ describe('runOpenRouterStep (live SSE)', () => {
   it('streams reasoning (delta.reasoning) LIVE and parses the final usage chunk', async () => {
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
-        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          // Answer the reasoning-allowlist lookup immediately so it does not
+          // consume (and delay) the timed SSE stream below.
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, []);
+            return;
+          }
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           res.write(makeChunk({ role: 'assistant', content: '' }));
           setTimeout(() => {
@@ -157,7 +176,11 @@ describe('runOpenRouterStep (live SSE)', () => {
   it('accepts delta.reasoning_content passthrough (DeepSeek routes)', async () => {
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
-        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, []);
+            return;
+          }
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           res.write(makeChunk({ reasoning_content: 'thinking via passthrough' }));
           res.write(makeChunk({ content: 'done' }));
@@ -182,11 +205,17 @@ describe('runOpenRouterStep (live SSE)', () => {
     expect(result.text).toBe('done');
   });
 
-  it('requests include_usage, maps max→high, and omits reasoning_effort for off', async () => {
+  it('requests include_usage, passes max through when the allowlist is unknown, and omits reasoning_effort for off', async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
         (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            // Empty catalog: `openrouter/free` is unknown, so the gateway
+            // allowlist is assumed to accept every effort value.
+            serveCatalog(res, []);
+            return;
+          }
           const chunks: Buffer[] = [];
           req.on('data', (c: Buffer) => chunks.push(c));
           req.on('end', () => {
@@ -212,7 +241,7 @@ describe('runOpenRouterStep (live SSE)', () => {
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]?.reasoning_effort).toBe('high');
+    expect(bodies[0]?.reasoning_effort).toBe('max');
     expect(bodies[0]?.stream_options).toEqual({ include_usage: true });
     expect(bodies[0]?.provider).toEqual({ sort: 'price' });
     expect(bodies[0]?.stream).toBe(true);
@@ -222,12 +251,117 @@ describe('runOpenRouterStep (live SSE)', () => {
     expect(bodies[1]?.provider).toEqual({ sort: 'price' });
   });
 
+  it("maps reasoning_effort to the model's supported_efforts allowlist", async () => {
+    let bodies: Array<Record<string, unknown>> = [];
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            // e.g. a GLM-style model: max/high/low, no medium/minimal/none.
+            serveCatalog(res, [
+              {
+                id: 'vendor/glm',
+                reasoning: {
+                  supported_efforts: ['max', 'high', 'low'],
+                  default_effort: 'max',
+                  mandatory: true,
+                },
+              },
+            ]);
+            return;
+          }
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_MODEL = 'vendor/glm';
+
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'max' });
+    // medium is unsupported on this model → nearest is high (tie breaks up).
+    await runOpenRouterStep({
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: 'medium',
+    });
+    // off has no `none` tier here → lowest supported effort (low).
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
+
+    expect(bodies.map((body) => body.reasoning_effort)).toEqual(['max', 'high', 'low']);
+  });
+
+  it('sends reasoning_effort none for off when the model supports it', async () => {
+    let bodies: Array<Record<string, unknown>> = [];
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, [
+              {
+                id: 'vendor/full',
+                reasoning: {
+                  supported_efforts: ['max', 'high', 'medium', 'low', 'minimal', 'none'],
+                  default_effort: 'medium',
+                },
+              },
+            ]);
+            return;
+          }
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_MODEL = 'vendor/full';
+
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
+    await runOpenRouterStep({
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: 'minimal',
+    });
+
+    expect(bodies.map((body) => body.reasoning_effort)).toEqual(['none', 'minimal']);
+  });
+
   it('sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL', async () => {
     let headers: import('node:http').IncomingHttpHeaders | undefined;
     let body: Record<string, unknown> | undefined;
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
         (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, []);
+            return;
+          }
           headers = req.headers;
           const chunks: Buffer[] = [];
           req.on('data', (c: Buffer) => chunks.push(c));
@@ -265,6 +399,10 @@ describe('runOpenRouterStep (live SSE)', () => {
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
         (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, []);
+            return;
+          }
           const chunks: Buffer[] = [];
           req.on('data', (c: Buffer) => chunks.push(c));
           req.on('end', () => {
@@ -302,6 +440,201 @@ describe('runOpenRouterStep (live SSE)', () => {
     await expect(
       runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }] }),
     ).rejects.toThrow(/OPENROUTER_API_KEY/);
+  });
+});
+
+describe('mapOpenRouterEffort', () => {
+  it('passes through unknown allowlists (offline/unknown model) and omits off', () => {
+    expect(mapOpenRouterEffort('max', null)).toBe('max');
+    expect(mapOpenRouterEffort('xhigh', null)).toBe('xhigh');
+    expect(mapOpenRouterEffort('low', null)).toBe('low');
+    expect(mapOpenRouterEffort('off', null)).toBeNull();
+  });
+
+  it('sends exact values present in the allowlist', () => {
+    const supported = ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none'];
+    for (const effort of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      expect(mapOpenRouterEffort(effort, supported)).toBe(effort === 'off' ? 'none' : effort);
+    }
+  });
+
+  it('maps max/xhigh to the nearest supported effort instead of collapsing to high', () => {
+    // Model caps at high (e.g. an OpenAI-style model): max and xhigh → high.
+    const capped = ['high', 'medium', 'low'];
+    expect(mapOpenRouterEffort('max', capped)).toBe('high');
+    expect(mapOpenRouterEffort('xhigh', capped)).toBe('high');
+    // Model supports xhigh but not max (e.g. Claude 5 Sonnet): max → xhigh.
+    const xhighOnly = ['xhigh', 'high', 'medium', 'low'];
+    expect(mapOpenRouterEffort('max', xhighOnly)).toBe('xhigh');
+  });
+
+  it('resolves medium on a max/high/low model to high (tie breaks upward)', () => {
+    expect(mapOpenRouterEffort('medium', ['max', 'high', 'low'])).toBe('high');
+  });
+
+  it('maps off to none when supported, else to the lowest effort only for mandatory-reasoning models', () => {
+    // Model with a none tier: off = none.
+    expect(mapOpenRouterEffort('off', ['max', 'high', 'low', 'none'])).toBe('none');
+    // Mandatory-reasoning model (no none tier): off = lowest supported effort.
+    expect(mapOpenRouterEffort('off', ['max', 'high', 'low'], true)).toBe('low');
+    expect(mapOpenRouterEffort('off', ['high', 'medium', 'low', 'minimal'], true)).toBe('minimal');
+    // Non-mandatory model without a none tier: omit the field so the
+    // provider's default (usually off/low) applies.
+    expect(mapOpenRouterEffort('off', ['max', 'high', 'low'])).toBeNull();
+    expect(mapOpenRouterEffort('off', ['xhigh', 'high'], false)).toBeNull();
+  });
+});
+
+describe('parseReasoning', () => {
+  it('parses supported_efforts and default_effort from the catalog reasoning object', () => {
+    expect(
+      parseReasoning({
+        supported_efforts: ['xhigh', 'high', 'medium', 'low', 'minimal'],
+        default_effort: 'medium',
+        mandatory: true,
+      }),
+    ).toEqual({
+      supportedEfforts: ['xhigh', 'high', 'medium', 'low', 'minimal'],
+      defaultEffort: 'medium',
+      mandatory: true,
+    });
+  });
+
+  it('returns null allowlist when reasoning metadata is absent or malformed', () => {
+    expect(parseReasoning(undefined)).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+    expect(parseReasoning(null)).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+    expect(parseReasoning('nope')).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+    expect(parseReasoning({})).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+    expect(parseReasoning({ supported_efforts: [], default_effort: '' })).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+  });
+});
+
+describe('getOpenRouterReasoning', () => {
+  const originalEnv = { ...process.env };
+  let server: import('node:http').Server | undefined;
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    resetOpenRouterModelsCache();
+    server?.close();
+    server = undefined;
+  });
+
+  it('returns the catalog allowlist for a known model and null fallback for unknown ones', async () => {
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (_req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'vendor/model',
+                  reasoning: {
+                    supported_efforts: ['max', 'high', 'low'],
+                    default_effort: 'max',
+                  },
+                },
+              ],
+            }),
+          );
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_API_KEY = 'test';
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+
+    expect(await getOpenRouterReasoning('vendor/model')).toEqual({
+      supportedEfforts: ['max', 'high', 'low'],
+      defaultEffort: 'max',
+      mandatory: null,
+    });
+    expect(await getOpenRouterReasoning('vendor/other')).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+  });
+
+  it('degrades to the full-gateway allowlist when the catalog fetch fails', async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    expect(await getOpenRouterReasoning('vendor/model')).toEqual({
+      supportedEfforts: null,
+      defaultEffort: null,
+      mandatory: null,
+    });
+  });
+
+  it('falls back to the persisted catalog file for offline starts when cwd is given', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zen-agent-reasoning-'));
+    try {
+      await mkdir(join(dir, '.sessions', 'client'), { recursive: true });
+      await writeFile(
+        join(dir, '.sessions', 'client', 'models.openrouter.json'),
+        JSON.stringify({
+          version: 3,
+          fetchedAt: new Date().toISOString(),
+          baseUrl: 'https://openrouter.ai/api/v1',
+          models: [
+            {
+              id: 'cached/model',
+              name: 'Cached',
+              inputPerM: 1,
+              outputPerM: 2,
+              contextLength: 1000,
+              supportsTools: true,
+              reasoning: {
+                supportedEfforts: ['max', 'high', 'low'],
+                defaultEffort: 'max',
+                mandatory: true,
+              },
+            },
+          ],
+        }),
+        'utf8',
+      );
+      delete process.env.OPENROUTER_API_KEY;
+
+      expect(await getOpenRouterReasoning('cached/model', dir)).toEqual({
+        supportedEfforts: ['max', 'high', 'low'],
+        defaultEffort: 'max',
+        mandatory: true,
+      });
+      // Unknown to the persisted file: full-gateway allowlist.
+      expect(await getOpenRouterReasoning('vendor/other', dir)).toEqual({
+        supportedEfforts: null,
+        defaultEffort: null,
+        mandatory: null,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -438,6 +771,10 @@ describe('getOpenRouterModelOptions', () => {
                   context_length: 1000,
                   pricing: { prompt: '1', completion: '2' },
                   supported_parameters: ['tools'],
+                  reasoning: {
+                    supported_efforts: ['max', 'xhigh', 'high', 'medium', 'low'],
+                    default_effort: 'medium',
+                  },
                 },
                 {
                   id: 'vendor/alpha',
@@ -458,6 +795,10 @@ describe('getOpenRouterModelOptions', () => {
                   context_length: 128000,
                   pricing: { prompt: '0', completion: '0' },
                   supported_parameters: ['tools'],
+                  reasoning: {
+                    supported_efforts: ['high', 'medium', 'low', 'minimal', 'none'],
+                    default_effort: 'medium',
+                  },
                 },
               ],
             }),
@@ -488,7 +829,7 @@ describe('getOpenRouterModelOptions', () => {
       version: number;
       models: Array<{ id: string }>;
     };
-    expect(file.version).toBe(2);
+    expect(file.version).toBe(3);
     expect(file.models.map((m) => m.id)).toEqual([
       'vendor/zeta',
       'vendor/alpha',
@@ -502,7 +843,7 @@ describe('getOpenRouterModelOptions', () => {
     await writeFile(
       join(dir, '.sessions', 'client', 'models.openrouter.json'),
       JSON.stringify({
-        version: 2,
+        version: 3,
         fetchedAt: new Date().toISOString(),
         baseUrl: 'https://openrouter.ai/api/v1',
         models: [
@@ -513,6 +854,10 @@ describe('getOpenRouterModelOptions', () => {
             outputPerM: 2,
             contextLength: 1000,
             supportsTools: true,
+            reasoning: {
+              supportedEfforts: ['max', 'high', 'low'],
+              defaultEffort: 'max',
+            },
           },
         ],
       }),

@@ -80,6 +80,9 @@ describe('newSession default provider', () => {
       const modelOption = created.configOptions?.find((o) => o.id === 'model') as
         { options?: Array<{ value: string }> } | undefined;
       expect(modelOption?.options?.some((o) => o.value === 'deepseek-v4-flash')).toBe(true);
+      const thinkingOption = created.configOptions?.find((o) => o.id === 'thinking_effort') as
+        { options?: Array<{ value: string }> } | undefined;
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'low', 'high', 'max']);
       const active = (
         agent as unknown as {
           sessions: Map<string, { session: StoredSession }>;
@@ -181,6 +184,100 @@ describe('setSessionConfigOption', () => {
 
     expect(session.config.thinkingEffort).toBe('max');
     expect(res.configOptions?.find((o) => o.id === 'thinking_effort')).toBeDefined();
+  });
+
+  it('accepts the full thinking-effort vocabulary and rejects unknown values', async () => {
+    const agent = new ZenAgent();
+    const session = makeSession();
+    register(agent, session);
+
+    for (const effort of ['minimal', 'low', 'medium', 'xhigh'] as const) {
+      const res = await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'thinking_effort',
+        value: effort,
+      });
+      expect(session.config.thinkingEffort).toBe(effort);
+      expect(res.configOptions?.find((o) => o.id === 'thinking_effort')).toBeDefined();
+    }
+    await expect(
+      agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'thinking_effort',
+        value: 'turbo',
+      }),
+    ).rejects.toThrow(/Unknown thinking effort/);
+  });
+
+  it("offers the OpenRouter model's supported_efforts in the thinking selector", async () => {
+    let server: import('node:http').Server | undefined;
+    let catalogHits = 0;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            catalogHits += 1;
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                data: [
+                  {
+                    id: 'vendor/glm',
+                    reasoning: {
+                      supported_efforts: ['max', 'high', 'low'],
+                      default_effort: 'max',
+                    },
+                  },
+                ],
+              }),
+            );
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({}));
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    try {
+      process.env.OPENROUTER_API_KEY = 'test';
+      process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+      const agent = new ZenAgent();
+      const session = makeSession();
+      register(agent, session);
+
+      await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'provider',
+        value: 'openrouter',
+      });
+      await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'model',
+        value: 'vendor/glm',
+      });
+
+      const res = await agent.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'thinking_effort',
+        value: 'max',
+      });
+      const thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
+        { options?: Array<{ value: string }> } | undefined;
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'max', 'high', 'low']);
+      expect(session.config.thinkingEffort).toBe('max');
+      expect(catalogHits).toBeGreaterThan(0);
+    } finally {
+      server?.close();
+      server = undefined;
+      // The models cache is keyed by baseUrl, so the next test's port gets a
+      // fresh lookup; nothing else to reset here.
+    }
   });
 });
 

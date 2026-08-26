@@ -1,4 +1,4 @@
-import type { ModelId } from './storage.js';
+import type { ModelId, ThinkingEffort } from './storage.js';
 import { envNonNegativeFloat, envPositiveInt } from './env.js';
 import {
   buildLlmUsage,
@@ -209,6 +209,20 @@ export function parseDeepSeekUsage(
 }
 
 /**
+ * DeepSeek's supported `reasoning_effort` vocabulary: `low` / `high` / `max`
+ * (no `minimal`/`medium`/`xhigh`). Session efforts outside this set are
+ * clamped to the nearest tier when sent (`off` omits the field).
+ */
+export const DEEPSEEK_EFFORT_MAP: Record<Exclude<ThinkingEffort, 'off'>, string> = {
+  minimal: 'low',
+  low: 'low',
+  medium: 'high',
+  high: 'high',
+  max: 'max',
+  xhigh: 'max',
+};
+
+/**
  * DeepSeek's OpenAI-compatible chat completions step. The SSE client itself
  * is shared with the OpenRouter provider (see runChatCompletions); this
  * wrapper supplies DeepSeek's endpoint, reasoning field (`reasoning_content`)
@@ -236,7 +250,8 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
     thinkingEffort: options.thinkingEffort,
     reasoningMessageField: 'reasoning_content',
     reasoningDeltaFields: ['reasoning_content'],
-    effortBody: (effort) => (effort === 'off' ? undefined : { reasoning_effort: effort }),
+    effortBody: (effort) =>
+      effort === 'off' ? undefined : { reasoning_effort: DEEPSEEK_EFFORT_MAP[effort] ?? 'high' },
     parseUsage: (raw, timing) => parseDeepSeekUsage(raw as DeepSeekUsage, timing),
   });
 }

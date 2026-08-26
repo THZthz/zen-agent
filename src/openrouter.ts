@@ -57,6 +57,26 @@ export interface OpenRouterModelInfo {
   contextLength: number;
 }
 
+/**
+ * Reasoning-effort configuration for an OpenRouter model, from the
+ * catalog's `reasoning` object (e.g. `{"supported_efforts": ["high",
+ * "medium", "low", "minimal"], "default_effort": "medium", "mandatory":
+ * true}`). `supportedEfforts` is listed in descending effort order; null
+ * means the model accepts every gateway effort value.
+ */
+export interface OpenRouterReasoning {
+  /** Allowed `reasoning_effort` values for this model, highest first. */
+  supportedEfforts: readonly string[] | null;
+  /** The model's default effort when the field is omitted; null when unknown. */
+  defaultEffort: string | null;
+  /**
+   * Whether the model's reasoning is mandatory (cannot be disabled): the
+   * `none` effort is absent from `supportedEfforts` and `mandatory` is true.
+   * Null when the catalog does not say.
+   */
+  mandatory: boolean | null;
+}
+
 /** Full catalog entry: model info plus selector-relevant fields. */
 interface CatalogEntry extends OpenRouterModelInfo {
   id: string;
@@ -68,6 +88,8 @@ interface CatalogEntry extends OpenRouterModelInfo {
    * ["text", "image"]), or null when unknown; "text" is implicit.
    */
   inputModalities: string[] | null;
+  /** Reasoning-effort allowlist from the catalog; null = all values accepted. */
+  reasoning: OpenRouterReasoning;
 }
 
 const MODEL_FALLBACKS: Record<string, OpenRouterModelInfo> = {
@@ -85,7 +107,7 @@ const UNKNOWN_MODEL_FALLBACK: OpenRouterModelInfo = {
 /** Live catalog fetch timeout: config options must not block session creation forever. */
 const MODELS_FETCH_TIMEOUT_MS = 5_000;
 /** Bumped whenever the persisted catalog file shape changes. */
-const MODELS_CACHE_VERSION = 2;
+const MODELS_CACHE_VERSION = 3;
 
 function parsePrice(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? '');
@@ -134,6 +156,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
         pricing?: { prompt?: string; completion?: string; request?: string };
         supported_parameters?: string[];
         architecture?: { input_modalities?: unknown };
+        reasoning?: unknown;
       }>;
     };
     const models = new Map<string, CatalogEntry>();
@@ -152,6 +175,7 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
             : 200_000,
         supportsTools: supportsTools(model.supported_parameters),
         inputModalities: parseInputModalities(model.architecture?.input_modalities),
+        reasoning: parseReasoning(model.reasoning),
       });
     }
     return models;
@@ -181,6 +205,36 @@ export function parseInputModalities(raw: unknown): string[] | null {
     (entry): entry is string => typeof entry === 'string' && entry.length > 0,
   );
   return modalities.length > 0 ? modalities : null;
+}
+
+/**
+ * Parse the catalog's `reasoning` object into an effort allowlist +
+ * default. `supported_efforts` is ordered highest-first by the gateway;
+ * null when absent/malformed (callers then treat every gateway effort value
+ * as accepted).
+ */
+export function parseReasoning(raw: unknown): OpenRouterReasoning {
+  if (typeof raw !== 'object' || raw === null) {
+    return { supportedEfforts: null, defaultEffort: null, mandatory: null };
+  }
+  const reasoning = raw as {
+    supported_efforts?: unknown;
+    default_effort?: unknown;
+    mandatory?: unknown;
+  };
+  const supportedEfforts = Array.isArray(reasoning.supported_efforts)
+    ? reasoning.supported_efforts.filter(
+        (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+      )
+    : [];
+  return {
+    supportedEfforts: supportedEfforts.length > 0 ? supportedEfforts : null,
+    defaultEffort:
+      typeof reasoning.default_effort === 'string' && reasoning.default_effort.length > 0
+        ? reasoning.default_effort
+        : null,
+    mandatory: typeof reasoning.mandatory === 'boolean' ? reasoning.mandatory : null,
+  };
 }
 
 /**
@@ -218,6 +272,35 @@ export async function getOpenRouterModelInfo(model: string): Promise<OpenRouterM
     // Offline start, bad key, ... — use the static fallbacks.
   }
   return MODEL_FALLBACKS[model] ?? UNKNOWN_MODEL_FALLBACK;
+}
+
+/**
+ * Reasoning-effort config for an OpenRouter model id, from the live catalog
+ * (null allowlist when the model is unknown or the catalog is unavailable —
+ * the gateway then accepts every effort value). When `cwd` is given and the
+ * live fetch fails, the persisted catalog file is consulted so offline
+ * starts keep the per-model allowlist (same fallback as the model selector).
+ */
+export async function getOpenRouterReasoning(
+  model: string,
+  cwd?: string,
+): Promise<OpenRouterReasoning> {
+  try {
+    const entry = (await fetchOpenRouterModels()).get(model);
+    if (entry) {
+      return entry.reasoning;
+    }
+  } catch {
+    // Offline start, bad key, ... - fall back to the persisted file below.
+  }
+  if (cwd) {
+    const cached = await readModelsFile(cwd);
+    const entry = cached?.get(model);
+    if (entry) {
+      return entry.reasoning;
+    }
+  }
+  return { supportedEfforts: null, defaultEffort: null, mandatory: null };
 }
 
 /** Shape of the persisted catalog file (clientModelsPath). */
@@ -277,6 +360,11 @@ async function readModelsFile(cwd: string): Promise<Map<string, CatalogEntry> | 
     const catalog = new Map<string, CatalogEntry>();
     for (const entry of parsed.models) {
       if (entry && typeof entry.id === 'string' && entry.id.length > 0) {
+        // Older cache files predate the reasoning block; unknown allowlist
+        // (null) is the safe default: every gateway effort value accepted.
+        if (!entry.reasoning) {
+          entry.reasoning = { supportedEfforts: null, defaultEffort: null, mandatory: null };
+        }
         catalog.set(entry.id, entry);
       }
     }
@@ -442,6 +530,95 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
 }
 
 /**
+ * OpenRouter's gateway-wide `reasoning_effort` ladder, highest first
+ * (mirrors the catalog's `supported_efforts` ordering and the API schema).
+ * `none` disables reasoning; it is the wire equivalent of the session's
+ * `off` value.
+ */
+export const OPENROUTER_EFFORT_LADDER: readonly string[] = [
+  'max',
+  'xhigh',
+  'high',
+  'medium',
+  'low',
+  'minimal',
+  'none',
+];
+
+/** Gateway effort values excluding the disable value (session selector list). */
+export const OPENROUTER_EFFORT_VALUES: readonly string[] = OPENROUTER_EFFORT_LADDER.filter(
+  (effort) => effort !== 'none',
+);
+
+/**
+ * Map a session thinking effort to the `reasoning_effort` value sent to an
+ * OpenRouter model, honoring the model's `supported_efforts` allowlist from
+ * the catalog:
+ *
+ * - `off` sends `none` when the model supports it; on mandatory-reasoning
+ *   models (`mandatory: true`, no `none` in the allowlist) it sends the
+ *   model's LOWEST supported effort — the closest the model can get to
+ *   disabled. Non-mandatory models without a `none` tier, and unknown
+ *   allowlists (offline start / unknown slug), omit the field so the
+ *   provider's default (usually off/low) applies.
+ * - any other value is sent unchanged when the allowlist is unknown or
+ *   contains it; otherwise it is remapped to the nearest supported effort by
+ *   ladder distance (ties resolve toward the HIGHER effort, so `medium` on a
+ *   `[max, high, low]` model becomes `high`, not `low`).
+ *
+ * Returns null when the field should be omitted entirely.
+ */
+export function mapOpenRouterEffort(
+  effort: ThinkingEffort,
+  supportedEfforts: readonly string[] | null,
+  mandatory = false,
+): string | null {
+  if (supportedEfforts === null) {
+    // Unknown model/catalog: every gateway value is accepted, `off` omits
+    // the field (the provider picks its default).
+    return effort === 'off' ? null : effort;
+  }
+  if (effort === 'off') {
+    if (supportedEfforts.includes('none')) {
+      return 'none';
+    }
+    // Mandatory-reasoning models cannot disable thinking: `none` is absent
+    // from the allowlist and `mandatory` is true. Fall back to the model's
+    // lowest supported effort (the gateway's own behavior for unsupported
+    // `none` on `~latest` slugs). Non-mandatory models simply omit the field
+    // so their default (usually off/low) applies.
+    if (mandatory && supportedEfforts.length > 0) {
+      return supportedEfforts[supportedEfforts.length - 1];
+    }
+    return null;
+  }
+  if (supportedEfforts.includes(effort)) {
+    return effort;
+  }
+  const requested = OPENROUTER_EFFORT_LADDER.indexOf(effort);
+  if (requested === -1) {
+    return null;
+  }
+  // Nearest by ladder distance; ties resolve to the higher effort
+  // (supportedEfforts is ordered highest-first, so the first candidate at a
+  // given distance wins).
+  let best: string | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of supportedEfforts) {
+    const index = OPENROUTER_EFFORT_LADDER.indexOf(candidate);
+    if (index === -1) {
+      continue;
+    }
+    const distance = Math.abs(index - requested);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
  * OpenRouter's chat completions step (OpenAI-compatible). Shares the SSE
  * client with DeepSeek; OpenRouter-specific bits:
  *
@@ -452,8 +629,11 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
  *   does not send usage otherwise)
  * - `provider.sort` defaults to `price` so requests route to the cheapest
  *   provider for the model (OPENROUTER_PROVIDER_SORT overrides; empty disables)
- * - `reasoning_effort` uses the OpenAI vocabulary (low/medium/high), so
- *   DeepSeek's `max` maps to `high`
+ * - `reasoning_effort` honors the model's `supported_efforts` allowlist from
+ *   the catalog (see {@link mapOpenRouterEffort}): the session's `off`/`high`/
+ *   `max` map to the model's own vocabulary (`none`/`minimal`/.../`xhigh`),
+ *   so e.g. `max` reaches models that support `xhigh` or `max` natively
+ *   instead of being collapsed to `high`
  * - optional `HTTP-Referer` / `X-Title` headers identify the app
  *   (OPENROUTER_SITE_URL / OPENROUTER_APP_NAME)
  */
@@ -472,6 +652,14 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     extraHeaders['X-Title'] = appName;
   }
   const providerSort = getOpenRouterProviderSort();
+  // Best-effort catalog lookup (cached in memory after the first fetch): a
+  // failed/offline lookup degrades to "all effort values accepted".
+  const reasoning = await getOpenRouterReasoning(modelName);
+  const reasoningEffort = mapOpenRouterEffort(
+    options.thinkingEffort ?? 'off',
+    reasoning.supportedEfforts,
+    reasoning.mandatory === true,
+  );
 
   return runChatCompletions({
     baseUrl,
@@ -488,8 +676,8 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     thinkingEffort: options.thinkingEffort,
     reasoningMessageField: 'reasoning',
     reasoningDeltaFields: ['reasoning', 'reasoning_content'],
-    effortBody: (effort: ThinkingEffort) =>
-      effort === 'off' ? undefined : { reasoning_effort: effort === 'max' ? 'high' : effort },
+    effortBody: () =>
+      reasoningEffort === null ? undefined : { reasoning_effort: reasoningEffort },
     extraBody: {
       stream_options: { include_usage: true },
       ...(providerSort ? { provider: { sort: providerSort } } : {}),

@@ -85,7 +85,20 @@ export type ProviderId = 'deepseek' | 'openrouter';
  * "anthropic/claude-sonnet-4" (OpenRouter uses its own model slugs).
  */
 export type ModelId = string;
-export type ThinkingEffort = 'off' | 'high' | 'max';
+
+/**
+ * Session thinking-effort level.
+ *
+ * `off` is the session-level "disabled" value and maps to whatever the active
+ * model/provider offers as its closest no-reasoning mode (OpenRouter: `none`
+ * when supported, the model's lowest supported effort on mandatory-reasoning
+ * models, otherwise the omitted field; DeepSeek: omitted field). The
+ * remaining values cover the full OpenRouter gateway ladder (`minimal` <
+ * `low` < `medium` < `high` < `xhigh` < `max`); DeepSeek accepts only a
+ * subset (`low`/`high`/`max`) and other values are clamped when sending (see
+ * deepseek.ts).
+ */
+export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max' | 'xhigh';
 
 export const DEFAULT_DEEPSEEK_MODEL: ModelId = 'deepseek-v4-flash';
 export const DEFAULT_OPENROUTER_MODEL: ModelId = 'openrouter/free';
@@ -380,7 +393,15 @@ function defaultConfig(provider: ProviderId = DEFAULT_PROVIDER): SessionConfig {
   };
 }
 
-const THINKING_EFFORTS: readonly ThinkingEffort[] = ['off', 'high', 'max'];
+const THINKING_EFFORTS: readonly ThinkingEffort[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
 
 /**
  * Validate a parsed state.json and backfill fields missing from older
