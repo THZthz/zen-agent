@@ -280,7 +280,7 @@ describe('setSessionConfigOption', () => {
     }
   });
 
-  it('folds minimal into low in the thinking selector and sorts ascending', async () => {
+  it('offers every supported tier, including minimal, sorted ascending', async () => {
     let server: import('node:http').Server | undefined;
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
@@ -347,9 +347,9 @@ describe('setSessionConfigOption', () => {
       });
       let thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
         { options?: Array<{ value: string }> } | undefined;
-      // Minimal-only model still offers Low (maps to minimal on the wire),
-      // and the list is ascending — no duplicate low-ish tier.
-      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'low', 'high']);
+      // The gemini-style model lists minimal (but not low): minimal appears
+      // as its own tier, no synthetic Low substitute.
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'minimal', 'high']);
 
       await agent.setSessionConfigOption({
         sessionId: session.sessionId,
@@ -363,9 +363,11 @@ describe('setSessionConfigOption', () => {
       });
       thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
         { options?: Array<{ value: string }> } | undefined;
-      // minimal never appears as its own option alongside low.
+      // gpt-5-style model lists minimal and low: both appear, sorted
+      // ascending, with no tiers hidden.
       expect(thinkingOption?.options?.map((o) => o.value)).toEqual([
         'off',
+        'minimal',
         'low',
         'medium',
         'high',

@@ -31,7 +31,7 @@ export function getDefaultModel(provider: ProviderId): ModelId {
   if (provider === 'openrouter') {
     return process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
   }
-  return DEFAULT_DEEPSEEK_MODEL;
+  return process.env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL;
 }
 
 /** Run one LLM step with the session's provider (per-session, not process-wide). */

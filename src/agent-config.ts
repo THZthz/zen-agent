@@ -131,25 +131,20 @@ export const THINKING_EFFORT_VALUES: readonly ThinkingEffort[] = [
 ];
 
 /**
- * Effort selector order: ascending (off < low < medium < high < xhigh < max).
- * `minimal` is deliberately NOT offered: it is nearly indistinguishable from
- * `low` in the UI, so the menu stays clean. Models that only support
- * `minimal` (e.g. some Gemini routes) still get a working `Low` option — the
- * wire mapping sends `minimal` for them (see mapOpenRouterEffort).
+ * Effort selector order: ascending (off < minimal < low < medium < high <
+ * xhigh < max). Every session value is offered; OpenRouter models that do
+ * not support a tier simply omit it from the selector (unknown models get
+ * the full gateway ladder).
  */
 const THINKING_EFFORT_ORDER: readonly ThinkingEffort[] = [
   'off',
+  'minimal',
   'low',
   'medium',
   'high',
   'xhigh',
   'max',
 ];
-
-/** True when the model accepts the `low` tier (either `low` or `minimal`). */
-function supportsLowTier(supportedEfforts: readonly string[]): boolean {
-  return supportedEfforts.includes('low') || supportedEfforts.includes('minimal');
-}
 
 function thinkingEffortOption(value: ThinkingEffort) {
   const meta = THINKING_EFFORT_OPTIONS[value];
@@ -160,8 +155,10 @@ function thinkingEffortOption(value: ThinkingEffort) {
  * Thinking-effort selector for a session. DeepSeek offers its own vocabulary
  * (`off`/`low`/`high`/`max`); OpenRouter offers `off` plus the selected
  * model's `supported_efforts` allowlist from the catalog (every gateway
- * value when the model/catalog is unknown), sorted ascending and with
- * `minimal` folded into `low` so the menu never shows near-duplicate tiers.
+ * value when the model/catalog is unknown), sorted ascending. Every tier is
+ * offered as itself — `minimal` is a real gateway level that some models
+ * list in their allowlist (and even default to), so it is never folded into
+ * `low`.
  */
 export async function thinkingConfigOption(session: StoredSession) {
   let efforts: readonly ThinkingEffort[] = ['off', 'low', 'high', 'max'];
@@ -169,10 +166,7 @@ export async function thinkingConfigOption(session: StoredSession) {
     const reasoning = await getOpenRouterReasoning(session.config.model, session.cwd);
     const supported = reasoning.supportedEfforts ?? OPENROUTER_EFFORT_VALUES;
     efforts = THINKING_EFFORT_ORDER.filter(
-      (effort) =>
-        effort === 'off' ||
-        (effort === 'low' && supportsLowTier(supported)) ||
-        supported.includes(effort),
+      (effort) => effort === 'off' || supported.includes(effort),
     );
   }
   return {
