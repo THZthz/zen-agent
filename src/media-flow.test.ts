@@ -17,6 +17,7 @@ vi.mock('./provider.js', async (importOriginal) => {
 import { ZenAgent } from './agent.js';
 import { runLlmStep, type LlmStepResult } from './provider.js';
 import { READ_MEDIA_TOOL_SCHEMA } from './llm-client.js';
+import { ENVIRONMENT_MESSAGE_NAME } from './system-prompt.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
@@ -46,6 +47,7 @@ function recordStep(result: LlmStepResult): void {
 
 type RecordedMessage = {
   role: string;
+  name?: string;
   content: string | Array<{ type: string; [k: string]: unknown }>;
 };
 
@@ -203,11 +205,22 @@ describe('media prompt flow', () => {
     // Z.AI's context cache to this conversation (see openrouter.ts).
     expect(secondCallOptions.sessionId).toBe(sessionId);
     const messages = secondCallOptions.messages as RecordedMessage[];
-    // assistant(tool-call), tool(result), synthetic user with the payload.
+    // Cache-safe ordering: the synthetic user message with the media payload
+    // is inserted BEFORE the assistant tool-call (which the tool result pairs
+    // with), so the LLM request ends with a TOOL message - GLM/Z.AI's context
+    // cache drops to a 0% hit rate when a request ends with an image-bearing
+    // user message (verified against a live z-ai/glm-5.3-flash session).
     const toolMessage = messages.findLast((message) => message.role === 'tool');
     expect(toolMessage).toBeTruthy();
-    const syntheticUser = messages.at(-1)!;
+    expect(messages.at(-1)!.role).toBe('tool');
+    // The media payload rides in the user message right before the assistant
+    // tool-call message.
+    const assistantIndex = messages.findLastIndex((message) => message.role === 'assistant');
+    const syntheticUser = messages[assistantIndex - 1]!;
     expect(syntheticUser.role).toBe('user');
+    // Named like the environment snapshot so the model can tell this
+    // message is machine-generated (the read_media payload), not user input.
+    expect(syntheticUser.name).toBe(ENVIRONMENT_MESSAGE_NAME);
     const content = syntheticUser.content as Array<{ type: string; [k: string]: unknown }>;
     expect(content.some((part) => part.type === 'image' && part.data === PNG)).toBe(true);
     expect(content[0]).toMatchObject({ type: 'text' });

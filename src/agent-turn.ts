@@ -1,7 +1,11 @@
 import * as acp from '@agentclientprotocol/sdk';
 import type { ActiveSession, Constructor, ZenAgentCore } from './agent-core.js';
 import { MAX_TURN_STEPS, newMessageId } from './agent-config.js';
-import { buildSystemPrompt, isEnvironmentMessage } from './system-prompt.js';
+import {
+  buildSystemPrompt,
+  ENVIRONMENT_MESSAGE_NAME,
+  isEnvironmentMessage,
+} from './system-prompt.js';
 import {
   costFromUsage,
   fetchBalanceSnapshot,
@@ -258,28 +262,27 @@ export function withTurnExecution<T extends Constructor<ZenAgentCore>>(
           }
         }
 
-        active.session.llmMessages.push({
-          role: 'assistant',
-          content: assistantParts,
-        });
-        active.session.llmMessages.push({
-          role: 'tool',
-          content: toolResults.map((result) => ({
-            type: 'tool-result',
-            toolCallId: result.toolCallId,
-            toolName: result.toolName,
-            output: result.output,
-          })),
-        });
-        // read_media payload injection: the OpenAI-compatible tool role only
-        // allows text content, so the actual image/audio parts ride in a
-        // synthetic user message right after the tool results (the same trick
-        // Claude Code's Read tool uses). The tool role messages above keep the
-        // assistant's tool_calls paired - DeepSeek 400s on unpaired calls.
+        // read_media payload injection. The OpenAI-compatible tool role only
+        // accepts text, so the actual image/audio parts ride in a synthetic
+        // user message (the same trick Claude Code's Read tool uses).
+        //
+        // ORDER MATTERS for the provider's context cache: GLM/Z.AI (and
+        // similarity-based caches in general) drop to a 0% hit rate when a
+        // request ENDS with a user message carrying image/audio content -
+        // every such step in the live aurelia session showed cacheRead=0,
+        // while the identical prefix ending in a tool message hit ~99%. The
+        // synthetic media message is therefore inserted BEFORE the assistant
+        // tool-call message that requested it (which the tool result below
+        // still pairs with), so the following LLM request always ends with a
+        // tool result and keeps hitting the cached prefix.
         const mediaResults = toolResults.filter((result) => result.attachedMedia);
         if (mediaResults.length > 0) {
           active.session.llmMessages.push({
             role: 'user',
+            // Reuse the environment snapshot's name so the model can tell
+            // this message is machine-generated (the read_media payload
+            // injected by the agent), not something the user typed.
+            name: ENVIRONMENT_MESSAGE_NAME,
             content: mediaResults.flatMap((result) => {
               const media = result.attachedMedia!;
               return [
@@ -294,6 +297,19 @@ export function withTurnExecution<T extends Constructor<ZenAgentCore>>(
             }),
           });
         }
+        active.session.llmMessages.push({
+          role: 'assistant',
+          content: assistantParts,
+        });
+        active.session.llmMessages.push({
+          role: 'tool',
+          content: toolResults.map((result) => ({
+            type: 'tool-result',
+            toolCallId: result.toolCallId,
+            toolName: result.toolName,
+            output: result.output,
+          })),
+        });
         await this.save(active);
 
         // The completed tool call's results were persisted above, so the next

@@ -129,7 +129,7 @@ Byte-identical across providers.
 Offered only on sessions whose model accepts image/audio input (OpenRouter `architecture.input_modalities`; unknown catalog entries count as text-only). The model calls it with a file path; the agent resolves it against the session cwd, maps extensions to MIME types (png/jpeg/webp/gif/bmp images, wav/mp3 audio), enforces the size limit, then:
 
 - returns a short metadata line as the normal tool result (keeps assistant tool_calls paired - DeepSeek 400s on unpaired calls), and
-- injects the base64 payload as parts of a synthetic **user** message right after the tool results (the OpenAI-compatible tool role only accepts string content).
+- injects the base64 payload as parts of a synthetic **user** message (the OpenAI-compatible tool role only accepts string content). For cache safety the synthetic message is inserted **before** the assistant tool-call message (the tool result still pairs with it): GLM/Z.AI's context cache drops to a 0% hit rate when a request ends with an image/audio-bearing user message (verified against a live `z-ai/glm-5.3-flash` session), while the identical prefix ending in a tool result keeps hitting ~99%. The request after a `read_media` step therefore ends with the tool result, not the media message.
 
 Failures (missing file, unsupported extension, modality not accepted by the model) produce a failed tool result without injection. The system prompt is not modified for media; the model learns about `read_media` from the tool schema alone.
 

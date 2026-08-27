@@ -81,7 +81,7 @@ Provider, model, thinking effort, the `/tools` toggle and the `/prompt` system-p
 Sessions on OpenRouter models whose catalog entry lists `image`/`audio` in `architecture.input_modalities` accept media:
 
 - **Attach**: paste from the clipboard, drag & drop into the panel, or @-mention an image file. Zed sends it as an ACP content block; the transcript shows the original image while the LLM message carries the payload (`image_url` data URI / `input_audio`).
-- **Self-directed reading**: vision/audio-capable sessions also get a `read_media` tool. When the user references a screenshot or recording by path, the model loads and perceives it itself instead of asking for a description; payloads ride in a synthetic user message right after the tool result.
+- **Self-directed reading**: vision/audio-capable sessions also get a `read_media` tool. When the user references a screenshot or recording by path, the model loads and perceives it itself instead of asking for a description; payloads ride in a synthetic user message inserted before the assistant tool-call (so the request never ends with the media message — GLM/Z.AI's cache drops to 0% on that shape). OpenRouter requests carry the session id so Z.AI pins the cache to the conversation.
 - On text-only models (all DeepSeek models, non-vision OpenRouter slugs) attached media degrades to a placeholder note in the prompt, so the turn still runs. Media above `ZEN_AGENT_MAX_MEDIA_BYTES` (default 10 MB decoded) is omitted with a note.
 
 ## Slash Commands

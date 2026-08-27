@@ -472,7 +472,7 @@ async function executeReadMedia(
     if (mediaModalities.audio) allowed.push('audio');
     const media = await resolveMedia(session.cwd, rawPath, allowed);
 
-    const summary = `loaded ${media.path} (${media.mimeType}, ${(media.decodedBytes / 1024).toFixed(1)} KB); media attached below`;
+    const summary = `loaded ${media.path} (${media.mimeType}, ${(media.decodedBytes / 1024).toFixed(1)} KB); media attached to the conversation`;
     await emit({
       sessionUpdate: 'tool_call_update',
       toolCallId: call.id,
