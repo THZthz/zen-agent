@@ -96,6 +96,15 @@ export interface LlmStepOptions {
   model?: ModelId;
   thinkingEffort?: ThinkingEffort;
   system?: string;
+  /**
+   * Stable per-session identifier for the LLM provider. OpenRouter uses it
+   * as its `session_id` to pin provider sticky routing (and Z.AI's session
+   * affinity key) from the very first request: without it, routing only
+   * sticks after a cache hit has been observed, so a session whose request
+   * shape changes mid-turn (e.g. read_media injecting image/audio content)
+   * can be re-routed to another provider and lose the whole cached prefix.
+   */
+  sessionId?: string;
 }
 
 /** Provider-neutral pricing in the provider's billing currency. */

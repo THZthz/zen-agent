@@ -490,6 +490,48 @@ describe('runOpenRouterStep (live SSE)', () => {
     expect(bodies[1]?.provider).toBeUndefined();
   });
 
+  it('sends session_id so Z.AI pins the context cache to the conversation', async () => {
+    let bodies: Array<Record<string, unknown>> = [];
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          if (req.url?.endsWith('/models')) {
+            serveCatalog(res, []);
+            return;
+          }
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(makeChunk({ content: 'ok' }));
+            res.write(makeChunk({}, { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }));
+            res.write('data: [DONE]\n\n');
+            res.end();
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+
+    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+
+    await runOpenRouterStep({
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: 'off',
+      sessionId: 'sess_0123456789abcdef',
+    });
+    await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]?.session_id).toBe('sess_0123456789abcdef');
+    expect(bodies[1]?.session_id).toBeUndefined();
+  });
+
   it('requires OPENROUTER_API_KEY', async () => {
     delete process.env.OPENROUTER_API_KEY;
     await expect(

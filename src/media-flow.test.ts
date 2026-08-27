@@ -27,13 +27,18 @@ let mockedModalities: { image: boolean; audio: boolean } = { image: false, audio
  * The real runLlmStep receives the LIVE llmMessages array (the turn keeps
  * mutating it afterwards), so each step snapshots the request at call time.
  */
-const recordedSteps: Array<{ tools?: unknown[]; messages: unknown[] }> = [];
+const recordedSteps: Array<{
+  tools?: unknown[];
+  messages: unknown[];
+  sessionId?: string;
+}> = [];
 
 function recordStep(result: LlmStepResult): void {
   mockedRunLlmStep.mockImplementationOnce(async (_provider, options) => {
     recordedSteps.push({
       tools: options.tools,
       messages: JSON.parse(JSON.stringify(options.messages)),
+      sessionId: options.sessionId,
     });
     return result;
   });
@@ -194,6 +199,9 @@ describe('media prompt flow', () => {
     expect(response.stopReason).toBe('end_turn');
 
     const secondCallOptions = recordedSteps[1]!;
+    // The session id is forwarded to the LLM provider so OpenRouter can pin
+    // Z.AI's context cache to this conversation (see openrouter.ts).
+    expect(secondCallOptions.sessionId).toBe(sessionId);
     const messages = secondCallOptions.messages as RecordedMessage[];
     // assistant(tool-call), tool(result), synthetic user with the payload.
     const toolMessage = messages.findLast((message) => message.role === 'tool');

@@ -136,6 +136,12 @@ export function withTurnExecution<T extends Constructor<ZenAgentCore>>(
         const llmResult = await runLlmStep(active.session.config.provider, {
           messages: active.session.llmMessages,
           tools,
+          // OpenRouter uses this as its `session_id`: it derives the Z.AI
+          // session affinity key from it so the upstream context cache is
+          // pinned to this conversation from the first request (see
+          // openrouter.ts). Without it, requests can be re-keyed and the
+          // GLM cache drops to a 0% hit rate.
+          sessionId: active.session.sessionId,
           signal,
           logRuntime: (level, message, details) => {
             void this.logRuntime(active.session.cwd, level, message, details);

@@ -257,6 +257,18 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     extraBody: {
       stream_options: { include_usage: true },
       ...(providerSort ? { provider: { sort: providerSort } } : {}),
+      // OpenRouter's provider sticky routing keeps consecutive requests of a
+      // conversation on the same provider endpoint so the upstream context
+      // cache stays warm. Without a session_id it only activates AFTER a
+      // cache hit is observed, and the conversation identity falls back to a
+      // hash of the first system + first non-system message. Both break when
+      // read_media injects image/audio content mid-turn: the request becomes
+      // multimodal and can route to a different provider (GLM models have
+      // several hosts on OpenRouter), so the previously cached prefix misses
+      // and the hit ratio drops to 0. Passing the zen-agent sessionId pins
+      // routing from the FIRST request and gives Z.AI a session affinity key
+      // (OpenRouter docs, "Prompt Caching" -> Z.AI).
+      ...(options.sessionId ? { session_id: options.sessionId } : {}),
     },
     extraHeaders,
     parseUsage: (raw, timing) => parseOpenRouterUsage(raw as OpenRouterUsage, timing),
