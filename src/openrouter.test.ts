@@ -4,15 +4,17 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  DEFAULT_OPENROUTER_MODEL,
-  fetchOpenRouterBalance,
   getOpenRouterModelInfo,
   getOpenRouterModelOptions,
   getOpenRouterReasoning,
-  mapOpenRouterEffort,
-  parseOpenRouterUsage,
   parseReasoning,
   resetOpenRouterModelsCache,
+} from './openrouter-models.js';
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  fetchOpenRouterBalance,
+  mapOpenRouterEffort,
+  parseOpenRouterUsage,
   runOpenRouterStep,
 } from './openrouter.js';
 

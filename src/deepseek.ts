@@ -1,9 +1,9 @@
 import type { ModelId, ThinkingEffort } from './storage.js';
 import { envNonNegativeFloat, envPositiveInt } from './env.js';
+import { runChatCompletions } from './chat-completions.js';
 import {
   buildLlmUsage,
   costFromUsage,
-  runChatCompletions,
   type LlmStepOptions,
   type LlmStepResult,
   type LlmUsage,

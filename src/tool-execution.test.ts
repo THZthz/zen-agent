@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT, truncateTerminalOutput } from './tool-execution.js';
+import { DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT, truncateTerminalOutput } from './sandbox.js';
 
 describe('truncateTerminalOutput', () => {
   it('returns short text unchanged', () => {

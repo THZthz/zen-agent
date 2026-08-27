@@ -7,7 +7,7 @@ import {
   runLlmStep,
 } from './provider.js';
 import { DEFAULT_OPENROUTER_MODEL } from './openrouter.js';
-import { resetOpenRouterModelsCache } from './openrouter.js';
+import { resetOpenRouterModelsCache } from './openrouter-models.js';
 
 describe('runLlmStep', () => {
   const originalEnv = { ...process.env };

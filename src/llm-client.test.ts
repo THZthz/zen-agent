@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runChatCompletions } from './llm-client.js';
+import { runChatCompletions } from './chat-completions.js';
 import { resetChatRateLimit } from './rate-limit.js';
 
 const originalEnv = { ...process.env };

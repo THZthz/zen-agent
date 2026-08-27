@@ -3,14 +3,13 @@ import { isAbsolute } from 'node:path';
 import {
   createStoredSession,
   deleteStoredSession,
-  findSessionCwd,
-  listStoredSessions,
   readStoredSession,
   writeSession,
   type ProviderId,
   type StoredSession,
   type ThinkingEffort,
 } from './storage.js';
+import { findSessionCwd, listStoredSessions } from './session-index.js';
 import { getDefaultModel } from './provider.js';
 import {
   buildEnvironmentMessage,

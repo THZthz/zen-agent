@@ -10,11 +10,8 @@ import {
 } from './storage.js';
 import { envPositiveInt } from './env.js';
 import { getDefaultModel } from './provider.js';
-import {
-  getOpenRouterModelOptions,
-  getOpenRouterReasoning,
-  OPENROUTER_EFFORT_VALUES,
-} from './openrouter.js';
+import { getOpenRouterModelOptions, getOpenRouterReasoning } from './openrouter-models.js';
+import { OPENROUTER_EFFORT_VALUES } from './openrouter.js';
 
 /** Safety valve for graceful cancel: hard-abort after this long. Unset/0 = wait forever. */
 export const GRACEFUL_CANCEL_TIMEOUT_MS = envPositiveInt('ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS', 0);

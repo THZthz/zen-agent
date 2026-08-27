@@ -8,10 +8,9 @@ import {
 import {
   DEFAULT_OPENROUTER_MODEL,
   fetchOpenRouterBalance,
-  getOpenRouterModelInfo,
-  getOpenRouterModelModalities,
   runOpenRouterStep,
 } from './openrouter.js';
+import { getOpenRouterModelInfo, getOpenRouterModelModalities } from './openrouter-models.js';
 import { DEFAULT_DEEPSEEK_MODEL, type ModelId, type ProviderId } from './storage.js';
 
 export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from './llm-client.js';
