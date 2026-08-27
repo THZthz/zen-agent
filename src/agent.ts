@@ -42,7 +42,6 @@ import {
 } from './openrouter.js';
 import { formatLlmError } from './llm-errors.js';
 import { BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA } from './llm-client.js';
-
 import {
   appendCacheDiagnostic,
   buildCacheDiagnostic,
@@ -204,7 +203,7 @@ async function modelConfigOption(provider: ProviderId, cwd: string) {
 /** Human labels for every session thinking-effort level. */
 const THINKING_EFFORT_OPTIONS: Record<ThinkingEffort, { name: string; description: string }> = {
   off: { name: 'Off', description: 'Disable extended thinking' },
-  minimal: { name: 'Minimal', description: 'Minimal reasoning effort' },
+  minimal: { name: 'Minimal', description: 'Use minimal reasoning effort' },
   low: { name: 'Low', description: 'Use low reasoning effort' },
   medium: { name: 'Medium', description: 'Use medium reasoning effort' },
   high: { name: 'High', description: 'Use high reasoning effort' },
