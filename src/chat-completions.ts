@@ -125,6 +125,24 @@ function reasoningReplayField(model: PiModel<'openai-completions'>): string | un
   return model.compat?.thinkingFormat === 'openrouter' ? 'reasoning' : undefined;
 }
 
+type StoredReasoningPart = { type: 'reasoning'; text: string };
+type StoredReasoningPartWithSignature = StoredReasoningPart & {
+  reasoningSignature?: unknown;
+  thinkingSignature?: unknown;
+  signature?: unknown;
+};
+
+/** Read forward-compatible replay metadata without widening storage's current type. */
+function storedReasoningSignature(part: StoredReasoningPart): string | undefined {
+  const signed = part as StoredReasoningPartWithSignature;
+  for (const candidate of [signed.reasoningSignature, signed.thinkingSignature, signed.signature]) {
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 function toolResultText(output: unknown): string {
   if (typeof output === 'string') {
     return output;
@@ -157,7 +175,8 @@ function toPiContext(
                   return {
                     type: 'thinking' as const,
                     thinking: part.text,
-                    thinkingSignature: reasoningReplayField(model),
+                    thinkingSignature:
+                      storedReasoningSignature(part) ?? reasoningReplayField(model),
                   };
                 case 'tool-call':
                   return {
@@ -471,17 +490,16 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
         .map((part) => part.text)
         .join('');
     }
+    const thinkingParts = completedMessage.content.filter(
+      (part): part is Extract<(typeof completedMessage.content)[number], { type: 'thinking' }> =>
+        part.type === 'thinking',
+    );
     if (reasoning.length === 0) {
-      reasoning = completedMessage.content
-        .filter(
-          (
-            part,
-          ): part is Extract<(typeof completedMessage.content)[number], { type: 'thinking' }> =>
-            part.type === 'thinking',
-        )
-        .map((part) => part.thinking)
-        .join('');
+      reasoning = thinkingParts.map((part) => part.thinking).join('');
     }
+    const reasoningSignature = thinkingParts.find(
+      (part) => typeof part.thinkingSignature === 'string' && part.thinkingSignature.length > 0,
+    )?.thinkingSignature;
 
     const toolCalls: LlmToolCall[] = completedMessage.content
       .filter(
@@ -497,6 +515,7 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
     return {
       text,
       reasoning,
+      ...(reasoningSignature !== undefined ? { reasoningSignature } : {}),
       toolCalls,
       finishReason: mapFinishReason(completedMessage.stopReason),
       usage: toLlmUsage(completedMessage.usage, { llmMs, thinkingMs, answeringMs }),

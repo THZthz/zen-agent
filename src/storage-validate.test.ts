@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import {
   createStoredSession,
   readStoredSession,
+  sessionLlmLogPath,
   sessionPath,
+  sessionRootDirectory,
+  terminalDirectory,
   type StoredSession,
 } from './storage.js';
 
@@ -29,6 +32,23 @@ describe('readStoredSession validation', () => {
     mkdirSync(join(cwd, '.sessions', sessionId), { recursive: true });
     writeFileSync(sessionPath(cwd, sessionId), contents, 'utf8');
   }
+
+  it('accepts generated ids and compatible safe manual ids', async () => {
+    const generated = await createStoredSession(cwd);
+    created.push(generated.cwd);
+    expect(generated.sessionId).toMatch(/^sess_[0-9a-f]{24}$/);
+    expect(sessionRootDirectory(cwd, 'sess_manual')).toBe(join(cwd, '.sessions', 'sess_manual'));
+  });
+
+  it('rejects dot segments and separators before constructing session paths', async () => {
+    const pathBuilders = [sessionRootDirectory, sessionPath, sessionLlmLogPath, terminalDirectory];
+    for (const sessionId of ['', '.', '..', '../outside', 'nested/session', 'nested\\session']) {
+      for (const buildPath of pathBuilders) {
+        expect(() => buildPath(cwd, sessionId)).toThrow(/Invalid session ID/);
+      }
+      await expect(readStoredSession(cwd, sessionId)).rejects.toThrow(/Invalid session ID/);
+    }
+  });
 
   it("rejects invalid JSON with a clean 'corrupted' error", async () => {
     await writeState('sess_bad', '{"sessionId": "sess_bad", "cwd":');
@@ -134,6 +154,7 @@ describe('readStoredSession validation', () => {
     created.push(session.cwd);
     const reloaded = await readStoredSession(cwd, session.sessionId);
     expect(reloaded.sessionId).toBe(session.sessionId);
+    expect(session.sessionId).toMatch(/^sess_[0-9a-f]{24}$/);
     expect(reloaded.config.provider).toBe('deepseek');
     expect(reloaded.config.sandbox).toBe(false);
     expect(reloaded.config.toolsEnabled).toBe(true);

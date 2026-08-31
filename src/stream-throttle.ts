@@ -13,6 +13,7 @@ export class StreamThrottle {
   private queue: Array<{ kind: StreamKind; text: string }> = [];
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private discarded = false;
   /** First emit failure, surfaced to drain() so a broken pipe ends the turn. */
   private failure: { error: unknown } | null = null;
 
@@ -23,7 +24,7 @@ export class StreamThrottle {
   ) {}
 
   push(kind: StreamKind, text: string): void {
-    if (!text) {
+    if (!text || this.discarded) {
       return;
     }
     this.queue.push({ kind, text });
@@ -38,6 +39,9 @@ export class StreamThrottle {
    */
   async drain(): Promise<void> {
     for (;;) {
+      if (this.discarded) {
+        return;
+      }
       // Checked unconditionally: on failure the queue is dropped, so a
       // queue-only condition could mask the error.
       if (this.failure) {
@@ -50,8 +54,18 @@ export class StreamThrottle {
     }
   }
 
+  /** Stop future emissions and drop queued output after an aborted/failed step. */
+  discard(): void {
+    this.discarded = true;
+    this.queue = [];
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+
   private schedule(): void {
-    if (this.running || this.timer || this.failure) {
+    if (this.discarded || this.running || this.timer || this.failure) {
       return;
     }
     this.timer = setTimeout(() => {
@@ -61,7 +75,7 @@ export class StreamThrottle {
 
   private async tick(): Promise<void> {
     this.timer = null;
-    if (this.queue.length === 0) {
+    if (this.discarded || this.queue.length === 0) {
       this.running = false;
       return;
     }
@@ -70,7 +84,7 @@ export class StreamThrottle {
     try {
       let remaining = this.maxCharsPerTick;
 
-      while (remaining > 0 && this.queue.length > 0) {
+      while (!this.discarded && remaining > 0 && this.queue.length > 0) {
         const item = this.queue[0]!;
         if (item.text.length <= remaining) {
           this.queue.shift();
@@ -96,7 +110,7 @@ export class StreamThrottle {
     }
 
     this.running = false;
-    if (this.queue.length > 0) {
+    if (!this.discarded && this.queue.length > 0) {
       this.schedule();
     }
   }

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runChatCompletions } from './chat-completions.js';
 import { resetChatRateLimit } from './rate-limit.js';
+import type { LlmMessage } from './storage.js';
 import { testServerBaseUrl } from './test-server.js';
 
 const originalEnv = { ...process.env };
@@ -95,6 +96,116 @@ describe('runChatCompletions', () => {
       'chat request delayed by client-side rate limit',
       expect.objectContaining({ label: 'Test', waitedMs: expect.any(Number) }),
     );
+  });
+
+  it('preserves streamed reasoning details and replays them on the next tool step', async () => {
+    process.env.ZEN_AGENT_CHAT_TIMEOUT_MS = '2000';
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const reasoningDetails = [
+      {
+        type: 'reasoning.text',
+        text: 'I should inspect the directory.',
+        signature: 'reasoning-signature',
+        id: 'reasoning-1',
+        format: 'anthropic-claude-v1',
+        index: 0,
+      },
+      {
+        type: 'reasoning.encrypted',
+        data: 'opaque-reasoning-data',
+        id: 'reasoning-1',
+        format: 'anthropic-claude-v1',
+        index: 1,
+      },
+    ];
+    const port = await startServer((req, res) => {
+      let raw = '';
+      req.on('data', (chunk) => (raw += chunk));
+      req.on('end', () => {
+        requestBodies.push(JSON.parse(raw));
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const delta =
+          requestBodies.length === 1
+            ? {
+                reasoning: 'I should inspect the directory.',
+                reasoning_details: reasoningDetails,
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_1',
+                    type: 'function',
+                    function: { name: 'bash', arguments: '{"command":"pwd"}' },
+                  },
+                ],
+              }
+            : { content: 'done' };
+        const finishReason = requestBodies.length === 1 ? 'tool_calls' : 'stop';
+        const chunk = JSON.stringify({
+          id: `completion-${requestBodies.length}`,
+          model: 'test-model',
+          choices: [{ index: 0, delta, finish_reason: finishReason }],
+        });
+        res.end(`data: ${chunk}\n\ndata: [DONE]\n\n`);
+      });
+    });
+
+    const baseOptions = {
+      baseUrl: testServerBaseUrl(server, port),
+      apiKey: 'test',
+      provider: 'openrouter',
+      label: 'OpenRouter',
+      model: 'test-model',
+      system: 'system',
+      thinkingEffort: 'high' as const,
+      compat: { supportsDeveloperRole: false, thinkingFormat: 'openrouter' as const },
+    };
+    const first = await runChatCompletions({
+      ...baseOptions,
+      messages: [{ role: 'user', content: 'Inspect this project.' }],
+    });
+
+    expect(first.toolCalls).toEqual([{ id: 'call_1', name: 'bash', input: { command: 'pwd' } }]);
+    expect(first.reasoningSignature).toBe(JSON.stringify(reasoningDetails));
+
+    type ReasoningPartWithSignature = {
+      type: 'reasoning';
+      text: string;
+      reasoningSignature?: string;
+    };
+    const reasoningPart: ReasoningPartWithSignature = {
+      type: 'reasoning',
+      text: first.reasoning,
+      reasoningSignature: first.reasoningSignature,
+    };
+    const replayMessages: LlmMessage[] = [
+      { role: 'user', content: 'Inspect this project.' },
+      {
+        role: 'assistant',
+        content: [
+          reasoningPart,
+          {
+            type: 'tool-call',
+            toolCallId: 'call_1',
+            toolName: 'bash',
+            input: { command: 'pwd' },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [
+          { type: 'tool-result', toolCallId: 'call_1', toolName: 'bash', output: '/project' },
+        ],
+      },
+    ];
+    await runChatCompletions({ ...baseOptions, messages: replayMessages });
+
+    expect(requestBodies).toHaveLength(2);
+    const replayedAssistant = (requestBodies[1]?.messages as Array<Record<string, unknown>>).find(
+      (message) => message.role === 'assistant',
+    );
+    expect(replayedAssistant?.reasoning_details).toStrictEqual(reasoningDetails);
+    expect(replayedAssistant?.reasoning).toBeUndefined();
   });
 
   it('splits CRLF events whose terminator spans two network chunks', async () => {

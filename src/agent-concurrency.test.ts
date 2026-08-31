@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
@@ -12,7 +12,6 @@ vi.mock('./provider.js', async (importOriginal) => {
 
 import { ZenAgent } from './agent.js';
 import { runLlmStep, type LlmStepResult, type LlmStepOptions } from './provider.js';
-import { clientLogPath } from './storage.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 
@@ -106,13 +105,48 @@ describe('concurrent prompts are serialized per session', () => {
 
     // The old prompt's cleanup did not clobber the new state.
     expect(active.abortController).toBeNull();
+  });
 
-    // The wait is visible in log.jsonl for later debugging.
-    const startupKey = (agent as unknown as { startupLogKey: string }).startupLogKey;
-    await vi.waitFor(async () => {
-      const raw = await readFile(clientLogPath(cwd, startupKey), 'utf8');
-      expect(raw).toContain('previous turn still running');
-      expect(raw).toContain('previous turn settled');
+  it('serializes prompts that arrive together while the session is idle', async () => {
+    const agent = new ZenAgent();
+    await agent.initialize({
+      protocolVersion: acp.PROTOCOL_VERSION,
+      clientCapabilities: {},
+    } as acp.InitializeRequest);
+    const cx = makeCx();
+    const created = await agent.newSession({ cwd, mcpServers: [] } as acp.NewSessionRequest, cx);
+
+    let releaseFirst!: () => void;
+    const firstStep = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
     });
+    mockedRunLlmStep
+      .mockImplementationOnce(async () => {
+        await firstStep;
+        return textStep('first answer');
+      })
+      .mockResolvedValueOnce(textStep('second answer'));
+
+    const promptA = agent.prompt(
+      { sessionId: created.sessionId, prompt: [{ type: 'text', text: 'first' }] },
+      cx,
+    );
+    const promptB = agent.prompt(
+      { sessionId: created.sessionId, prompt: [{ type: 'text', text: 'second' }] },
+      cx,
+    );
+
+    await vi.waitFor(() => expect(mockedRunLlmStep).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mockedRunLlmStep).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    const [responseA, responseB] = await Promise.all([promptA, promptB]);
+    expect(responseA.stopReason).toBe('end_turn');
+    expect(responseB.stopReason).toBe('end_turn');
+    expect(mockedRunLlmStep).toHaveBeenCalledTimes(2);
+
+    const secondMessages = mockedRunLlmStep.mock.calls[1]?.[1].messages ?? [];
+    expect(JSON.stringify(secondMessages)).toContain('first answer');
   });
 });

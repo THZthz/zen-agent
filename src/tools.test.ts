@@ -12,6 +12,7 @@ vi.mock('./deepseek.js', async (importOriginal) => {
 import { ZenAgent } from './agent.js';
 import { runLlmStep, type LlmStepResult } from './deepseek.js';
 import { BASH_TOOL_SCHEMA } from './llm-client.js';
+import { readStoredSession } from './storage.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 
@@ -122,6 +123,11 @@ describe('/tools slash command', () => {
     );
     expect(status.stopReason).toBe('end_turn');
     expect(agentMessages(notifications).join('\n')).toContain('Tools (bash, read_media): ON');
+
+    // The command handler must finish before the prompt's final save, otherwise
+    // its response disappears from replay after a restart.
+    const stored = await readStoredSession(cwd, sessionId);
+    expect(JSON.stringify(stored.events)).toContain('Tools (bash, read_media): ON');
 
     recordStep(textStep('ok'));
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] }, cx);

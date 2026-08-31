@@ -32,19 +32,22 @@ export function withPromptExecution<T extends Constructor<ZenAgentCore & TurnSur
       super(...args);
     }
     async prompt(params: acp.PromptRequest, cx: acp.AgentContext): Promise<acp.PromptResponse> {
+      // Abort the currently running turn before queuing the replacement. The
+      // shared operation queue then prevents preprocessing, history updates and
+      // final saves from overlapping with any prompt/lifecycle/config operation.
+      this.abortActiveSession(params.sessionId);
+      return this.withSessionOperation(params.sessionId, () => this.promptSerialized(params, cx));
+    }
+
+    private async promptSerialized(
+      params: acp.PromptRequest,
+      cx: acp.AgentContext,
+    ): Promise<acp.PromptResponse> {
       const active = this.sessions.get(params.sessionId);
       if (!active) {
         throw new Error(`Session ${params.sessionId} not found`);
       }
 
-      // A new prompt can only arrive after the previous turn's response in
-      // Zed's flow (it awaits the cancelled turn first), but defensively abort
-      // any still-running turn and WAIT until it fully settles before touching
-      // the shared history: until it unwinds, the old turn keeps mutating
-      // llmMessages/events and re-saving state.json, and interleaved writes
-      // would interleave two turns' entries in one conversation.
-      this.abortActiveSession(params.sessionId);
-      await this.settlePreviousTurn(active);
       this.clearGracefulCancel(active);
       const controller = new AbortController();
       active.abortController = controller;
@@ -68,7 +71,9 @@ export function withPromptExecution<T extends Constructor<ZenAgentCore & TurnSur
           });
           await this.save(active);
 
-          return this.handleSlashCommand(active, cx, slashCommand);
+          // Keep controller ownership and the final persistence boundary alive
+          // for the complete command, including skill-backed LLM turns.
+          return await this.handleSlashCommand(active, cx, slashCommand);
         }
 
         const mediaParts = parts.filter((part) => part.type !== 'text');
@@ -181,7 +186,12 @@ export function withPromptExecution<T extends Constructor<ZenAgentCore & TurnSur
         }
         this.clearGracefulCancel(active);
         active.session.updatedAt = new Date().toISOString();
-        await this.save(active).catch(() => {});
+        await this.save(active).catch((error) => {
+          void this.logRuntime(active.session.cwd, 'error', 'final session save failed', {
+            sessionId: params.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
       }
     }
 

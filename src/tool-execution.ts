@@ -23,6 +23,10 @@ export interface ToolExecutionResult {
   attachedMedia?: ResolvedMedia;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export interface ToolExecutorContext {
   session: StoredSession;
   /**
@@ -165,7 +169,7 @@ export async function executeLlmToolCall(
     };
   }
 
-  const command = (call.input as { command?: unknown }).command;
+  const command = isRecord(call.input) ? call.input.command : undefined;
   if (typeof command !== 'string' || command.trim().length === 0) {
     const message = 'bash tool requires a non-empty string command';
     await emit({
@@ -187,6 +191,30 @@ export async function executeLlmToolCall(
         },
       ],
       rawOutput: { error: message },
+    });
+    return {
+      toolCallId: call.id,
+      toolName: 'bash',
+      output: { type: 'text', value: message },
+    };
+  }
+
+  if (signal.aborted) {
+    const message = 'bash tool cancelled before execution';
+    await emit({
+      sessionUpdate: 'tool_call',
+      toolCallId: call.id,
+      title: 'Cancelled bash command',
+      kind: 'execute',
+      status: 'failed',
+      rawInput: call.input,
+    });
+    await emit({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call.id,
+      status: 'failed',
+      content: [{ type: 'content', content: { type: 'text', text: message } }],
+      rawOutput: { error: message, cancelled: true },
     });
     return {
       toolCallId: call.id,
@@ -319,6 +347,12 @@ export async function executeLlmToolCall(
       outputByteLimit: 1_000_000,
     });
     terminalId = createResp.terminalId;
+    if (cancelledBySignal || signal.aborted) {
+      await killTerminal();
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new Error('bash tool cancelled during terminal creation');
+    }
     void logRuntime('info', 'terminal created', {
       sessionId: session.sessionId,
       terminalId,
@@ -451,7 +485,7 @@ async function executeReadMedia(
 ): Promise<ToolExecutionResult> {
   void cx;
   const { session, mediaModalities, emit } = context;
-  const rawPath = (call.input as { path?: unknown }).path;
+  const rawPath = isRecord(call.input) ? call.input.path : undefined;
   const displayPath = typeof rawPath === 'string' ? rawPath : String(rawPath ?? '');
 
   await emit({

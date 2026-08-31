@@ -52,7 +52,12 @@ export interface AssistantMessage {
   role: 'assistant';
   content: Array<
     | { type: 'text'; text: string }
-    | { type: 'reasoning'; text: string }
+    | {
+        type: 'reasoning';
+        text: string;
+        /** Opaque provider replay metadata; persist and return unchanged. */
+        reasoningSignature?: string;
+      }
     | {
         type: 'tool-call';
         toolCallId: string;
@@ -226,8 +231,31 @@ export function sessionDirectory(cwd: string): string {
   return join(cwd, '.sessions');
 }
 
+/**
+ * Require a session id to be exactly one filesystem path component.
+ *
+ * Session ids are persisted and may later arrive back from an ACP client or a
+ * hand-created session, so this intentionally accepts legacy safe ids such as
+ * `sess_manual` rather than enforcing only the current generated format.
+ */
+export function validateSessionId(sessionId: string): string {
+  if (
+    typeof sessionId !== 'string' ||
+    sessionId.length === 0 ||
+    sessionId === '.' ||
+    sessionId === '..' ||
+    sessionId.includes('/') ||
+    sessionId.includes('\\') ||
+    sessionId.includes('\0')
+  ) {
+    throw new Error(`Invalid session ID: ${JSON.stringify(sessionId)}`);
+  }
+  return sessionId;
+}
+
 /** Per-session root: <project>/.sessions/<sessionId>/ */
 export function sessionRootDirectory(cwd: string, sessionId: string): string {
+  validateSessionId(sessionId);
   return join(sessionDirectory(cwd), sessionId);
 }
 
@@ -266,7 +294,7 @@ export function clientModelsPath(cwd: string): string {
 }
 
 function generateSessionId(): string {
-  return `sess_${randomBytes(12).toString('hex')}`;
+  return validateSessionId(`sess_${randomBytes(12).toString('hex')}`);
 }
 
 async function ensureDirectory(dir: string): Promise<void> {
@@ -426,6 +454,9 @@ function normalizeStoredSession(parsed: unknown, cwd: string, sessionId: string)
 }
 
 export async function readStoredSession(cwd: string, sessionId: string): Promise<StoredSession> {
+  // Keep validation outside the filesystem error handler so an unsafe id is
+  // reported as invalid rather than being disguised as a missing file.
+  validateSessionId(sessionId);
   let raw: string;
   try {
     raw = await readFile(sessionPath(cwd, sessionId), 'utf8');

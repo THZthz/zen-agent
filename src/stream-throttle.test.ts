@@ -48,6 +48,25 @@ describe('StreamThrottle', () => {
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
+  it('discards queued chunks after an owning step fails', async () => {
+    const emitted: string[] = [];
+    const t = new StreamThrottle(
+      async (_kind, text) => {
+        emitted.push(text);
+      },
+      50,
+      3,
+    );
+
+    t.push('message', 'stale output');
+    t.discard();
+    await t.drain();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    t.push('message', 'later output');
+
+    expect(emitted).toEqual([]);
+  });
+
   it('recovers scheduling for chunks pushed after a successful tick', async () => {
     const emitted: string[] = [];
     const t = new StreamThrottle(

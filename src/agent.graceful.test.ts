@@ -11,6 +11,7 @@ vi.mock('./provider.js', async (importOriginal) => {
 
 import { ZenAgent } from './agent.js';
 import { runLlmStep, type LlmStepResult } from './provider.js';
+import { readStoredSession } from './storage.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 
@@ -172,6 +173,46 @@ describe('graceful cancel in runTurn', () => {
     }
   });
 
+  it('persists a paired failed tool result before a hard-aborted close settles', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-test-'));
+    try {
+      const { agent, sessionId } = await setupAgent(cwd);
+      const exit = deferred<{ exitCode: number | null; signal: number | null }>();
+      const ctx = makeAgentContext({ waitForExit: exit.promise });
+      mockedRunLlmStep.mockResolvedValueOnce(bashStep());
+
+      const prompt = agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: 'run it' }] },
+        ctx.cx,
+      );
+      await vi.waitFor(() =>
+        expect(ctx.request).toHaveBeenCalledWith(
+          acp.methods.client.terminal.create,
+          expect.anything(),
+        ),
+      );
+
+      const close = agent.closeSession({ sessionId });
+      await vi.waitFor(() =>
+        expect(ctx.request).toHaveBeenCalledWith(
+          acp.methods.client.terminal.kill,
+          expect.anything(),
+        ),
+      );
+      exit.resolve({ exitCode: null, signal: 15 });
+
+      await expect(prompt).resolves.toMatchObject({ stopReason: 'cancelled' });
+      await close;
+      const stored = await readStoredSession(cwd, sessionId);
+      const assistant = stored.llmMessages.find((message) => message.role === 'assistant');
+      const tool = stored.llmMessages.find((message) => message.role === 'tool');
+      expect(assistant?.content.some((part) => part.type === 'tool-call')).toBe(true);
+      expect(tool?.content).toHaveLength(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('discards tool calls proposed by an LLM step that finished after cancel', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-test-'));
     try {
@@ -204,6 +245,97 @@ describe('graceful cancel in runTurn', () => {
       ).sessions.get(sessionId)!.session;
       expect(session.llmMessages.some((m) => m.role === 'tool')).toBe(false);
       expect(notifications.filter((n) => n.update.sessionUpdate === 'tool_call')).toHaveLength(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('persists reasoning replay metadata across a tool step', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-test-'));
+    try {
+      const { agent, cx, sessionId } = await setupAgent(cwd);
+      const reasoningSignature = JSON.stringify([
+        { type: 'reasoning.encrypted', data: 'opaque', id: 'reasoning-1' },
+      ]);
+      mockedRunLlmStep
+        .mockResolvedValueOnce(bashStep({ reasoning: 'inspect first', reasoningSignature }))
+        .mockResolvedValueOnce({
+          text: 'done',
+          reasoning: '',
+          toolCalls: [],
+          finishReason: 'stop',
+          usage: null,
+        });
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+
+      const secondRequest = mockedRunLlmStep.mock.calls[1]?.[1];
+      const replayedReasoning = secondRequest?.messages
+        .filter((message) => message.role === 'assistant')
+        .flatMap((message) => message.content)
+        .find((part) => part.type === 'reasoning');
+      expect(replayedReasoning).toMatchObject({ reasoningSignature });
+      const session = (
+        agent as unknown as {
+          sessions: Map<string, { session: import('./storage.js').StoredSession }>;
+        }
+      ).sessions.get(sessionId)!.session;
+      const reasoningPart = session.llmMessages
+        .filter((message) => message.role === 'assistant')
+        .flatMap((message) => message.content)
+        .find((part) => part.type === 'reasoning');
+      expect(reasoningPart).toMatchObject({
+        type: 'reasoning',
+        text: 'inspect first',
+        reasoningSignature,
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps completed-step usage when a later provider step fails', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-test-'));
+    try {
+      const { agent, cx, sessionId } = await setupAgent(cwd);
+      mockedRunLlmStep
+        .mockResolvedValueOnce(
+          bashStep({
+            usage: {
+              inputTokens: 1_000,
+              outputTokens: 50,
+              totalTokens: 1_050,
+              cacheReadTokens: 900,
+              cacheMissTokens: 100,
+              reasoningTokens: 10,
+              llmMs: 500,
+              thinkingMs: 300,
+              answeringMs: 200,
+            },
+          }),
+        )
+        .mockRejectedValueOnce(new Error('second provider step failed'));
+
+      await expect(
+        agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx),
+      ).rejects.toThrow('second provider step failed');
+
+      const usage = (
+        agent as unknown as {
+          sessions: Map<
+            string,
+            { session: { usage: import('./storage.js').SessionUsage; turnStats: unknown[] } }
+          >;
+        }
+      ).sessions.get(sessionId)!.session;
+      expect(usage.usage).toMatchObject({
+        turns: 1,
+        steps: 1,
+        inputTokens: 1_000,
+        outputTokens: 50,
+      });
+      expect(usage.usage.cost).toBeGreaterThan(0);
+      expect(usage.turnStats).toHaveLength(1);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

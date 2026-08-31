@@ -66,6 +66,12 @@ export interface LlmStepResult {
   text: string;
   /** Full reasoning emitted by the model during this step. */
   reasoning: string;
+  /**
+   * Opaque provider replay data for the reasoning block. This may contain a
+   * provider signature or serialized structured reasoning details; persist it
+   * unchanged alongside `reasoning` when storage supports it.
+   */
+  reasoningSignature?: string;
   toolCalls: LlmToolCall[];
   finishReason: string;
   /** Token usage and timing for this LLM step, if reported by the provider. */

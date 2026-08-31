@@ -97,12 +97,13 @@ const UNKNOWN_MODEL_FALLBACK: OpenRouterModelInfo = {
 
 /** Live catalog fetch timeout: config options must not block session creation forever. */
 const MODELS_FETCH_TIMEOUT_MS = 5_000;
-/** Bumped whenever the persisted catalog file shape changes. */
-const MODELS_CACHE_VERSION = 3;
+/** Bumped whenever the persisted catalog shape or field semantics change. */
+const MODELS_CACHE_VERSION = 4;
 
-function parsePrice(raw: string | undefined): number {
+/** Convert OpenRouter's wire USD/token price to the catalog's USD/1M-token unit. */
+function parsePricePerM(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? '');
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed * 1_000_000 : 0;
 }
 
 let modelsCache: { key: string; promise: Promise<Map<string, CatalogEntry>> } | null = null;
@@ -158,8 +159,8 @@ async function fetchOpenRouterModels(): Promise<Map<string, CatalogEntry>> {
       models.set(model.id, {
         id: model.id,
         name: model.name ?? null,
-        inputPerM: parsePrice(model.pricing?.prompt),
-        outputPerM: parsePrice(model.pricing?.completion),
+        inputPerM: parsePricePerM(model.pricing?.prompt),
+        outputPerM: parsePricePerM(model.pricing?.completion),
         contextLength:
           typeof model.context_length === 'number' && model.context_length > 0
             ? model.context_length

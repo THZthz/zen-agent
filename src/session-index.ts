@@ -1,30 +1,32 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { SessionInfo } from '@agentclientprotocol/sdk';
-import { readStoredSession, sessionDirectory, type StoredSession } from './storage.js';
+import {
+  readStoredSession,
+  sessionDirectory,
+  validateSessionId,
+  type StoredSession,
+} from './storage.js';
 
-/**
- * Crash-safe file write: write to a unique temp file in the destination
- * directory, then atomically rename over the target. A crash mid-write can
- * at worst leave a stray .tmp file — never a truncated/corrupt target. This
- * matters for state.json, which holds the full session history including
- * base64 media and is rewritten multiple times per turn.
- */
-interface SessionIndex {
-  [sessionId: string]: {
-    cwd: string;
-    updatedAt: string;
-    /** Session title, mirrored here so listings do not have to parse the (potentially multi-MB) state.json. */
-    title?: string | null;
-  };
+interface SessionIndexEntry {
+  cwd: string;
+  updatedAt: string;
+  title?: string | null;
 }
+
+interface SessionIndex {
+  [sessionId: string]: SessionIndexEntry;
+}
+
+type StoredIndexEntry = SessionIndexEntry | { deleted: true };
 
 async function ensureDirectory(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
+/** Crash-safe replace used by session state, model metadata and index entries. */
 export async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
   await ensureDirectory(dirname(filePath));
   const tmp = `${filePath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
@@ -32,53 +34,173 @@ export async function writeFileAtomic(filePath: string, contents: string): Promi
     await writeFile(tmp, contents, 'utf8');
     await rename(tmp, filePath);
   } catch (error) {
-    // Best-effort cleanup so failed writes do not litter the directory.
     await unlink(tmp).catch(() => {});
     throw error;
   }
 }
+
 export function indexDirectory(): string {
   const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share');
   return join(dataHome, 'zen-agent');
 }
 
-function indexPath(): string {
+function legacyIndexPath(): string {
   return join(indexDirectory(), 'index.json');
 }
 
-export async function readIndex(): Promise<SessionIndex> {
+function entriesDirectory(): string {
+  return join(indexDirectory(), 'sessions');
+}
+
+function entryPath(sessionId: string): string {
+  validateSessionId(sessionId);
+  return join(entriesDirectory(), `${sessionId}.json`);
+}
+
+function isErrnoException(error: unknown, code: string): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === code
+  );
+}
+
+function parseIndexEntry(raw: unknown, context: string): StoredIndexEntry {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`Session index ${context} is corrupted: expected an object`);
+  }
+  const value = raw as Record<string, unknown>;
+  if (value.deleted === true) {
+    return { deleted: true };
+  }
+  if (
+    typeof value.cwd !== 'string' ||
+    typeof value.updatedAt !== 'string' ||
+    (value.title !== undefined && value.title !== null && typeof value.title !== 'string')
+  ) {
+    throw new Error(`Session index ${context} is corrupted: invalid entry`);
+  }
+  return {
+    cwd: value.cwd,
+    updatedAt: value.updatedAt,
+    title: value.title as string | null | undefined,
+  };
+}
+
+function parseJson(raw: string, context: string): unknown {
   try {
-    const raw = await readFile(indexPath(), 'utf8');
-    return JSON.parse(raw) as SessionIndex;
-  } catch {
-    return {};
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(
+      `Session index ${context} is corrupted: not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+      { cause: error },
+    );
   }
 }
 
-async function writeIndex(index: SessionIndex): Promise<void> {
-  await writeFileAtomic(indexPath(), `${JSON.stringify(index, null, 2)}\n`);
+async function readLegacyIndex(): Promise<SessionIndex> {
+  const filePath = legacyIndexPath();
+  let raw: string;
+  try {
+    raw = await readFile(filePath, 'utf8');
+  } catch (error) {
+    if (isErrnoException(error, 'ENOENT')) {
+      return Object.create(null) as SessionIndex;
+    }
+    throw new Error(
+      `Failed to read session index ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+
+  const parsed = parseJson(raw, filePath);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Session index ${filePath} is corrupted: expected an object`);
+  }
+
+  const index: SessionIndex = Object.create(null) as SessionIndex;
+  for (const [sessionId, rawEntry] of Object.entries(parsed)) {
+    validateSessionId(sessionId);
+    const entry = parseIndexEntry(rawEntry, `${filePath} entry ${sessionId}`);
+    if ('deleted' in entry) {
+      throw new Error(`Session index ${filePath} is corrupted: invalid legacy entry ${sessionId}`);
+    }
+    index[sessionId] = entry;
+  }
+  return index;
+}
+
+async function readStoredIndexEntry(filePath: string): Promise<StoredIndexEntry> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `Failed to read session index entry ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  return parseIndexEntry(parseJson(raw, filePath), filePath);
+}
+
+/**
+ * Combine the legacy shared index with atomic per-session entries. Per-session
+ * files win, so concurrent agents never rewrite unrelated sessions; tombstones
+ * keep deletions from being resurrected by a legacy index entry.
+ */
+export async function readIndex(): Promise<SessionIndex> {
+  const index = await readLegacyIndex();
+  let files: string[];
+  try {
+    files = await readdir(entriesDirectory());
+  } catch (error) {
+    if (isErrnoException(error, 'ENOENT')) return index;
+    throw new Error(
+      `Failed to read session index directory ${entriesDirectory()}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const sessionId = basename(file, '.json');
+    validateSessionId(sessionId);
+    const entry = await readStoredIndexEntry(join(entriesDirectory(), file));
+    if ('deleted' in entry) {
+      delete index[sessionId];
+    } else {
+      index[sessionId] = entry;
+    }
+  }
+  return index;
 }
 
 export async function rememberSession(session: StoredSession): Promise<void> {
-  const index = await readIndex();
-  index[session.sessionId] = {
+  validateSessionId(session.sessionId);
+  const entry: SessionIndexEntry = {
     cwd: session.cwd,
     updatedAt: session.updatedAt,
     title: session.title,
   };
-  await writeIndex(index);
+  await writeFileAtomic(entryPath(session.sessionId), `${JSON.stringify(entry, null, 2)}\n`);
 }
 
 export async function forgetSession(sessionId: string): Promise<void> {
-  const index = await readIndex();
-  if (sessionId in index) {
-    delete index[sessionId];
-    await writeIndex(index);
-  }
+  await writeFileAtomic(entryPath(sessionId), `${JSON.stringify({ deleted: true }, null, 2)}\n`);
 }
+
 export async function findSessionCwd(sessionId: string): Promise<string | undefined> {
-  const index = await readIndex();
-  return index[sessionId]?.cwd;
+  const filePath = entryPath(sessionId);
+  try {
+    const entry = await readStoredIndexEntry(filePath);
+    return 'deleted' in entry ? undefined : entry.cwd;
+  } catch (error) {
+    if (!(error instanceof Error) || !isErrnoException(error.cause, 'ENOENT')) {
+      throw error;
+    }
+  }
+  return (await readLegacyIndex())[sessionId]?.cwd;
 }
 
 export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
@@ -87,9 +209,6 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
   if (cwd) {
     const sessions: SessionInfo[] = [];
     const indexed = new Set<string>();
-
-    // Fast path: indexed sessions resolve from the small index file without
-    // parsing every state.json (which can carry base64 media payloads).
     for (const [sessionId, entry] of Object.entries(index)) {
       if (entry.cwd !== cwd) continue;
       indexed.add(sessionId);
@@ -101,8 +220,6 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
       });
     }
 
-    // Fallback: pick up on-disk sessions the index does not know about
-    // (hand-copied .sessions directories, wiped indexes).
     let entries: string[];
     try {
       entries = await readdir(sessionDirectory(cwd));
@@ -111,15 +228,9 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
     }
     for (const entry of entries) {
       if (indexed.has(entry)) continue;
-      let raw: string;
       try {
-        raw = await readFile(join(sessionDirectory(cwd), entry, 'state.json'), 'utf8');
-      } catch {
-        // Not a per-session directory (client/, llm/, logs/, ...).
-        continue;
-      }
-      try {
-        const parsed = JSON.parse(raw) as StoredSession;
+        validateSessionId(entry);
+        const parsed = await readStoredSession(cwd, entry);
         sessions.push({
           sessionId: parsed.sessionId,
           cwd: parsed.cwd,
@@ -127,7 +238,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
           updatedAt: parsed.updatedAt,
         });
       } catch {
-        // Ignore malformed session files.
+        // Not a valid per-session directory or the state file is malformed.
       }
     }
 

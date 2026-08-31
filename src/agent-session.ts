@@ -4,6 +4,7 @@ import {
   createStoredSession,
   deleteStoredSession,
   readStoredSession,
+  validateSessionId,
   writeSession,
   type ProviderId,
   type StoredSession,
@@ -62,6 +63,17 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
     constructor(...args: any[]) {
       super(...args);
     }
+
+    /** Abort, hide and settle any active turn before replacing/removing it. */
+    private async retireActiveSession(sessionId: string): Promise<void> {
+      const previous = this.sessions.get(sessionId);
+      this.abortActiveSession(sessionId);
+      if (previous && this.sessions.get(sessionId) === previous) {
+        this.sessions.delete(sessionId);
+      }
+      await this.settlePreviousTurn(previous);
+    }
+
     async newSession(
       params: acp.NewSessionRequest,
       cx: acp.AgentContext,
@@ -100,51 +112,52 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
       params: acp.LoadSessionRequest,
       cx: acp.AgentContext,
     ): Promise<acp.LoadSessionResponse> {
-      const session = await readStoredSession(params.cwd, params.sessionId);
-      // The previous ActiveSession (same id, older in-memory storage object)
-      // may still be unwinding a hard-aborted turn that saves to state.json;
-      // let it finish before writing the freshly loaded session to disk.
-      const previous = this.sessions.get(params.sessionId);
       this.abortActiveSession(params.sessionId);
-      await this.settlePreviousTurn(previous);
-      await this.prepareResumedSession(session);
-      this.sessions.set(params.sessionId, this.makeActiveSession(session));
-      void this.logRuntime(params.cwd, 'info', 'session loaded', {
-        sessionId: session.sessionId,
-      });
-
-      const replayEvents = coalesceReplayEvents(prepareReplayEvents(session.events, session.cwd));
-      for (const update of replayEvents) {
-        await cx.notify(acp.methods.client.session.update, {
+      return this.withSessionOperation(params.sessionId, async () => {
+        // The previous queued operation has fully settled before this read. The
+        // explicit retirement also covers legacy/directly injected active turns.
+        await this.retireActiveSession(params.sessionId);
+        const session = await readStoredSession(params.cwd, params.sessionId);
+        await this.prepareResumedSession(session);
+        this.sessions.set(params.sessionId, this.makeActiveSession(session));
+        void this.logRuntime(params.cwd, 'info', 'session loaded', {
           sessionId: session.sessionId,
-          update,
         });
-      }
-      this.scheduleAvailableCommands(session.sessionId, cx);
 
-      return {
-        configOptions: await this.getConfigOptions(session),
-      };
+        const replayEvents = coalesceReplayEvents(prepareReplayEvents(session.events, session.cwd));
+        for (const update of replayEvents) {
+          await cx.notify(acp.methods.client.session.update, {
+            sessionId: session.sessionId,
+            update,
+          });
+        }
+        this.scheduleAvailableCommands(session.sessionId, cx);
+
+        return {
+          configOptions: await this.getConfigOptions(session),
+        };
+      });
     }
 
     async resumeSession(
       params: acp.ResumeSessionRequest,
       cx: acp.AgentContext,
     ): Promise<acp.ResumeSessionResponse> {
-      const session = await readStoredSession(params.cwd, params.sessionId);
-      // See loadSession: wait out the aborted turn before rewriting disk state.
-      const previous = this.sessions.get(params.sessionId);
       this.abortActiveSession(params.sessionId);
-      await this.settlePreviousTurn(previous);
-      await this.prepareResumedSession(session);
-      this.sessions.set(params.sessionId, this.makeActiveSession(session));
-      void this.logRuntime(params.cwd, 'info', 'session resumed', {
-        sessionId: session.sessionId,
+      return this.withSessionOperation(params.sessionId, async () => {
+        // See loadSession: the old operation's final save precedes this read.
+        await this.retireActiveSession(params.sessionId);
+        const session = await readStoredSession(params.cwd, params.sessionId);
+        await this.prepareResumedSession(session);
+        this.sessions.set(params.sessionId, this.makeActiveSession(session));
+        void this.logRuntime(params.cwd, 'info', 'session resumed', {
+          sessionId: session.sessionId,
+        });
+        this.scheduleAvailableCommands(session.sessionId, cx);
+        return {
+          configOptions: await this.getConfigOptions(session),
+        };
       });
-      this.scheduleAvailableCommands(session.sessionId, cx);
-      return {
-        configOptions: await this.getConfigOptions(session),
-      };
     }
 
     async listSessions(params: acp.ListSessionsRequest): Promise<acp.ListSessionsResponse> {
@@ -153,32 +166,42 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
     }
 
     async deleteSession(params: acp.DeleteSessionRequest): Promise<acp.DeleteSessionResponse> {
-      const active = this.sessions.get(params.sessionId);
-      const cwd = active?.session.cwd ?? (await findSessionCwd(params.sessionId));
-      if (!cwd) {
-        throw new Error(`Session ${params.sessionId} not found`);
-      }
       this.abortActiveSession(params.sessionId);
-      // The aborted turn would otherwise recreate state.json on its final save
-      // after we deleted it.
-      await this.settlePreviousTurn(active);
-      this.sessions.delete(params.sessionId);
-      await deleteStoredSession(cwd, params.sessionId);
-      void this.logRuntime(cwd, 'info', 'session deleted', {
-        sessionId: params.sessionId,
+      return this.withSessionOperation(params.sessionId, async () => {
+        const active = this.sessions.get(params.sessionId);
+        const cwd = active?.session.cwd ?? (await findSessionCwd(params.sessionId));
+        if (!cwd) {
+          throw new Error(`Session ${params.sessionId} not found`);
+        }
+        // The queued prompt has fully settled, so deletion cannot be followed
+        // by a late final save that recreates state.json.
+        await this.retireActiveSession(params.sessionId);
+        await deleteStoredSession(cwd, params.sessionId);
+        void this.logRuntime(cwd, 'info', 'session deleted', {
+          sessionId: params.sessionId,
+        });
+        return {};
       });
-      return {};
     }
 
     async closeSession(params: acp.CloseSessionRequest): Promise<acp.CloseSessionResponse> {
-      const previous = this.sessions.get(params.sessionId);
       this.abortActiveSession(params.sessionId);
-      await this.settlePreviousTurn(previous);
-      this.sessions.delete(params.sessionId);
-      return {};
+      return this.withSessionOperation(params.sessionId, async () => {
+        await this.retireActiveSession(params.sessionId);
+        return {};
+      });
     }
 
     async setSessionConfigOption(
+      params: acp.SetSessionConfigOptionRequest,
+    ): Promise<acp.SetSessionConfigOptionResponse> {
+      validateSessionId(params.sessionId);
+      return this.withSessionOperation(params.sessionId, () =>
+        this.setSessionConfigOptionSerialized(params),
+      );
+    }
+
+    private async setSessionConfigOptionSerialized(
       params: acp.SetSessionConfigOptionRequest,
     ): Promise<acp.SetSessionConfigOptionResponse> {
       const active = this.sessions.get(params.sessionId);

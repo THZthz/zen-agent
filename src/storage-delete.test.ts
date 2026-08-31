@@ -22,6 +22,30 @@ describe('deleteStoredSession', () => {
     created.length = 0;
   });
 
+  it('rejects traversal ids without deleting the project or another session', async () => {
+    const indexDirBefore = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = join(cwd, 'xdg');
+    try {
+      const safe = await createStoredSession(cwd);
+      created.push(safe.cwd);
+      const marker = join(cwd, 'project-marker.txt');
+      writeFileSync(marker, 'keep');
+
+      for (const sessionId of ['..', '../outside', 'nested/session', 'nested\\session']) {
+        await expect(deleteStoredSession(cwd, sessionId)).rejects.toThrow(/Invalid session ID/);
+      }
+
+      expect(existsSync(marker)).toBe(true);
+      expect(existsSync(join(cwd, '.sessions', safe.sessionId, 'state.json'))).toBe(true);
+      expect((await listStoredSessions(cwd)).map((entry) => entry.sessionId)).toContain(
+        safe.sessionId,
+      );
+    } finally {
+      if (indexDirBefore === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = indexDirBefore;
+    }
+  });
+
   it('removes the whole session tree, not just state.json', async () => {
     const indexDirBefore = process.env.XDG_DATA_HOME;
     process.env.XDG_DATA_HOME = join(cwd, 'xdg');

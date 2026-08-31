@@ -23,8 +23,8 @@
 set -euo pipefail
 
 NODE_BIN="${ZEN_AGENT_NODE_BIN:-$(command -v node)}"
-# ".dist" should be separated from "dist" since we may change its content while developing this library.
-AGENT_MAIN="${ZEN_AGENT_MAIN:-/home/amias/projects/zen-agent/.dist/index.js}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_MAIN="${ZEN_AGENT_MAIN:-${SCRIPT_DIR}/../dist/index.js}"
 
 exec bwrap \
   --die-with-parent \

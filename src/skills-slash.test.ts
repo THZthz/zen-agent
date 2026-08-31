@@ -201,6 +201,43 @@ describe('skill slash commands', () => {
     }
   });
 
+  it('keeps skill turns cancellable until the slash command finishes', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-skills-slash-project-'));
+    try {
+      writeSkill(cwd, 'grill-me', GRILL_ME);
+      const { agent, cx, sessionId } = await setupAgent(cwd);
+      let resolveStep!: (result: LlmStepResult) => void;
+      mockedRunLlmStep.mockReturnValueOnce(
+        new Promise<LlmStepResult>((resolve) => {
+          resolveStep = resolve;
+        }),
+      );
+
+      const prompt = agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: '/grill-me my plan' }] },
+        cx,
+      );
+      await vi.waitFor(() => expect(mockedRunLlmStep).toHaveBeenCalledTimes(1));
+
+      const active = (
+        agent as unknown as {
+          sessions: Map<
+            string,
+            { abortController: AbortController | null; gracefulCancel: boolean }
+          >;
+        }
+      ).sessions.get(sessionId)!;
+      expect(active.abortController).not.toBeNull();
+      agent.cancel({ sessionId });
+      expect(active.gracefulCancel).toBe(true);
+
+      resolveStep(answerStep('cancelled cleanly'));
+      await expect(prompt).resolves.toMatchObject({ stopReason: 'cancelled' });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('advertises installed skills in available_commands_update', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-skills-slash-project-'));
     try {

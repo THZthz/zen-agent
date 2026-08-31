@@ -4,6 +4,7 @@ import {
   writeSession,
   clientLogPath,
   sessionLlmLogPath,
+  validateSessionId,
   type ProviderId,
   type StoredSession,
 } from './storage.js';
@@ -64,6 +65,7 @@ export interface ActiveSession {
  */
 export class ZenAgentCore {
   protected sessions = new Map<string, ActiveSession>();
+  private readonly sessionOperationTails = new Map<string, Promise<void>>();
   protected clientCapabilities: acp.ClientCapabilities = {};
   /**
    * Most recent balance snapshot per PROVIDER (CNY for DeepSeek, USD for
@@ -128,6 +130,34 @@ export class ZenAgentCore {
       turnPromise: null,
       mediaModalitiesUnknownLogged: false,
     };
+  }
+
+  /**
+   * Serialize every stateful operation for one session. The tail is installed
+   * synchronously before the first await, closing the check-then-await race that
+   * allowed simultaneous prompts and lifecycle operations to share one history.
+   */
+  protected async withSessionOperation<T>(
+    sessionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    validateSessionId(sessionId);
+    const previous = this.sessionOperationTails.get(sessionId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.sessionOperationTails.set(sessionId, gate);
+
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.sessionOperationTails.get(sessionId) === gate) {
+        this.sessionOperationTails.delete(sessionId);
+      }
+    }
   }
 
   /**

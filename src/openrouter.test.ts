@@ -654,7 +654,7 @@ describe('getOpenRouterReasoning', () => {
       await writeFile(
         join(dir, '.sessions', 'client', 'models.openrouter.json'),
         JSON.stringify({
-          version: 3,
+          version: 4,
           fetchedAt: new Date().toISOString(),
           baseUrl: 'https://openrouter.ai/api/v1',
           models: [
@@ -730,7 +730,7 @@ describe('getOpenRouterModelInfo', () => {
                 {
                   id: 'vendor/model',
                   context_length: 123456,
-                  pricing: { prompt: '0.5', completion: '1.5' },
+                  pricing: { prompt: '0.0000005', completion: '0.0000015' },
                 },
               ],
             }),
@@ -768,7 +768,7 @@ describe('getOpenRouterModelInfo', () => {
                 {
                   id: 'vendor/model',
                   context_length: 123456,
-                  pricing: { prompt: '0.5', completion: '1.5' },
+                  pricing: { prompt: '0.0000005', completion: '0.0000015' },
                 },
               ],
             }),
@@ -825,7 +825,7 @@ describe('getOpenRouterModelOptions', () => {
                   id: 'vendor/zeta',
                   name: 'Zeta',
                   context_length: 1000,
-                  pricing: { prompt: '1', completion: '2' },
+                  pricing: { prompt: '0.000001', completion: '0.000002' },
                   supported_parameters: ['tools'],
                   reasoning: {
                     supported_efforts: ['max', 'xhigh', 'high', 'medium', 'low'],
@@ -836,13 +836,13 @@ describe('getOpenRouterModelOptions', () => {
                   id: 'vendor/alpha',
                   name: 'Alpha',
                   context_length: 200000,
-                  pricing: { prompt: '0.5', completion: '1.5' },
+                  pricing: { prompt: '0.0000005', completion: '0.0000015' },
                 },
                 {
                   id: 'vendor/no-tools',
                   name: 'No Tools',
                   context_length: 1000,
-                  pricing: { prompt: '1', completion: '2' },
+                  pricing: { prompt: '0.000001', completion: '0.000002' },
                   supported_parameters: ['reasoning'],
                 },
                 {
@@ -883,15 +883,16 @@ describe('getOpenRouterModelOptions', () => {
     const raw = await readFile(join(dir, '.sessions', 'client', 'models.openrouter.json'), 'utf8');
     const file = JSON.parse(raw) as {
       version: number;
-      models: Array<{ id: string }>;
+      models: Array<{ id: string; inputPerM: number; outputPerM: number }>;
     };
-    expect(file.version).toBe(3);
+    expect(file.version).toBe(4);
     expect(file.models.map((m) => m.id)).toEqual([
       'vendor/zeta',
       'vendor/alpha',
       'vendor/no-tools',
       'openrouter/free',
     ]);
+    expect(file.models[0]).toMatchObject({ inputPerM: 1, outputPerM: 2 });
   });
 
   it('falls back to the persisted file when the live fetch fails', async () => {
@@ -899,7 +900,7 @@ describe('getOpenRouterModelOptions', () => {
     await writeFile(
       join(dir, '.sessions', 'client', 'models.openrouter.json'),
       JSON.stringify({
-        version: 3,
+        version: 4,
         fetchedAt: new Date().toISOString(),
         baseUrl: 'https://openrouter.ai/api/v1',
         models: [
