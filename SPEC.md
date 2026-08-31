@@ -261,7 +261,7 @@ zen-agent/
 `npm test` (vitest):
 
 - `deepseek.test.ts` / `openrouter.test.ts` — provider SSE behavior through the registry facade against local HTTP servers: live reasoning streaming (timing-sensitive), streaming tool calls, wire format, usage parsing, effort allowlist mapping, routing/headers/session_id, balance endpoints.
-- `provider-registry.test.ts` / `provider-pi.test.ts` / `provider-catalog.test.ts` — definitions + user-provider parsing, pi collection + effort maps + model options, generic `/models` discovery + parse + persistence.
+- `provider.test.ts` / `provider-pi.test.ts` / `provider-catalog.test.ts` — facade dispatch, definitions + user-provider parsing, pi collection + effort maps + model options, generic `/models` discovery + parse + persistence.
 - `agent.test.ts` / `agent.graceful.test.ts` — session lifecycle, config options + locking, graceful cancel, stats lines (with `runLlmStep` mocked).
 - `skills.test.ts` / `skills-slash.test.ts` / `sandbox.test.ts` / `tools.test.ts` / `system-prompt.test.ts` / `tool-execution.test.ts` — skills, sandbox toggling, tools toggling + refusal, environment messages, terminal artifacts.
 - `media.test.ts` / `prompt-content.test.ts` / `user-parts.test.ts` / `media-flow.test.ts` - media path resolution, prompt-block intake, OpenAI wire mapping (image_url data URIs, input_audio), and the end-to-end read_media turn flow (provider mocked).
