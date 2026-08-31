@@ -230,7 +230,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
       if (indexed.has(entry)) continue;
       try {
         validateSessionId(entry);
-        const parsed = await readStoredSession(cwd, entry);
+        const parsed = (await readStoredSession(cwd, entry)).session;
         sessions.push({
           sessionId: parsed.sessionId,
           cwd: parsed.cwd,
@@ -249,7 +249,7 @@ export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
   const sessions: SessionInfo[] = [];
   for (const [sessionId, entry] of Object.entries(index)) {
     try {
-      const parsed = await readStoredSession(entry.cwd, sessionId);
+      const parsed = (await readStoredSession(entry.cwd, sessionId)).session;
       sessions.push({
         sessionId: parsed.sessionId,
         cwd: parsed.cwd,

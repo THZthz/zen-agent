@@ -203,7 +203,7 @@ describe('graceful cancel in runTurn', () => {
 
       await expect(prompt).resolves.toMatchObject({ stopReason: 'cancelled' });
       await close;
-      const stored = await readStoredSession(cwd, sessionId);
+      const stored = (await readStoredSession(cwd, sessionId)).session;
       const assistant = stored.llmMessages.find((message) => message.role === 'assistant');
       const tool = stored.llmMessages.find((message) => message.role === 'tool');
       expect(assistant?.content.some((part) => part.type === 'tool-call')).toBe(true);

@@ -117,11 +117,12 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
         // The previous queued operation has fully settled before this read. The
         // explicit retirement also covers legacy/directly injected active turns.
         await this.retireActiveSession(params.sessionId);
-        const session = await readStoredSession(params.cwd, params.sessionId);
+        const { session, droppedEntries } = await readStoredSession(params.cwd, params.sessionId);
         await this.prepareResumedSession(session);
         this.sessions.set(params.sessionId, this.makeActiveSession(session));
         void this.logRuntime(params.cwd, 'info', 'session loaded', {
           sessionId: session.sessionId,
+          droppedEntries,
         });
 
         const replayEvents = coalesceReplayEvents(prepareReplayEvents(session.events, session.cwd));
@@ -147,11 +148,12 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
       return this.withSessionOperation(params.sessionId, async () => {
         // See loadSession: the old operation's final save precedes this read.
         await this.retireActiveSession(params.sessionId);
-        const session = await readStoredSession(params.cwd, params.sessionId);
+        const { session, droppedEntries } = await readStoredSession(params.cwd, params.sessionId);
         await this.prepareResumedSession(session);
         this.sessions.set(params.sessionId, this.makeActiveSession(session));
         void this.logRuntime(params.cwd, 'info', 'session resumed', {
           sessionId: session.sessionId,
+          droppedEntries,
         });
         this.scheduleAvailableCommands(session.sessionId, cx);
         return {

@@ -126,7 +126,7 @@ describe('/tools slash command', () => {
 
     // The command handler must finish before the prompt's final save, otherwise
     // its response disappears from replay after a restart.
-    const stored = await readStoredSession(cwd, sessionId);
+    const stored = (await readStoredSession(cwd, sessionId)).session;
     expect(JSON.stringify(stored.events)).toContain('Tools (bash, read_media): ON');
 
     recordStep(textStep('ok'));

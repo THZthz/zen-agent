@@ -361,13 +361,186 @@ const THINKING_EFFORTS: readonly ThinkingEffort[] = [
   'max',
 ];
 
+/** What a pure element-level normalizer returns: the kept items plus how many
+ * structurally unusable elements were dropped. */
+export interface NormalizedItems<T> {
+  items: T[];
+  dropped: number;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Element-level pass over the persisted `events` array: an event survives
+ * only when it is an object with a non-empty `sessionUpdate` discriminator —
+ * the one field every downstream consumer dereferences (replay, ACP
+ * dispatch). Everything else inside a kept event is passed through untouched:
+ * validation stays syntactic, and unknown (e.g. newer) update kinds keep
+ * loading so a session written by a newer agent version is not destroyed.
+ */
+export function normalizeEvents(raw: unknown): NormalizedItems<SessionUpdate> {
+  if (!Array.isArray(raw)) return { items: [], dropped: 0 };
+  const items: SessionUpdate[] = [];
+  let dropped = 0;
+  for (const element of raw) {
+    const kind = isPlainObject(element) ? element.sessionUpdate : undefined;
+    if (typeof kind === 'string' && kind.length > 0) {
+      items.push(element as SessionUpdate);
+    } else {
+      dropped += 1;
+    }
+  }
+  return { items, dropped };
+}
+
+function isValidUserPart(part: unknown): boolean {
+  if (!isPlainObject(part)) return false;
+  if (part.type === 'text') return typeof part.text === 'string';
+  if (part.type === 'image' || part.type === 'audio') {
+    return typeof part.mimeType === 'string' && typeof part.data === 'string';
+  }
+  return false;
+}
+
+function isValidAssistantPart(part: unknown): boolean {
+  if (!isPlainObject(part)) return false;
+  if (part.type === 'text' || part.type === 'reasoning') {
+    return typeof part.text === 'string';
+  }
+  if (part.type === 'tool-call') return typeof part.toolCallId === 'string';
+  return false;
+}
+
+/** Tool messages are only useful as complete tool-result arrays; a single
+ * malformed part makes the whole message unusable for the LLM request. */
+function isValidToolContent(content: unknown): boolean {
+  return (
+    Array.isArray(content) &&
+    content.every(
+      (part) =>
+        isPlainObject(part) && part.type === 'tool-result' && typeof part.toolCallId === 'string',
+    )
+  );
+}
+
+/** Keep a user message when it carries usable content (string, or a part
+ * array with at least one valid part, invalid parts filtered). Valid messages
+ * are returned unchanged (same reference) so healthy sessions round-trip
+ * byte-identically; only messages that need repair are rebuilt. A non-string
+ * `name` is dropped. */
+function normalizeUserMessage(element: Record<string, unknown>): LlmMessage | undefined {
+  const content = element.content;
+  let keptContent: string | unknown[];
+  let changed = false;
+  if (typeof content === 'string') {
+    keptContent = content;
+  } else if (Array.isArray(content)) {
+    const valid = content.filter(isValidUserPart);
+    // Nothing survived and there is no usable content left.
+    if (valid.length === 0) return undefined;
+    if (valid.length !== content.length) {
+      keptContent = valid;
+      changed = true;
+    } else {
+      keptContent = content;
+    }
+  } else {
+    return undefined;
+  }
+  if (element.name !== undefined && typeof element.name !== 'string') {
+    changed = true;
+  }
+  if (!changed) return element as unknown as LlmMessage;
+  const cleaned: Record<string, unknown> = { ...element, content: keptContent };
+  if (cleaned.name !== undefined && typeof cleaned.name !== 'string') {
+    delete cleaned.name;
+  }
+  return cleaned as unknown as LlmMessage;
+}
+
+/**
+ * Element-level pass over the persisted `llmMessages` array. Messages whose
+ * role is missing/unknown, whose content is structurally unusable, or whose
+ * parts are all invalid are dropped; assistant messages with a mix of valid
+ * and invalid parts keep the valid parts. Dropped assistant tool-calls can
+ * orphan tool messages — tolerated at request time by healMessages.
+ */
+export function normalizeLlmMessages(raw: unknown): NormalizedItems<LlmMessage> {
+  if (!Array.isArray(raw)) return { items: [], dropped: 0 };
+  const items: LlmMessage[] = [];
+  let dropped = 0;
+  for (const element of raw) {
+    if (!isPlainObject(element)) {
+      dropped += 1;
+      continue;
+    }
+    if (element.role === 'user') {
+      const kept = normalizeUserMessage(element);
+      if (kept === undefined) dropped += 1;
+      else items.push(kept);
+      continue;
+    }
+    if (element.role === 'assistant') {
+      const content = element.content;
+      if (Array.isArray(content)) {
+        const valid = content.filter(isValidAssistantPart);
+        if (valid.length === 0) {
+          dropped += 1;
+        } else if (valid.length === content.length) {
+          items.push(element as unknown as LlmMessage);
+        } else {
+          items.push({ ...element, content: valid } as LlmMessage);
+        }
+      } else {
+        dropped += 1;
+      }
+      continue;
+    }
+    if (element.role === 'tool') {
+      if (isValidToolContent(element.content)) {
+        items.push(element as unknown as LlmMessage);
+      } else {
+        dropped += 1;
+      }
+      continue;
+    }
+    dropped += 1;
+  }
+  return { items, dropped };
+}
+
+/** Shared element pass for `turnStats` / `cacheDiagnostics`: drop anything
+ * that is not a plain object. Field-level shape stays the owner's concern. */
+function normalizeObjectEntries<T>(raw: unknown): NormalizedItems<T> {
+  if (!Array.isArray(raw)) return { items: [], dropped: 0 };
+  const items: T[] = [];
+  let dropped = 0;
+  for (const element of raw) {
+    if (isPlainObject(element)) items.push(element as T);
+    else dropped += 1;
+  }
+  return { items, dropped };
+}
+
 /**
  * Validate a parsed state.json and backfill fields missing from older
  * sessions or partially damaged files, so one bad field degrades to its
  * default instead of a TypeError deep inside the agent. Unrecoverable shapes
  * (wrong session id / cwd / not an object) throw a clean, actionable error.
+ *
+ * Collection fields additionally get an element-level pass (see
+ * normalizeEvents / normalizeLlmMessages): structurally unusable elements are
+ * dropped instead of failing the whole load — a failed load blocks resume
+ * entirely, which is worse than losing one malformed entry. The dropped
+ * count is returned so the caller can surface it in the runtime log.
  */
-function normalizeStoredSession(parsed: unknown, cwd: string, sessionId: string): StoredSession {
+function normalizeStoredSession(
+  parsed: unknown,
+  cwd: string,
+  sessionId: string,
+): { session: StoredSession; droppedEntries: number } {
   const corrupt = (detail: string): Error =>
     new Error(`Session file for ${sessionId} is corrupted: ${detail}`);
 
@@ -434,26 +607,36 @@ function normalizeStoredSession(parsed: unknown, cwd: string, sessionId: string)
   }
 
   const nowIso = new Date().toISOString();
+  const events = normalizeEvents(raw.events);
+  const llmMessages = normalizeLlmMessages(raw.llmMessages);
+  const turnStats = normalizeObjectEntries<TurnStats>(raw.turnStats);
+  const cacheDiagnostics = normalizeObjectEntries<CacheDiagnosticEntry>(raw.cacheDiagnostics);
   return {
-    sessionId,
-    cwd,
-    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowIso,
-    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso,
-    title: typeof raw.title === 'string' ? raw.title : null,
-    events: Array.isArray(raw.events) ? (raw.events as StoredSession['events']) : [],
-    llmMessages: Array.isArray(raw.llmMessages)
-      ? (raw.llmMessages as StoredSession['llmMessages'])
-      : [],
-    config,
-    usage,
-    turnStats: Array.isArray(raw.turnStats) ? (raw.turnStats as StoredSession['turnStats']) : [],
-    cacheDiagnostics: Array.isArray(raw.cacheDiagnostics)
-      ? (raw.cacheDiagnostics as StoredSession['cacheDiagnostics'])
-      : [],
+    session: {
+      sessionId,
+      cwd,
+      createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowIso,
+      updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso,
+      title: typeof raw.title === 'string' ? raw.title : null,
+      events: events.items,
+      llmMessages: llmMessages.items,
+      config,
+      usage,
+      turnStats: turnStats.items,
+      cacheDiagnostics: cacheDiagnostics.items,
+    },
+    droppedEntries:
+      events.dropped + llmMessages.dropped + turnStats.dropped + cacheDiagnostics.dropped,
   };
 }
 
-export async function readStoredSession(cwd: string, sessionId: string): Promise<StoredSession> {
+/** Load and validate a session; `droppedEntries` counts persisted elements
+ * (events, messages, stats, diagnostics) that were dropped as structurally
+ * unusable, so the caller can make the data loss visible in the runtime log. */
+export async function readStoredSession(
+  cwd: string,
+  sessionId: string,
+): Promise<{ session: StoredSession; droppedEntries: number }> {
   // Keep validation outside the filesystem error handler so an unsafe id is
   // reported as invalid rather than being disguised as a missing file.
   validateSessionId(sessionId);
