@@ -1,6 +1,7 @@
 import { type GenericPricing, type LlmStepOptions, type LlmStepResult } from './llm-client.js';
 import { getPiModel, getSupportedThinkingEfforts, ensureProviderRefreshed } from './provider-pi.js';
 import {
+  mapModelThinkingEffort,
   requireProviderDefinition,
   resolveApiKey,
   type BalanceSnapshot,
@@ -40,7 +41,8 @@ export async function runLlmStep(
   // Discovery providers load their catalog once per process (best-effort,
   // 5s timeout); static providers skip this entirely.
   await ensureProviderRefreshed(provider);
-  const model = getPiModel(provider, options.model ?? def.defaultModel);
+  const modelId = options.model ?? def.defaultModel;
+  const model = getPiModel(provider, modelId);
   return runChatCompletions({
     model,
     apiKey: resolveApiKey(def),
@@ -52,7 +54,13 @@ export async function runLlmStep(
     onTextDelta: options.onTextDelta,
     onReasoningDelta: options.onReasoningDelta,
     logRuntime: options.logRuntime,
-    thinkingEffort: options.thinkingEffort,
+    // A declared per-model thinkingEfforts allowlist remaps unsupported
+    // session values to the nearest accepted one (off → lowest on
+    // mandatory-reasoning models); passthrough otherwise.
+    thinkingEffort: mapModelThinkingEffort(
+      options.thinkingEffort ?? 'off',
+      def.staticModels.find((opt) => opt.value === modelId)?.thinkingEfforts,
+    ),
     extraBody: buildExtraBody(def, options.sessionId),
     sessionId: def.sendSessionId ? options.sessionId : undefined,
   });
@@ -151,12 +159,12 @@ export async function resolveModelModalities(
   return (await getModelModalities(provider, model)) ?? { image: false, audio: false };
 }
 
-/** Thinking-effort values the session selector offers (full ladder for all). */
+/** Thinking-effort values the session selector offers for a provider/model. */
 export async function getThinkingEfforts(
-  _provider: ProviderId,
-  _model: ModelId,
+  provider: ProviderId,
+  model: ModelId,
 ): Promise<readonly ThinkingEffort[]> {
-  return getSupportedThinkingEfforts();
+  return getSupportedThinkingEfforts(provider, model);
 }
 
 /** Balance/credit snapshot for the active provider (best-effort). */

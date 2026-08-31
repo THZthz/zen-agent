@@ -120,7 +120,7 @@ describe('getContextWindowTokens', () => {
 });
 
 describe('getThinkingEfforts', () => {
-  it('offers the full ladder for user-defined providers', async () => {
+  it('offers the full ladder when the model declares none', async () => {
     process.env.ZEN_AGENT_PROVIDERS = STATIC_PROVIDER;
     expect(await getThinkingEfforts('groq', 'llama-3.3-70b')).toEqual([
       'off',
@@ -131,6 +131,23 @@ describe('getThinkingEfforts', () => {
       'xhigh',
       'max',
     ]);
+  });
+
+  it('offers the declared per-model thinkingEfforts in declared order', async () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'zai',
+        baseUrl: 'http://x',
+        defaultModel: 'glm-5.3-flash',
+        models: [
+          { id: 'glm-5.3-flash', thinkingEfforts: ['off', 'low', 'high', 'max'] },
+          { id: 'glm-5.3', thinkingEfforts: ['low', 'high', 'max'] },
+        ],
+      },
+    ]);
+    expect(await getThinkingEfforts('zai', 'glm-5.3-flash')).toEqual(['off', 'low', 'high', 'max']);
+    // No off: mandatory reasoning.
+    expect(await getThinkingEfforts('zai', 'glm-5.3')).toEqual(['low', 'high', 'max']);
   });
 });
 
@@ -154,6 +171,105 @@ describe('fetchBalanceSnapshot', () => {
       total: 0,
       details: {},
     });
+  });
+});
+
+describe('per-model thinking effort mapping', () => {
+  const EFFORT_PROVIDER = (thinkingEfforts: string[]) => ({
+    id: 'effort',
+    baseUrl: 'http://x',
+    apiKeyEnv: 'EFFORT_API_KEY',
+    defaultModel: 'm',
+    models: [{ id: 'm', thinkingEfforts }],
+  });
+
+  async function captureReasoningEffort(effort: string): Promise<string | undefined> {
+    let body: Record<string, unknown> | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            const chunk = JSON.stringify({
+              choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
+            });
+            res.end(`data: ${chunk}\n\ndata: [DONE]\n\n`);
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+    process.env.EFFORT_API_KEY = 'test';
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        ...EFFORT_PROVIDER(['off', 'low', 'high', 'max']),
+        baseUrl: testServerBaseUrl(server, port),
+      },
+    ]);
+    await runLlmStep('effort', {
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: effort as never,
+    });
+    return (body?.reasoning_effort as string | undefined) ?? undefined;
+  }
+
+  it('sends declared values unchanged and omits the field for off', async () => {
+    expect(await captureReasoningEffort('high')).toBe('high');
+    expect(await captureReasoningEffort('max')).toBe('max');
+    expect(await captureReasoningEffort('off')).toBeUndefined();
+  });
+
+  it('remaps unsupported session values to the nearest declared effort (ties up)', async () => {
+    expect(await captureReasoningEffort('minimal')).toBe('low');
+    expect(await captureReasoningEffort('medium')).toBe('high');
+    expect(await captureReasoningEffort('xhigh')).toBe('max');
+  });
+
+  it('maps off to the lowest effort on mandatory-reasoning models', async () => {
+    let body: Record<string, unknown> | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            const chunk = JSON.stringify({
+              choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
+            });
+            res.end(`data: ${chunk}\n\ndata: [DONE]\n\n`);
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+    process.env.EFFORT_API_KEY = 'test';
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'effort',
+        baseUrl: testServerBaseUrl(server, port),
+        apiKeyEnv: 'EFFORT_API_KEY',
+        defaultModel: 'm',
+        models: [{ id: 'm', thinkingEfforts: ['low', 'high', 'max'] }],
+      },
+    ]);
+    await runLlmStep('effort', {
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: 'off',
+    });
+    expect(body?.reasoning_effort).toBe('low');
   });
 });
 

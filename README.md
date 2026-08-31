@@ -182,9 +182,10 @@ There are **no built-in providers** — every provider is defined by you. The de
       {
         "id": "glm-5.3",
         "name": "GLM 5.3",
-        "description": "Text-only flagship, 1M context",
+        "description": "Text-only flagship, 1M context (mandatory reasoning)",
         "contextLength": 1048576,
-        "cost": { "inputPerM": 1.4, "outputPerM": 4.4 }
+        "cost": { "inputPerM": 1.4, "outputPerM": 4.4 },
+        "thinkingEfforts": ["low", "high", "max"]
       },
       {
         "id": "glm-5.3-flash",
@@ -192,7 +193,8 @@ There are **no built-in providers** — every provider is defined by you. The de
         "description": "Native multimodal, 1M context",
         "contextLength": 1048576,
         "cost": { "inputPerM": 0.075, "outputPerM": 0.25 },
-        "modalities": ["image"]
+        "modalities": ["image"],
+        "thinkingEfforts": ["off", "low", "high", "max"]
       }
     ]
   },
@@ -210,16 +212,22 @@ There are **no built-in providers** — every provider is defined by you. The de
 
 **Provider fields**
 
-| Field          | Required | Description                                                                                                                                                                                                                                                                |
-| -------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`           | yes      | Unique provider id used in sessions and `ZEN_AGENT_DEFAULT_PROVIDER`                                                                                                                                                                                                       |
-| `baseUrl`      | yes      | OpenAI-compatible base URL, e.g. `https://api.deepseek.com`                                                                                                                                                                                                                |
-| `name`         | no       | Display name (defaults to `id`)                                                                                                                                                                                                                                            |
-| `apiKeyEnv`    | no       | Env var holding the API key; omit for keyless local endpoints (Ollama, LM Studio)                                                                                                                                                                                          |
-| `defaultModel` | no*      | Fallback model; required when `fetchModels: true`, otherwise defaults to the first declared model                                                                                                                                                                          |
-| `currency`     | no       | Billing currency for cost reporting (default `USD`)                                                                                                                                                                                                                        |
-| `fetchModels`  | no       | `true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside (default `false`)                                                                                                                                                  |
-| `models`       | no*      | Declared model list; required when `fetchModels` is false/absent. Entries: `id` (required), `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency), `modalities` (`["image"]` / `["audio"]`; `text` implicit) |
+| Field          | Required | Description                                                                                                                                                                                                                                                                                               |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`           | yes      | Unique provider id used in sessions and `ZEN_AGENT_DEFAULT_PROVIDER`                                                                                                                                                                                                                                      |
+| `baseUrl`      | yes      | OpenAI-compatible base URL, e.g. `https://api.deepseek.com`                                                                                                                                                                                                                                               |
+| `name`         | no       | Display name (defaults to `id`)                                                                                                                                                                                                                                                                           |
+| `apiKeyEnv`    | no       | Env var holding the API key; omit for keyless local endpoints (Ollama, LM Studio)                                                                                                                                                                                                                         |
+| `defaultModel` | no*      | Fallback model; required when `fetchModels: true`, otherwise defaults to the first declared model                                                                                                                                                                                                         |
+| `currency`     | no       | Billing currency for cost reporting (default `USD`)                                                                                                                                                                                                                                                       |
+| `fetchModels`  | no       | `true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside (default `false`)                                                                                                                                                                                 |
+| `models`       | no*      | Declared model list; required when `fetchModels` is false/absent. Entries: `id` (required), `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency), `modalities` (`["image"]` / `["audio"]`; `text` implicit), `thinkingEfforts` (see below) |
+
+**Per-model `thinkingEfforts`** — restrict the session's thinking-effort selector to the listed values (in declared order) and remap anything else:
+
+- `"thinkingEfforts": ["off", "low", "high", "max"]` — the selector shows exactly these; unsupported session values (e.g. `minimal`, `medium`, `xhigh`) are sent as the nearest declared effort (ties resolve upward: `medium` → `high`, `xhigh` → `max`); `off` omits the field (provider default applies).
+- `"thinkingEfforts": ["low", "high", "max"]` (no `off`) — mandatory reasoning: selecting `off` sends the lowest declared effort (`low`).
+- Omit the field to accept the full ladder (passthrough).
 
 \* A provider must declare `models`, set `fetchModels: true`, or both — otherwise configuration fails with a clear error. Provider ids must be unique.
 

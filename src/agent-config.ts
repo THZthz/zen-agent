@@ -73,17 +73,6 @@ const THINKING_EFFORT_OPTIONS: Record<ThinkingEffort, { name: string; descriptio
   max: { name: 'Max', description: 'Use maximum reasoning effort' },
 };
 
-/** Every valid session effort value (set_config_option accepts all of them). */
-export const THINKING_EFFORT_VALUES: readonly ThinkingEffort[] = [
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-];
-
 function thinkingEffortOption(value: ThinkingEffort) {
   const meta = THINKING_EFFORT_OPTIONS[value];
   return { value, name: meta.name, description: meta.description };
@@ -107,6 +96,8 @@ export async function thinkingConfigOption(session: StoredSession) {
     options: efforts.map(thinkingEffortOption),
   };
 }
+
+export { THINKING_EFFORT_VALUES } from './provider-registry.js';
 
 export const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
   {

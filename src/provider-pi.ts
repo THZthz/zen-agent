@@ -23,6 +23,7 @@ import {
   getProviderDefinitions,
   getProviderEnvKey,
   requireProviderDefinition,
+  THINKING_EFFORT_VALUES,
   type ProviderDefinition,
   type StaticModelOption,
 } from './provider-registry.js';
@@ -295,21 +296,16 @@ export async function getModelOptions(providerId: string): Promise<ModelOption[]
   return options;
 }
 
-const FULL_EFFORT_ORDER: readonly ThinkingEffort[] = [
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-];
-
 /**
- * Thinking-effort values the selector offers. Generic OpenAI-compatible
- * providers accept the full ladder (`reasoning_effort` passthrough); `off`
- * omits the field so the provider picks its default.
+ * Thinking-effort values the session selector offers for a provider/model:
+ * the model's declared `thinkingEfforts` when present (in declared order),
+ * otherwise the full ladder.
  */
-export async function getSupportedThinkingEfforts(): Promise<readonly ThinkingEffort[]> {
-  return FULL_EFFORT_ORDER;
+export async function getSupportedThinkingEfforts(
+  providerId: string,
+  modelId: string,
+): Promise<readonly ThinkingEffort[]> {
+  const def = requireProviderDefinition(providerId);
+  const declared = def.staticModels.find((opt) => opt.value === modelId)?.thinkingEfforts;
+  return declared && declared.length > 0 ? declared : THINKING_EFFORT_VALUES;
 }

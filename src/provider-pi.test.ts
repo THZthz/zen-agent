@@ -97,6 +97,47 @@ describe('user provider parsing', () => {
     process.env.ZEN_AGENT_PROVIDERS = 'not json';
     expect(() => getProviderDefinition('anything')).toThrow(/ZEN_AGENT_PROVIDERS/);
   });
+
+  it('parses per-model thinkingEfforts (deduped, in declared order)', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'zai',
+        baseUrl: 'http://x',
+        defaultModel: 'glm-5.3-flash',
+        models: [{ id: 'glm-5.3-flash', thinkingEfforts: ['off', 'low', 'high', 'high', 'max'] }],
+      },
+    ]);
+    expect(getProviderDefinition('zai')?.staticModels[0]?.thinkingEfforts).toEqual([
+      'off',
+      'low',
+      'high',
+      'max',
+    ]);
+  });
+
+  it('rejects invalid per-model thinkingEfforts values', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'zai',
+        baseUrl: 'http://x',
+        defaultModel: 'm',
+        models: [{ id: 'm', thinkingEfforts: ['off', 'turbo'] }],
+      },
+    ]);
+    expect(() => getProviderDefinition('zai')).toThrow(/invalid value "turbo"/);
+  });
+
+  it('rejects an empty per-model thinkingEfforts array', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'zai',
+        baseUrl: 'http://x',
+        defaultModel: 'm',
+        models: [{ id: 'm', thinkingEfforts: [] }],
+      },
+    ]);
+    expect(() => getProviderDefinition('zai')).toThrow(/non-empty array/);
+  });
 });
 
 describe('getPiModel', () => {

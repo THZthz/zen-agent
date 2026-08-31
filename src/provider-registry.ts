@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { OpenAICompletionsCompat } from '@earendil-works/pi-ai';
+import type { ThinkingEffort } from './storage.js';
 
 /**
  * Provider registry: the single source of truth for which LLM providers
@@ -16,6 +17,64 @@ import type { OpenAICompletionsCompat } from '@earendil-works/pi-ai';
  * auto-discover them from GET {baseUrl}/models (declared `models` then act
  * as a static baseline that is always offered).
  */
+
+/** Every valid session thinking-effort value. */
+export const THINKING_EFFORT_VALUES: readonly ThinkingEffort[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+/**
+ * Effort ladder in ascending "strength" order, used to map a session value
+ * onto a model's declared `thinkingEfforts` allowlist (ties resolve to the
+ * higher effort, so `medium` between `low` and `high` maps to `high`).
+ */
+export const THINKING_EFFORT_ORDER: readonly ThinkingEffort[] = THINKING_EFFORT_VALUES;
+
+/**
+ * Map a session thinking effort onto a model's declared allowlist:
+ * - `effort` in the allowlist → returned unchanged (off keeps its
+ *   "omit the field" meaning).
+ * - `off` NOT in the allowlist → mandatory reasoning: return the LOWEST
+ *   allowed effort (closest to disabled).
+ * - any other value not in the allowlist → nearest allowed effort by ladder
+ *   distance, ties to the higher value.
+ * Without an allowlist the value is returned unchanged (passthrough).
+ */
+export function mapModelThinkingEffort(
+  effort: ThinkingEffort,
+  allowed: readonly ThinkingEffort[] | undefined,
+): ThinkingEffort {
+  if (!allowed || allowed.length === 0 || allowed.includes(effort)) {
+    return effort;
+  }
+  const allowedSet = new Set(allowed);
+  const position = new Map<ThinkingEffort, number>(
+    THINKING_EFFORT_ORDER.map((value, index) => [value, index]),
+  );
+  const candidates = THINKING_EFFORT_ORDER.filter((value) => allowedSet.has(value));
+  if (effort === 'off') {
+    return candidates[0]!; // lowest allowed (mandatory reasoning)
+  }
+  const requested = position.get(effort)!;
+  let best: ThinkingEffort | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  // Iterate ascending and accept equal distances (`<=`), so on a tie the
+  // later (higher) candidate wins: medium between low and high maps to high.
+  for (const candidate of candidates) {
+    const distance = Math.abs(position.get(candidate)! - requested);
+    if (distance <= bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best!;
+}
 
 /** Balance/credit snapshot for the active provider, in its billing currency. */
 export interface BalanceSnapshot {
@@ -38,6 +97,13 @@ export interface StaticModelOption {
   cost?: { inputPerM: number; outputPerM: number };
   /** Declared input modalities ("image"/"audio"); "text" is implicit. */
   modalities?: string[];
+  /**
+   * Thinking-effort values this model accepts, in selector order. `off` in
+   * the list means the field is omitted (provider default applies); `off`
+   * absent means reasoning is mandatory (it maps to the lowest allowed
+   * value). Absent = the full ladder is accepted.
+   */
+  thinkingEfforts?: readonly ThinkingEffort[];
 }
 
 /** Balance endpoint plus a parser for its JSON response. */
@@ -112,6 +178,7 @@ export interface UserProviderConfig {
         contextLength?: number;
         cost?: { inputPerM: number; outputPerM: number };
         modalities?: string[];
+        thinkingEfforts?: string[];
       }
   >;
 }
@@ -134,6 +201,32 @@ function parseModalities(value: unknown, context: string): string[] | undefined 
     throw new Error(`Provider config error (${context}): "modalities" must be an array of strings`);
   }
   return value as string[];
+}
+
+function parseThinkingEfforts(value: unknown, context: string): ThinkingEffort[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      `Provider config error (${context}): "thinkingEfforts" must be a non-empty array of strings`,
+    );
+  }
+  const efforts: ThinkingEffort[] = [];
+  for (const entry of value) {
+    if (
+      typeof entry !== 'string' ||
+      !(THINKING_EFFORT_VALUES as readonly string[]).includes(entry)
+    ) {
+      throw new Error(
+        `Provider config error (${context}): "thinkingEfforts" contains invalid value ${JSON.stringify(entry)} — allowed: ${THINKING_EFFORT_VALUES.join(', ')}`,
+      );
+    }
+    if (!efforts.includes(entry as ThinkingEffort)) {
+      efforts.push(entry as ThinkingEffort);
+    }
+  }
+  return efforts;
 }
 
 function parseUserProvider(raw: unknown, context: string): ProviderDefinition {
@@ -200,6 +293,10 @@ function parseUserProvider(raw: unknown, context: string): ProviderDefinition {
           (model as Record<string, unknown>).modalities,
           `${context}.models[${modelId}]`,
         );
+        const thinkingEfforts = parseThinkingEfforts(
+          (model as Record<string, unknown>).thinkingEfforts,
+          `${context}.models[${modelId}]`,
+        );
         staticModels.push({
           value: modelId,
           name: modelName,
@@ -207,6 +304,7 @@ function parseUserProvider(raw: unknown, context: string): ProviderDefinition {
           ...(contextLength !== undefined ? { contextLength } : {}),
           ...(cost !== undefined ? { cost } : {}),
           ...(modalities !== undefined ? { modalities } : {}),
+          ...(thinkingEfforts !== undefined ? { thinkingEfforts } : {}),
         });
       } else {
         throw new Error(

@@ -170,7 +170,7 @@ Example (`ZEN_AGENT_PROVIDERS`):
 ]
 ```
 
-- `models` declares what the provider offers; each entry may carry `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency) and `modalities` (`["image"]` / `["audio"]`; `text` implicit). This is the way to describe models the endpoint itself doesn't document.
+- `models` declares what the provider offers; each entry may carry `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency), `modalities` (`["image"]` / `["audio"]`; `text` implicit) and `thinkingEfforts` (see §6.4). This is the way to describe models the endpoint itself doesn't document.
 - `fetchModels: true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside the catalog. `defaultModel` is required in this mode.
 - A provider with neither `models` nor `fetchModels: true` is a config error. `apiKeyEnv` is optional (keyless local endpoints). Duplicate ids are rejected with clear errors.
 
@@ -184,7 +184,11 @@ Each definition becomes a pi provider via `createProvider({ id, name, baseUrl, a
 
 ### 6.4 Thinking effort
 
-Generic OpenAI-compatible providers accept the full `reasoning_effort` ladder. The session value is sent unchanged (`minimal`/`low`/`medium`/`high`/`xhigh`/`max`); `off` omits the field so the provider picks its default. The selector always offers the full ladder.
+The session `thinking_effort` maps to the OpenAI `reasoning_effort` field. A model's declared `thinkingEfforts` (per-model, in declared order) restricts the selector and remaps unsupported values; without it the full ladder is accepted passthrough:
+
+- value in the list → sent unchanged; `off` in the list omits the field (provider default applies).
+- value not in the list → nearest declared value by ladder distance (ties resolve upward: `medium` between `low` and `high` → `high`, `xhigh` → `max`).
+- `off` not in the list → mandatory reasoning: the LOWEST declared effort is sent (closest to disabled), e.g. z.ai GLM-5.3's `["low", "high", "max"]`.
 
 ### 6.5 Cost, context, modalities, balance
 
