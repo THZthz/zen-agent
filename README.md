@@ -30,9 +30,40 @@ npm run build
 ## Run
 
 ```bash
-ZEN_AGENT_PROVIDERS='[{"id":"deepseek","name":"DeepSeek","baseUrl":"https://api.deepseek.com","apiKeyEnv":"DEEPSEEK_API_KEY","defaultModel":"deepseek-v4-flash","models":[{"id":"deepseek-v4-flash","contextLength":1000000},{"id":"deepseek-v4-pro","contextLength":1000000}]}]' \
+ZEN_AGENT_PROVIDERS_FILE="$HOME/.config/zen-agent/providers.json" \
 DEEPSEEK_API_KEY=... node dist/index.js
 ```
+
+## Configuration
+
+All configuration is environment variables. The exhaustive set, as it would appear in Zed's `agent_servers[].env` (or any env-file / launcher):
+
+```json
+{
+  "XDG_DATA_HOME": "/home/you/.local/share",
+  "ZEN_AGENT_PROVIDERS_FILE": "/home/you/.config/zen-agent/providers.json",
+  "ZEN_AGENT_DEFAULT_PROVIDER": "deepseek",
+  "ZEN_AGENT_MAX_TURN_STEPS": "25",
+  "ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT": "50000",
+  "ZEN_AGENT_CHAT_TIMEOUT_MS": "6600000",
+  "ZEN_AGENT_CHAT_RPM": "0",
+  "ZEN_AGENT_MAX_MEDIA_BYTES": "10000000",
+  "ZEN_AGENT_MAX_RESOURCE_BYTES": "262144",
+  "ZEN_AGENT_SHOW_STATS": "1",
+  "ZEN_AGENT_SHOW_SKILLS_CATALOG": "0",
+  "ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS": "0",
+  "ZEN_AGENT_SANDBOX": "0",
+  "ZEN_AGENT_SANDBOX_CMD": "",
+  "ZEN_AGENT_SANDBOX_BLOCK_SHIM": "/home/you/projects/zen-agent/bin/zen-agent-sandbox-block.sh",
+  "DEEPSEEK_API_KEY": "sk-...",
+  "OPENROUTER_API_KEY": "sk-or-v1-...",
+  "ZAI_API_KEY": "zai-...",
+  "GROQ_API_KEY": "gsk_..."
+}
+```
+
+- Use `ZEN_AGENT_PROVIDERS` (inline JSON) **or** `ZEN_AGENT_PROVIDERS_FILE` (a JSON file) — not both.
+- The `*_API_KEY` variables above are the `apiKeyEnv` names referenced by the provider definitions below; any env var name works as long as the provider config points at it.
 
 ## Zed Configuration
 
@@ -51,8 +82,25 @@ Point Zed's ACP agent at the built entrypoint (`agent_servers` → type `custom`
       "command": "node",
       "args": ["/home/amias/projects/zen-agent/dist/index.js"],
       "env": {
+        "XDG_DATA_HOME": "/home/amias/.local/share",
+        "ZEN_AGENT_PROVIDERS_FILE": "/home/amias/.config/zen-agent/providers.json",
+        "ZEN_AGENT_DEFAULT_PROVIDER": "deepseek",
+        "ZEN_AGENT_MAX_TURN_STEPS": "25",
+        "ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT": "50000",
+        "ZEN_AGENT_CHAT_TIMEOUT_MS": "6600000",
+        "ZEN_AGENT_CHAT_RPM": "0",
+        "ZEN_AGENT_MAX_MEDIA_BYTES": "10000000",
+        "ZEN_AGENT_MAX_RESOURCE_BYTES": "262144",
+        "ZEN_AGENT_SHOW_STATS": "1",
+        "ZEN_AGENT_SHOW_SKILLS_CATALOG": "0",
+        "ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS": "0",
+        "ZEN_AGENT_SANDBOX": "0",
+        "ZEN_AGENT_SANDBOX_CMD": "",
+        "ZEN_AGENT_SANDBOX_BLOCK_SHIM": "/home/amias/projects/zen-agent/bin/zen-agent-sandbox-block.sh",
         "DEEPSEEK_API_KEY": "your-deepseek-api-key",
-        "ZEN_AGENT_PROVIDERS": "[{\"id\":\"deepseek\",\"name\":\"DeepSeek\",\"baseUrl\":\"https://api.deepseek.com\",\"apiKeyEnv\":\"DEEPSEEK_API_KEY\",\"defaultModel\":\"deepseek-v4-flash\",\"models\":[{\"id\":\"deepseek-v4-flash\",\"contextLength\":1000000},{\"id\":\"deepseek-v4-pro\",\"contextLength\":1000000}]}]"
+        "OPENROUTER_API_KEY": "sk-or-v1-...",
+        "ZAI_API_KEY": "zai-...",
+        "GROQ_API_KEY": "gsk_..."
       }
     }
   }
@@ -75,24 +123,105 @@ Zed shows three selectors per session (also settable via `default_config_options
 
 Provider, model, thinking effort, the `/tools` toggle and the `/prompt` system-prompt setter are **locked after the session's first message** — set them before you start the conversation (status queries stay available).
 
-### Providers
+### Providers (default `ZEN_AGENT_PROVIDERS` config)
 
-There are **no built-in providers** — every provider is defined by you via `ZEN_AGENT_PROVIDERS` (inline JSON) or `ZEN_AGENT_PROVIDERS_FILE` (JSON file). The minimal declaration is an endpoint + API key + models:
+There are **no built-in providers** — every provider is defined by you. The default configuration below is a ready-to-copy starting point: DeepSeek and OpenRouter (the former built-ins) plus Z.ai and Groq. It exercises every provider/model field. Save it as `~/.config/zen-agent/providers.json` (or inline it into `ZEN_AGENT_PROVIDERS` as a JSON-escaped string).
 
 ```json
-{
-  "env": {
-    "DEEPSEEK_API_KEY": "sk-...",
-    "ZEN_AGENT_PROVIDERS": "[{\"id\":\"deepseek\",\"name\":\"DeepSeek\",\"baseUrl\":\"https://api.deepseek.com\",\"apiKeyEnv\":\"DEEPSEEK_API_KEY\",\"defaultModel\":\"deepseek-v4-flash\",\"models\":[{\"id\":\"deepseek-v4-flash\",\"contextLength\":1000000},{\"id\":\"deepseek-v4-pro\",\"contextLength\":1000000}]}]"
+[
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "baseUrl": "https://api.deepseek.com",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "defaultModel": "deepseek-v4-flash",
+    "currency": "CNY",
+    "models": [
+      {
+        "id": "deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "description": "Fast model for everyday coding tasks",
+        "contextLength": 1000000,
+        "cost": { "inputPerM": 3, "outputPerM": 9 }
+      },
+      {
+        "id": "deepseek-v4-pro",
+        "name": "DeepSeek V4 Pro",
+        "description": "More powerful model for complex tasks",
+        "contextLength": 1000000,
+        "cost": { "inputPerM": 9, "outputPerM": 27 }
+      }
+    ]
+  },
+  {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "apiKeyEnv": "OPENROUTER_API_KEY",
+    "defaultModel": "openrouter/free",
+    "currency": "USD",
+    "fetchModels": true,
+    "models": [
+      {
+        "id": "openrouter/free",
+        "name": "OpenRouter Free",
+        "description": "OpenRouter's free-tier routing model",
+        "contextLength": 128000,
+        "cost": { "inputPerM": 0, "outputPerM": 0 }
+      }
+    ]
+  },
+  {
+    "id": "zai",
+    "name": "Z.ai",
+    "baseUrl": "https://api.z.ai/api/paas/v4",
+    "apiKeyEnv": "ZAI_API_KEY",
+    "defaultModel": "glm-5.3-flash",
+    "currency": "USD",
+    "models": [
+      {
+        "id": "glm-5.3",
+        "name": "GLM 5.3",
+        "description": "Text-only flagship, 1M context",
+        "contextLength": 1048576,
+        "cost": { "inputPerM": 1.4, "outputPerM": 4.4 }
+      },
+      {
+        "id": "glm-5.3-flash",
+        "name": "GLM 5.3 Flash",
+        "description": "Native multimodal, 1M context",
+        "contextLength": 1048576,
+        "cost": { "inputPerM": 0.075, "outputPerM": 0.25 },
+        "modalities": ["image"]
+      }
+    ]
+  },
+  {
+    "id": "groq",
+    "name": "Groq",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "apiKeyEnv": "GROQ_API_KEY",
+    "defaultModel": "llama-3.3-70b-versatile",
+    "currency": "USD",
+    "fetchModels": true
   }
-}
+]
 ```
 
-- `models` — declare the models the provider offers. Each entry can carry `name`, `description`, `contextLength`, `cost` (`{ "inputPerM": ..., "outputPerM": ... }` per 1M tokens in the provider's currency) and `modalities` (`["image"]` / `["audio"]`; `text` is implicit). This is how you tell Zen about a model the endpoint doesn't describe.
-- `fetchModels: true` — instead of (or in addition to) a declared list, auto-discover models from `GET {baseUrl}/models`; declared models are still offered alongside the catalog. `defaultModel` is required in this mode.
-- Optional fields: `name`, `currency` (default `USD`), `apiKeyEnv` (omit for keyless local endpoints like Ollama).
+**Provider fields**
 
-Provider ids must be unique. `ZEN_AGENT_DEFAULT_PROVIDER` picks the default session provider (default: the first configured provider).
+| Field          | Required | Description                                                                                                                                                                                                                                                                |
+| -------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`           | yes      | Unique provider id used in sessions and `ZEN_AGENT_DEFAULT_PROVIDER`                                                                                                                                                                                                       |
+| `baseUrl`      | yes      | OpenAI-compatible base URL, e.g. `https://api.deepseek.com`                                                                                                                                                                                                                |
+| `name`         | no       | Display name (defaults to `id`)                                                                                                                                                                                                                                            |
+| `apiKeyEnv`    | no       | Env var holding the API key; omit for keyless local endpoints (Ollama, LM Studio)                                                                                                                                                                                          |
+| `defaultModel` | no*      | Fallback model; required when `fetchModels: true`, otherwise defaults to the first declared model                                                                                                                                                                          |
+| `currency`     | no       | Billing currency for cost reporting (default `USD`)                                                                                                                                                                                                                        |
+| `fetchModels`  | no       | `true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside (default `false`)                                                                                                                                                  |
+| `models`       | no*      | Declared model list; required when `fetchModels` is false/absent. Entries: `id` (required), `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency), `modalities` (`["image"]` / `["audio"]`; `text` implicit) |
+
+\* A provider must declare `models`, set `fetchModels: true`, or both — otherwise configuration fails with a clear error. Provider ids must be unique.
 
 ### Image & Audio Input
 
@@ -128,19 +257,25 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 
 ## Environment Variables
 
-| Variable                               | Default                          | Description                                                                                       |
-| -------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `ZEN_AGENT_PROVIDERS`                  | —                                | JSON array of provider definitions (endpoint + API key env + `models` and/or `fetchModels: true`) |
-| `ZEN_AGENT_PROVIDERS_FILE`             | —                                | Path to a JSON file with the same provider array                                                  |
-| `ZEN_AGENT_DEFAULT_PROVIDER`           | first provider                   | Default provider for new sessions                                                                 |
-| `ZEN_AGENT_MAX_TURN_STEPS`             | `25`                             | Max LLM/tool rounds per user prompt                                                               |
-| `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` | `50000`                          | Max bytes of bash output sent to the model per tool call (tail kept)                              |
-| `ZEN_AGENT_SHOW_STATS`                 | `1`                              | Set `0` to hide the per-turn stats line                                                           |
-| `ZEN_AGENT_SHOW_SKILLS_CATALOG`        | off                              | Inject the skills catalog into the environment message                                            |
-| `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` | `0` (wait forever)               | Hard-abort escape hatch for pending cancels                                                       |
-| `ZEN_AGENT_SANDBOX`                    | —                                | `1` = always sandbox bash tool calls                                                              |
-| `ZEN_AGENT_SANDBOX_CMD`                | default policy                   | Override the bwrap command for bash tool calls                                                    |
-| `ZEN_AGENT_SANDBOX_BLOCK_SHIM`         | `bin/zen-agent-sandbox-block.sh` | Override the shim shadowing `rm`/`grep`/`find`                                                    |
+| Variable                               | Default                          | Description                                                                                                                      |
+| -------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `ZEN_AGENT_PROVIDERS`                  | —                                | JSON array of provider definitions (endpoint + API key env + `models` and/or `fetchModels: true`)                                |
+| `ZEN_AGENT_PROVIDERS_FILE`             | —                                | Path to a JSON file with the same provider array (alternative to `ZEN_AGENT_PROVIDERS`)                                          |
+| `ZEN_AGENT_DEFAULT_PROVIDER`           | first provider                   | Default provider for new sessions                                                                                                |
+| `XDG_DATA_HOME`                        | `~/.local/share`                 | Global data dir: model catalogs + session index under `zen-agent/`                                                               |
+| `ZEN_AGENT_MAX_TURN_STEPS`             | `25`                             | Max LLM/tool rounds per user prompt                                                                                              |
+| `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` | `50000`                          | Max bytes of bash output sent to the model per tool call (tail kept)                                                             |
+| `ZEN_AGENT_CHAT_TIMEOUT_MS`            | `6600000` (6.6 min)              | Hard timeout for a single LLM chat request                                                                                       |
+| `ZEN_AGENT_CHAT_RPM`                   | `0` (disabled)                   | Client-side chat request rate limit in requests/minute                                                                           |
+| `ZEN_AGENT_MAX_MEDIA_BYTES`            | `10000000` (10 MB)               | Max decoded bytes of an attached image/audio block (larger is omitted with a note)                                               |
+| `ZEN_AGENT_MAX_RESOURCE_BYTES`         | `262144` (256 KB)                | Max bytes of a resource-link file sent to the model (larger is truncated)                                                        |
+| `ZEN_AGENT_SHOW_STATS`                 | `1`                              | Set `0` to hide the per-turn stats line                                                                                          |
+| `ZEN_AGENT_SHOW_SKILLS_CATALOG`        | off                              | Inject the skills catalog into the environment message                                                                           |
+| `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS` | `0` (wait forever)               | Hard-abort escape hatch for pending cancels                                                                                      |
+| `ZEN_AGENT_SANDBOX`                    | —                                | `1` = always sandbox bash tool calls                                                                                             |
+| `ZEN_AGENT_SANDBOX_CMD`                | default policy                   | Override the bwrap command for bash tool calls                                                                                   |
+| `ZEN_AGENT_SANDBOX_BLOCK_SHIM`         | `bin/zen-agent-sandbox-block.sh` | Override the shim shadowing `rm`/`grep`/`find`                                                                                   |
+| `<provider apiKeyEnv>`                 | —                                | Any env var referenced by a provider's `apiKeyEnv`, e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY`, `GROQ_API_KEY` |
 
 ## Displayed Info
 
