@@ -4,7 +4,7 @@
 
 Zen Agent is a TypeScript coding agent speaking **Agent Client Protocol (ACP) v1** over **stdio**, launched by Zed (or any ACP client) on WSL2/Linux. It exposes exactly one tool — an unrestricted **`bash`** — executed through the client's ACP terminal, with approval policy **never**.
 
-LLM providers are **pluggable**: DeepSeek (default) and OpenRouter are built in, and any OpenAI-compatible endpoint can be added with just a base URL + API key via `ZEN_AGENT_PROVIDERS` / `ZEN_AGENT_PROVIDERS_FILE` — models are auto-discovered from `GET {baseUrl}/models`. Providers are chosen **per session**; all of them run through pi-ai's `createProvider`/`Models` registry.
+LLM providers are **user-defined** — there are no built-ins. Every provider is declared in `ZEN_AGENT_PROVIDERS` / `ZEN_AGENT_PROVIDERS_FILE` with an endpoint, API key env, and either an explicit `models` list or `fetchModels: true` to auto-discover models from `GET {baseUrl}/models`. Providers are chosen **per session**; all of them run through pi-ai's `createProvider`/`Models` registry.
 
 ## 2. Protocol Surface
 
@@ -52,24 +52,24 @@ Layout under the project's `.sessions/` directory:
   client/<startupTs>_<uuid>/log.jsonl         per-process runtime diagnostic log
 ```
 
-Provider model catalogs are cached globally under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json` (pi `ModelsStore`) plus `<providerId>.catalog.json` (Zen metadata: modalities, tool support, reasoning allowlist) so offline starts restore the last-known catalog.
+Provider model catalogs are cached globally under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json` (pi `ModelsStore`) plus `<providerId>.catalog.json` (Zen metadata: modalities, tool support) so offline starts restore the last-known catalog.
 
 `state.json` holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`, `toolsEnabled`), `usage` and `turnStats` (cumulative + per-turn statistics). A global index at `$XDG_DATA_HOME/zen-agent/index.json` maps session ids to their `cwd`.
 
 - **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. With `/tools off` the environment message is omitted (chat-only session). Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
 - **`session/load`** replays persisted events through `prepareReplayEvents` (see §5.2) and returns the current `configOptions`; **`session/resume`** loads without replay.
 - On load/resume, a fresh environment _continuation_ message is appended at the **end** of the conversation (the cached prefix is untouched); for `/tools off` sessions nothing is appended or backfilled, and any environment message left in the history by an older build is stripped (chat-only invariant).
-- Sessions created before the `provider` field existed default to `deepseek`.
+- Sessions created before the `provider` field existed default to `ZEN_AGENT_DEFAULT_PROVIDER` (or the first configured provider).
 
 ### 3.1 Config Options
 
-| Option            | Values                                                                                                                                             |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`        | any registered provider id (built-ins `deepseek`, `openrouter` + `ZEN_AGENT_PROVIDERS` entries) — switching resets `model` to the provider default |
-| `model`           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter/discovery providers: live catalog (any slug via `set_config_option`)                 |
-| `thinking_effort` | DeepSeek: `off`, `low`, `high`, `max` · allowlist providers: `off` plus the model's `supported_efforts`, sorted ascending · generic: full ladder   |
+| Option            | Values                                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`        | any configured provider id (no built-ins) — switching resets `model` to the provider default                                     |
+| `model`           | declared models, or the live catalog when `fetchModels: true` (any slug via `set_config_option`)                                 |
+| `thinking_effort` | full ladder (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); `off` omits the field so the provider picks its default |
 
-The provider selector is built from the registry; new sessions default to `ZEN_AGENT_DEFAULT_PROVIDER` (default `deepseek`).
+The provider selector is built from the registry; new sessions default to `ZEN_AGENT_DEFAULT_PROVIDER` (or the first configured provider).
 
 `provider`, `model` and `thinking_effort` are **locked once the conversation contains a user message** (environment messages don't count): `session/set_config_option` then rejects the change with an error. The `/tools on|off` toggle and the `/prompt <new-prompt>` setter are locked the same way (their state is part of the cache prefix); `/tools`, `/tools status` and `/prompt` printing stay available.
 
@@ -138,60 +138,62 @@ Failures (missing file, unsupported extension, modality not accepted by the mode
 
 ## 6. LLM Providers
 
-Every provider runs through pi-ai's `createProvider`/`Models` collection and the shared OpenAI-compatible chat-completions adapter. DeepSeek and OpenRouter are built-in definitions; users add any OpenAI-compatible endpoint via `ZEN_AGENT_PROVIDERS` (inline JSON) or `ZEN_AGENT_PROVIDERS_FILE` (JSON file). When only an endpoint + API key are given (no `models` list), the model list is auto-discovered from `GET {baseUrl}/models`.
+Every provider runs through pi-ai's `createProvider`/`Models` collection and the shared OpenAI-compatible chat-completions adapter. There are **no built-in providers** — users define every provider via `ZEN_AGENT_PROVIDERS` (inline JSON) or `ZEN_AGENT_PROVIDERS_FILE` (JSON file).
 
 ### 6.1 Provider registry (`src/provider-registry.ts`)
 
-A `ProviderDefinition` is pure data: `id`, `name`, `label`, `baseUrl`, `apiKeyEnv`, `defaultModel`, `currency`, `discovery.enabled`, `staticModels`, `pinnedModelIds`, `pricing` (`catalog` / DeepSeek `table` / `fixed`), optional `balance` (path + JSON parser), `effort` (`static-map` / `allowlist` / `passthrough`), pi `compat`, `extraBody`/`extraHeaders`, and `sendSessionId`. The registry rebuilds automatically when any provider-relevant env var changes (same behavior the old OpenRouter cache had for base URL/key changes).
+A `ProviderDefinition` is pure data: `id`, `name`, `label`, `baseUrl`, `apiKeyEnv`, `defaultModel`, `currency`, `discovery.enabled` (from `fetchModels`), `staticModels` (declared models with `contextLength`/`cost`/`modalities`), `pricing.fallback`, optional `balance`, pi `compat`, and generic `extraBody`/`extraHeaders`/`sendSessionId`. The registry rebuilds automatically when provider-relevant env changes.
 
-User providers (`ZEN_AGENT_PROVIDERS`):
+Example (`ZEN_AGENT_PROVIDERS`):
 
 ```json
 [
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "baseUrl": "https://api.deepseek.com",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "defaultModel": "deepseek-v4-flash",
+    "models": [
+      { "id": "deepseek-v4-flash", "contextLength": 1000000 },
+      { "id": "deepseek-v4-pro", "contextLength": 1000000 }
+    ]
+  },
   {
     "id": "groq",
     "name": "Groq",
     "baseUrl": "https://api.groq.com/openai/v1",
     "apiKeyEnv": "GROQ_API_KEY",
     "defaultModel": "llama-3.3-70b-versatile",
-    "currency": "USD"
+    "fetchModels": true
   }
 ]
 ```
 
-`models` (static list) is optional: omitted → auto-discovery. `apiKeyEnv` optional (keyless local endpoints). Duplicate ids and collisions with built-ins are rejected with clear errors.
+- `models` declares what the provider offers; each entry may carry `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency) and `modalities` (`["image"]` / `["audio"]`; `text` implicit). This is the way to describe models the endpoint itself doesn't document.
+- `fetchModels: true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside the catalog. `defaultModel` is required in this mode.
+- A provider with neither `models` nor `fetchModels: true` is a config error. `apiKeyEnv` is optional (keyless local endpoints). Duplicate ids are rejected with clear errors.
 
 ### 6.2 pi integration (`src/provider-pi.ts`)
 
-Each definition becomes a pi provider via `createProvider({ id, name, baseUrl, auth: envApiKeyAuth(...), models: staticModels, fetchModels, api: openAICompletionsApi() })` inside one `Models` collection. `fetchModels` runs the generic `/models` discovery and converts entries to pi `Model` objects carrying `cost`, `contextWindow`, `input` modalities, `compat` and a per-model `thinkingLevelMap` (see §6.4). pi's `ModelsStore` (a per-provider file under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json`) restores the catalog on offline starts; Zen's `provider-catalog.ts` keeps a parallel `<providerId>.catalog.json` for modalities (incl. audio), tool support and reasoning allowlists. Unknown slugs on discovery providers are synthesized from the catalog (or conservative defaults), so any slug stays usable.
+Each definition becomes a pi provider via `createProvider({ id, name, baseUrl, auth: envApiKeyAuth(...), models: declaredModels, fetchModels, api: openAICompletionsApi() })` inside one `Models` collection. `fetchModels` runs the generic `/models` discovery and converts entries to pi `Model` objects carrying `cost`, `contextWindow` and `input` modalities (declared metadata wins over the catalog). pi's `ModelsStore` (a per-provider file under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json`) restores the catalog on offline starts; Zen's `provider-catalog.ts` keeps a parallel `<providerId>.catalog.json` for modalities and tool support. Unknown slugs on discovery providers are synthesized from the catalog (or conservative defaults), so any slug stays usable.
 
 ### 6.3 Shared client (`src/chat-completions.ts`)
 
-`runChatCompletions` takes the pi model (from the registry), the resolved API key, and Zen's session/step options, then consumes pi's `openai-completions` event stream. Pi owns endpoint construction, provider compatibility (auto-detected by base URL, overridden by the definition's `compat`), retry behavior, and SSE parsing; it emits live text/thinking deltas and normalized tool calls, finish reasons, and usage. Zen keeps its client-side rate limit, hard request timeout, session-specific routing fields, healing and local usage/timing rollup.
+`runChatCompletions` takes the pi model (from the registry), the resolved API key, and Zen's session/step options, then consumes pi's `openai-completions` event stream. Pi owns endpoint construction, provider compatibility (auto-detected by base URL, overridden by the definition's `compat`), retry behavior, and SSE parsing; it emits live text/thinking deltas and normalized tool calls, finish reasons, and usage. Zen keeps its client-side rate limit, hard request timeout, healing and local usage/timing rollup.
 
 ### 6.4 Thinking effort
 
-Session `thinking_effort` values (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) map to the provider wire through the pi model's `thinkingLevelMap`:
-
-- **DeepSeek** (`static-map`): `minimal`→`low`, `medium`→`high`, `xhigh`→`high`, `max`→`max`; `off` sends `thinking: {type:"disabled"}` (DeepSeek defaults thinking ON).
-- **OpenRouter** (`allowlist`): per-model `reasoning.supported_efforts` from the catalog, remapped by ladder distance (ties break upward, so `medium` on `[max, high, low]` becomes `high`); `off` sends `none` when supported, else the lowest supported effort on mandatory-reasoning models, else omits the field. Unknown models accept every gateway value. The selector shows exactly `off` plus the model's supported tiers.
-- **Generic** (`passthrough`): send the session value unchanged as `reasoning_effort` (OpenAI format).
+Generic OpenAI-compatible providers accept the full `reasoning_effort` ladder. The session value is sent unchanged (`minimal`/`low`/`medium`/`high`/`xhigh`/`max`); `off` omits the field so the provider picks its default. The selector always offers the full ladder.
 
 ### 6.5 Cost, context, modalities, balance
 
-- **Pricing**: DeepSeek uses its static CNY rate table with Beijing peak/off-peak windows (peak 09:00-12:00 and 14:00-18:00; off-peak = half; `DEEPSEEK_PRICE_*` overrides still apply). Catalog providers use discovered prices — including `pricing.input_cache_read` when the gateway breaks cache reads out (OpenRouter does) — and fall back to the provider's `fallback` (USD 1/2 per 1M) when a model has no prices. Fixed providers use constants.
-- **Curated model specs**: a small `KNOWN_MODEL_SPECS` table in `provider-catalog.ts` corrects/backfills vendor specs the catalogs omit or misreport (verified against vendor docs). Spec fields (context length, input modalities, max output tokens, reasoning allowlist) always win; prices only fill in when the upstream entry has none. Currently covers the z.ai GLM 5.3 family: 1M (1,048,576) context, GLM-5.3 text-only / GLM-5.3-Flash text+image+video, 128K max output, mandatory reasoning.
-- **Context window**: static models use their definition value (DeepSeek `DEEPSEEK_CONTEXT_WINDOW`, default 1M); discovery models use `context_length` from `/models` (default 200K).
-- **Modalities**: `getModelModalities` reads the catalog entry's `architecture.input_modalities` (image/audio) for discovery providers — `null` while unknown so the session retries instead of caching a wrong text-only answer — and is definitively text-only for static providers and static fallback models.
-- **Balance**: definitions declare an optional endpoint + parser (`/user/balance` CNY for DeepSeek, `/auth/key` USD for OpenRouter); providers without one report `isAvailable: false`. Balance verification after each turn (`verifyTurnCost`) stays best-effort.
+- **Pricing**: a model's declared `cost` wins; otherwise the discovered `/models` prices are used — including `pricing.input_cache_read` when the gateway breaks cache reads out — and models without prices fall back to the provider's `fallback` (USD 1/2 per 1M).
+- **Context window**: a model's declared `contextLength` wins; otherwise `context_length` from `/models` (default 200K).
+- **Modalities**: declared `modalities` are definitive; discovery providers additionally read the catalog entry's `architecture.input_modalities` (image/audio) — `null` while unknown so the session retries instead of caching a wrong text-only answer.
+- **Balance**: providers may declare an optional balance endpoint + parser; without one, `fetchBalanceSnapshot` reports `isAvailable: false` and balance verification is skipped (best-effort data gathering never fails the turn).
 
-### 6.6 OpenRouter extras
-
-- `OPENROUTER_PROVIDER_SORT` (default `price`; empty disables) sends the `provider: { sort }` routing block.
-- `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` send `HTTP-Referer` / `X-Title` headers.
-- The zen-agent session id is sent as `session_id` (top-level body field) so Z.AI pins the upstream context cache to the conversation.
-
-## 7. Usage & Stats
+## 7. Usage & Stats## 7. Usage & Stats
 
 - Per-step and per-turn token/cost/timing stats accumulate into `session.usage` (cumulative) and `turnStats` (per turn), persisted in `state.json`.
 - ACP `usage_update` after each LLM step: `used`/`size` (context window from the provider: DeepSeek env or OpenRouter model) and `cost: { amount, currency }` — `CNY` (DeepSeek) or `USD` (OpenRouter) — which Zed renders as the token-usage ring in the agent panel header.
@@ -232,10 +234,10 @@ zen-agent/
     storage.ts         session persistence under <cwd>/.sessions/
     llm-client.ts      shared LlmUsage/LlmStep types + cost + bash schema
     chat-completions.ts pi-ai OpenAI-completions adapter (stream loop)
-    provider-registry.ts provider definitions + built-ins + user providers
+    provider-registry.ts user-defined provider definitions + parsing
     provider-pi.ts     pi createProvider/Models collection + discovery
     provider-catalog.ts generic /models discovery + Zen metadata cache
-    provider-balances.ts balance parsers (DeepSeek/OpenRouter)
+    provider-balances.ts optional balance fetch (generic)
     provider.ts        per-session provider facade (step, pricing, balance)
     prompt-content.ts  ACP ContentBlock[] -> user-message parts (text + media)
     media.ts           read_media path resolution/validation
@@ -261,15 +263,14 @@ zen-agent/
 
 `npm test` (vitest):
 
-- `deepseek.test.ts` / `openrouter.test.ts` — provider SSE behavior through the registry facade against local HTTP servers: live reasoning streaming (timing-sensitive), streaming tool calls, wire format, usage parsing, effort allowlist mapping, routing/headers/session_id, balance endpoints.
-- `provider.test.ts` / `provider-pi.test.ts` / `provider-catalog.test.ts` — facade dispatch, definitions + user-provider parsing, pi collection + effort maps + model options, generic `/models` discovery + parse + persistence.
+- `provider.test.ts` / `provider-pi.test.ts` / `provider-catalog.test.ts` — facade dispatch, user-provider parsing (declared models, `fetchModels` validation), pi collection + model options, generic `/models` discovery + parse + persistence, SSE streaming through a user-defined provider against a local HTTP server.
 - `agent.test.ts` / `agent.graceful.test.ts` — session lifecycle, config options + locking, graceful cancel, stats lines (with `runLlmStep` mocked).
 - `skills.test.ts` / `skills-slash.test.ts` / `sandbox.test.ts` / `tools.test.ts` / `system-prompt.test.ts` / `tool-execution.test.ts` — skills, sandbox toggling, tools toggling + refusal, environment messages, terminal artifacts.
 - `media.test.ts` / `prompt-content.test.ts` / `user-parts.test.ts` / `media-flow.test.ts` - media path resolution, prompt-block intake, OpenAI wire mapping (image_url data URIs, input_audio), and the end-to-end read_media turn flow (provider mocked).
 
 ## 13. Decisions
 
-1. **Providers**: registry-driven (`provider-registry.ts`), DeepSeek default; any OpenAI-compatible endpoint is addable via `ZEN_AGENT_PROVIDERS` with auto-discovery through pi-ai's `createProvider`/`Models`. The wire/stream layer stays Zen-owned (`chat-completions.ts`) so healing, rate limiting, timeouts and usage rollup stay under test.
+1. **Providers**: no built-ins — users define every provider in `ZEN_AGENT_PROVIDERS` with declared `models` and/or `fetchModels: true` auto-discovery, all through pi-ai's `createProvider`/`Models`. The wire/stream layer stays Zen-owned (`chat-completions.ts`) so healing, rate limiting, timeouts and usage rollup stay under test. Model metadata (context, cost, modalities) is declared by the user instead of being guessed from catalogs.
 2. **ACP SDK**: official `@agentclientprotocol/sdk`.
 3. **Sessions**: persisted under `<cwd>/.sessions/` with load/list/resume/delete/close.
 4. **MCP servers**: ignored; only the `bash` tool is exposed.
