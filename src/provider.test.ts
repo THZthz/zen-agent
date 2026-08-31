@@ -273,6 +273,94 @@ describe('per-model thinking effort mapping', () => {
   });
 });
 
+describe('deepseek thinking mode', () => {
+  async function captureBody(
+    provider: Record<string, unknown>,
+    effort: string,
+  ): Promise<Record<string, unknown>> {
+    let body: Record<string, unknown> | undefined;
+    const port = await new Promise<number>((resolve) => {
+      const srv = require('node:http').createServer(
+        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            const chunk = JSON.stringify({
+              choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
+            });
+            res.end(`data: ${chunk}\n\ndata: [DONE]\n\n`);
+          });
+        },
+      );
+      server = srv;
+      srv.listen(0, () => {
+        const addr = srv.address() as import('node:net').AddressInfo;
+        resolve(addr.port);
+      });
+    });
+    process.env.DS_API_KEY = 'test';
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      { ...provider, baseUrl: testServerBaseUrl(server, port) },
+    ]);
+    await runLlmStep('ds', {
+      messages: [{ role: 'user', content: 'hi' }],
+      thinkingEffort: effort as never,
+    });
+    return body!;
+  }
+
+  const DS_PROVIDER = {
+    id: 'ds',
+    apiKeyEnv: 'DS_API_KEY',
+    defaultModel: 'deepseek-v4-flash',
+    thinkingMode: 'deepseek',
+    models: [{ id: 'deepseek-v4-flash', thinkingEfforts: ['off', 'low', 'high', 'max'] }],
+  };
+
+  it('sends thinking:{type:"disabled"} for off (no reasoning_effort)', async () => {
+    const body = await captureBody(DS_PROVIDER, 'off');
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it('sends thinking:{type:"enabled"} plus the mapped effort for non-off', async () => {
+    const body = await captureBody(DS_PROVIDER, 'high');
+    expect(body.thinking).toEqual({ type: 'enabled' });
+    expect(body.reasoning_effort).toBe('high');
+  });
+
+  it('passes efforts through unchanged when no thinkingEfforts are declared (API auto-maps)', async () => {
+    const body = await captureBody({ ...DS_PROVIDER, models: ['deepseek-v4-flash'] }, 'medium');
+    expect(body.thinking).toEqual({ type: 'enabled' });
+    expect(body.reasoning_effort).toBe('medium');
+  });
+
+  it('offers the full ladder when the model declares no thinkingEfforts', async () => {
+    process.env.DS_API_KEY = 'test';
+    const provider = {
+      id: 'ds',
+      baseUrl: 'http://x',
+      apiKeyEnv: 'DS_API_KEY',
+      defaultModel: 'm',
+      thinkingMode: 'deepseek',
+      models: ['m'],
+    };
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([provider]);
+    const { getThinkingEfforts: getEfforts } = await import('./provider.js');
+    expect(await getEfforts('ds', 'm')).toEqual([
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+});
+
 describe('user provider stream', () => {
   it('streams through the facade to the declared base URL', async () => {
     let seenModel: string | undefined;

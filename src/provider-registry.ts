@@ -135,6 +135,13 @@ export interface ProviderDefinition {
   pinnedModelIds: readonly string[];
   /** Per-1M-token price fallback used when a model declares none. */
   pricing: { fallback: { inputPerM: number; outputPerM: number } };
+  /**
+   * Thinking wire format: `openai` sends `reasoning_effort` (and `off`
+   * omits the field); `deepseek` sends `thinking: {type}` so `off` truly
+   * disables thinking. Effort values pass through unchanged — DeepSeek's
+   * API auto-maps the ladder itself.
+   */
+  thinkingMode: 'openai' | 'deepseek';
   balance?: ProviderBalance;
   /** Pi OpenAI-completions compatibility settings for this provider. */
   compat: OpenAICompletionsCompat;
@@ -158,6 +165,13 @@ export interface UserProviderConfig {
   defaultModel?: string;
   /** Billing currency, default "USD". */
   currency?: string;
+  /**
+   * Thinking wire format: `openai` (default) sends `reasoning_effort` and
+   * `off` omits the field; `deepseek` sends `thinking: {type}` so `off`
+   * disables thinking. Effort values pass through unchanged (DeepSeek's API
+   * auto-maps them).
+   */
+  thinkingMode?: 'openai' | 'deepseek';
   /**
    * Set true to auto-discover models from GET {baseUrl}/models. When false
    * (default), `models` must be declared.
@@ -247,6 +261,16 @@ function parseUserProvider(raw: unknown, context: string): ProviderDefinition {
       ? entry.currency.trim()
       : 'USD';
   const fetchModels = entry.fetchModels === true;
+  if (
+    entry.thinkingMode !== undefined &&
+    entry.thinkingMode !== 'openai' &&
+    entry.thinkingMode !== 'deepseek'
+  ) {
+    throw new Error(
+      `Provider config error (${context}): "thinkingMode" must be "openai" or "deepseek"`,
+    );
+  }
+  const thinkingMode = entry.thinkingMode === 'deepseek' ? 'deepseek' : 'openai';
   let defaultModel =
     typeof entry.defaultModel === 'string' && entry.defaultModel.trim().length > 0
       ? entry.defaultModel.trim()
@@ -340,12 +364,25 @@ function parseUserProvider(raw: unknown, context: string): ProviderDefinition {
     staticModels,
     pinnedModelIds: [],
     pricing: { fallback: { inputPerM: 1, outputPerM: 2 } },
-    compat: {
-      // Generic OpenAI-compatible endpoints default to the OpenAI wire format;
-      // pi auto-detects known endpoints (DeepSeek, Together, ...) for the rest.
-      supportsDeveloperRole: false,
-      thinkingFormat: 'openai',
-    },
+    thinkingMode,
+    compat:
+      thinkingMode === 'deepseek'
+        ? {
+            // DeepSeek defaults thinking ON, so `off` must send an explicit
+            // thinking:{type:"disabled"} block and non-off efforts send the
+            // enabled block plus a mapped reasoning_effort.
+            supportsStore: false,
+            supportsDeveloperRole: false,
+            maxTokensField: 'max_tokens',
+            requiresReasoningContentOnAssistantMessages: true,
+            thinkingFormat: 'deepseek',
+          }
+        : {
+            // Generic OpenAI-compatible endpoints default to the OpenAI wire
+            // format; pi auto-detects known endpoints for the rest.
+            supportsDeveloperRole: false,
+            thinkingFormat: 'openai',
+          },
   };
 }
 

@@ -110,6 +110,7 @@ There are **no built-in providers** — every provider is defined by you. The de
     "apiKeyEnv": "DEEPSEEK_API_KEY",
     "defaultModel": "deepseek-v4-flash",
     "currency": "CNY",
+    "thinkingMode": "deepseek",
     "models": [
       {
         "id": "deepseek-v4-flash",
@@ -194,6 +195,7 @@ There are **no built-in providers** — every provider is defined by you. The de
 | `apiKeyEnv`    | no       | Env var holding the API key; omit for keyless local endpoints (Ollama, LM Studio)                                                                                                                                                                                                                         |
 | `defaultModel` | no*      | Fallback model; required when `fetchModels: true`, otherwise defaults to the first declared model                                                                                                                                                                                                         |
 | `currency`     | no       | Billing currency for cost reporting (default `USD`)                                                                                                                                                                                                                                                       |
+| `thinkingMode` | no       | `openai` (default): send `reasoning_effort`, `off` omits the field · `deepseek`: send `thinking: {type}` so `off` truly disables thinking; effort values pass through unchanged (DeepSeek's API auto-maps them)                                                                                           |
 | `fetchModels`  | no       | `true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside (default `false`)                                                                                                                                                                                 |
 | `models`       | no*      | Declared model list; required when `fetchModels` is false/absent. Entries: `id` (required), `name`, `description`, `contextLength`, `cost` (`{inputPerM, outputPerM}` per 1M tokens in the provider's currency), `modalities` (`["image"]` / `["audio"]`; `text` implicit), `thinkingEfforts` (see below) |
 
@@ -201,7 +203,7 @@ There are **no built-in providers** — every provider is defined by you. The de
 
 - `"thinkingEfforts": ["off", "low", "high", "max"]` — the selector shows exactly these; unsupported session values (e.g. `minimal`, `medium`, `xhigh`) are sent as the nearest declared effort (ties resolve upward: `medium` → `high`, `xhigh` → `max`); `off` omits the field (provider default applies).
 - `"thinkingEfforts": ["low", "high", "max"]` (no `off`) — mandatory reasoning: selecting `off` sends the lowest declared effort (`low`).
-- Omit the field to accept the full ladder (passthrough).
+- Omit the field to accept the full ladder (passthrough) — the session value is sent verbatim as `reasoning_effort` and `off` omits the field (the provider picks its default). With `thinkingMode: "deepseek"`, `off` instead sends `thinking: {type: "disabled"}` so thinking is actually turned off.
 
 \* A provider must declare `models`, set `fetchModels: true`, or both — otherwise configuration fails with a clear error. Provider ids must be unique.
 

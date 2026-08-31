@@ -142,7 +142,7 @@ Every provider runs through pi-ai's `createProvider`/`Models` collection and the
 
 ### 6.1 Provider registry (`src/provider-registry.ts`)
 
-A `ProviderDefinition` is pure data: `id`, `name`, `label`, `baseUrl`, `apiKeyEnv`, `defaultModel`, `currency`, `discovery.enabled` (from `fetchModels`), `staticModels` (declared models with `contextLength`/`cost`/`modalities`), `pricing.fallback`, optional `balance`, pi `compat`, and generic `extraBody`/`extraHeaders`/`sendSessionId`. The registry rebuilds automatically when provider-relevant env changes.
+A `ProviderDefinition` is pure data: `id`, `name`, `label`, `baseUrl`, `apiKeyEnv`, `defaultModel`, `currency`, `discovery.enabled` (from `fetchModels`), `thinkingMode` (`openai`/`deepseek`, see §6.4), `staticModels` (declared models with `contextLength`/`cost`/`modalities`/`thinkingEfforts`), `pricing.fallback`, optional `balance`, pi `compat`, and generic `extraBody`/`extraHeaders`/`sendSessionId`. The registry rebuilds automatically when provider-relevant env changes.
 
 Example (`ZEN_AGENT_PROVIDERS`):
 
@@ -184,7 +184,8 @@ Each definition becomes a pi provider via `createProvider({ id, name, baseUrl, a
 
 ### 6.4 Thinking effort
 
-The session `thinking_effort` maps to the OpenAI `reasoning_effort` field. A model's declared `thinkingEfforts` (per-model, in declared order) restricts the selector and remaps unsupported values; without it the full ladder is accepted passthrough:
+The session `thinking_effort` maps to the OpenAI `reasoning_effort` field. `thinkingMode` selects the wire format: `openai` (default) sends `reasoning_effort` and `off` omits the field; `deepseek` sends `thinking: {type: "enabled" | "disabled"}` so `off` actually turns thinking off (DeepSeek defaults it ON) while effort values pass through unchanged — DeepSeek's API auto-maps them to its own levels.
+A model's declared `thinkingEfforts` (per-model, in declared order) restricts the selector and remaps unsupported values; without it the full ladder is accepted passthrough:
 
 - value in the list → sent unchanged; `off` in the list omits the field (provider default applies).
 - value not in the list → nearest declared value by ladder distance (ties resolve upward: `medium` between `low` and `high` → `high`, `xhigh` → `max`).

@@ -43,6 +43,9 @@ export async function runLlmStep(
   await ensureProviderRefreshed(provider);
   const modelId = options.model ?? def.defaultModel;
   const model = getPiModel(provider, modelId);
+  // Effective effort allowlist: the model's declared thinkingEfforts, else
+  // passthrough (DeepSeek's API auto-maps the full ladder itself).
+  const allowedEfforts = def.staticModels.find((opt) => opt.value === modelId)?.thinkingEfforts;
   return runChatCompletions({
     model,
     apiKey: resolveApiKey(def),
@@ -56,11 +59,9 @@ export async function runLlmStep(
     logRuntime: options.logRuntime,
     // A declared per-model thinkingEfforts allowlist remaps unsupported
     // session values to the nearest accepted one (off → lowest on
-    // mandatory-reasoning models); passthrough otherwise.
-    thinkingEffort: mapModelThinkingEffort(
-      options.thinkingEffort ?? 'off',
-      def.staticModels.find((opt) => opt.value === modelId)?.thinkingEfforts,
-    ),
+    // mandatory-reasoning models); passthrough otherwise. DeepSeek mode
+    // additionally maps the wire value through its level map in pi.
+    thinkingEffort: mapModelThinkingEffort(options.thinkingEffort ?? 'off', allowedEfforts),
     extraBody: buildExtraBody(def, options.sessionId),
     sessionId: def.sendSessionId ? options.sessionId : undefined,
   });

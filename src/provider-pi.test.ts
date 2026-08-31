@@ -127,6 +127,26 @@ describe('user provider parsing', () => {
     expect(() => getProviderDefinition('zai')).toThrow(/invalid value "turbo"/);
   });
 
+  it('parses thinkingMode deepseek and its compat', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      { id: 'ds', baseUrl: 'http://x', thinkingMode: 'deepseek', models: ['m'] },
+    ]);
+    const def = getProviderDefinition('ds')!;
+    expect(def.thinkingMode).toBe('deepseek');
+    expect(def.compat.thinkingFormat).toBe('deepseek');
+    expect(def.compat.maxTokensField).toBe('max_tokens');
+    expect(def.compat.requiresReasoningContentOnAssistantMessages).toBe(true);
+  });
+
+  it('rejects an invalid thinkingMode', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      { id: 'ds', baseUrl: 'http://x', thinkingMode: 'turbo', models: ['m'] },
+    ]);
+    expect(() => getProviderDefinition('ds')).toThrow(
+      /"thinkingMode" must be "openai" or "deepseek"/,
+    );
+  });
+
   it('rejects an empty per-model thinkingEfforts array', () => {
     process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
       {
@@ -168,6 +188,21 @@ describe('getPiModel', () => {
     const glm53 = getPiModel('zai', 'glm-5.3');
     expect(glm53.contextWindow).toBe(1_048_576);
     expect(glm53.input).toEqual(['text']);
+  });
+
+  it('keeps DeepSeek compat without a thinking level map (API auto-maps efforts)', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'ds',
+        baseUrl: 'http://x',
+        thinkingMode: 'deepseek',
+        defaultModel: 'm',
+        models: ['m'],
+      },
+    ]);
+    const model = getPiModel('ds', 'm');
+    expect(model.thinkingLevelMap).toBeUndefined();
+    expect(model.compat?.thinkingFormat).toBe('deepseek');
   });
 
   it('synthesizes unknown slugs with conservative defaults', () => {
