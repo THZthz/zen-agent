@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 
-vi.mock('./deepseek.js', async (importOriginal) => {
+vi.mock('./provider.js', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return { ...actual, runLlmStep: vi.fn() };
 });
 
 import { ZenAgent } from './agent.js';
-import { runLlmStep, type LlmStepResult } from './deepseek.js';
+import { runLlmStep, type LlmStepResult } from './provider.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 
@@ -104,7 +104,7 @@ describe('skill slash commands', () => {
       expect(response.stopReason).toBe('end_turn');
 
       // The model turn started with the skill injected into a user message.
-      const messages = mockedRunLlmStep.mock.calls[0]?.[0].messages ?? [];
+      const messages = mockedRunLlmStep.mock.calls[0]?.[1]?.messages ?? [];
       const skillMessage = messages.find(
         (m) => m.role === 'user' && typeof m.content === 'string' && m.content.includes('grill-me'),
       );
@@ -143,7 +143,7 @@ describe('skill slash commands', () => {
       );
       expect(response.stopReason).toBe('end_turn');
 
-      const messages = mockedRunLlmStep.mock.calls[0]?.[0].messages ?? [];
+      const messages = mockedRunLlmStep.mock.calls[0]?.[1]?.messages ?? [];
       const skillMessage = messages.find(
         (m) =>
           m.role === 'user' && typeof m.content === 'string' && m.content.includes('code-review'),
@@ -167,7 +167,7 @@ describe('skill slash commands', () => {
       // Forwarded to the model as a normal user message...
       expect(response.stopReason).toBe('end_turn');
       expect(mockedRunLlmStep).toHaveBeenCalledTimes(1);
-      const firstCall = mockedRunLlmStep.mock.calls[0]?.[0] as {
+      const firstCall = mockedRunLlmStep.mock.calls[0]?.[1] as {
         messages: Array<{ role: string; content: unknown }>;
       };
       const lastUser = [...firstCall.messages].reverse().find((m) => m.role === 'user');
@@ -190,7 +190,7 @@ describe('skill slash commands', () => {
         usage: null,
       });
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/grill-me' }] }, cx);
-      const skillMessages = mockedRunLlmStep.mock.calls[0]?.[0].messages.filter(
+      const skillMessages = mockedRunLlmStep.mock.calls[0]?.[1]?.messages.filter(
         (m) => m.role === 'user' && typeof m.content === 'string',
       );
       const skillInvocation = skillMessages?.at(-1)?.content as string;

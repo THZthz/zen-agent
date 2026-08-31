@@ -1,7 +1,6 @@
 import {
   type AssistantMessage as PiAssistantMessage,
   type Model as PiModel,
-  type OpenAICompletionsCompat,
 } from '@earendil-works/pi-ai';
 import { stream as streamOpenAiCompletions } from '@earendil-works/pi-ai/api/openai-completions';
 import type { LlmMessage, ThinkingEffort } from './storage.js';
@@ -19,23 +18,20 @@ import { envPositiveInt } from './env.js';
 import type { LlmStepResult, LlmToolCall } from './llm-client.js';
 
 export interface ChatCompletionsOptions {
-  /** Base URL without trailing slash, e.g. "https://api.deepseek.com". */
-  baseUrl: string;
+  /**
+   * Pi model for the provider/model, supplied by the provider registry
+   * (carries baseUrl, compat, thinkingLevelMap and per-model metadata).
+   */
+  model: PiModel<'openai-completions'>;
+  /** API key sent to the endpoint; resolved from the provider definition. */
   apiKey: string;
-  /** Pi provider id, used for compatibility detection and message replay. */
-  provider: string;
   /** Provider name used in Zen's error messages, e.g. "DeepSeek". */
   label: string;
-  model: string;
   messages: LlmMessage[];
   /** Tool schemas offered to the model; defaults to the bash tool. */
   tools?: unknown[];
   system?: string;
   thinkingEffort?: ThinkingEffort;
-  /** Provider/model-specific Pi compatibility configuration. */
-  compat?: OpenAICompletionsCompat;
-  /** Pi thinking-level mapping for this provider/model. */
-  thinkingLevelMap?: Partial<Record<ThinkingEffort, string | null>>;
   /** Extra request fields for this provider (e.g. OpenRouter routing). */
   extraBody?: Record<string, unknown>;
   /** Extra request headers for this provider (e.g. OpenRouter's HTTP-Referer / X-Title). */
@@ -103,28 +99,13 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
   if (healed.droppedAssistants > 0 || healed.droppedTools > 0) {
     void options.logRuntime?.('warn', 'healed message history before LLM request', {
       label: options.label,
-      model: options.model,
+      model: options.model.id,
       droppedAssistants: healed.droppedAssistants,
       droppedTools: healed.droppedTools,
     });
   }
 
-  const model: PiModel<'openai-completions'> = {
-    id: options.model,
-    name: options.model,
-    api: 'openai-completions',
-    provider: options.provider,
-    baseUrl: options.baseUrl,
-    reasoning: true,
-    // Zen already gates media against its model catalog. Keep Pi from
-    // downgrading valid OpenAI-compatible image/audio payloads in transit.
-    input: ['text', 'image'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 1_000_000,
-    maxTokens: 384_000,
-    compat: options.compat,
-    thinkingLevelMap: options.thinkingLevelMap,
-  };
+  const model = options.model;
   const piTools = toPiTools(options.tools);
   const context = toPiContext(healed.messages, model, options.system ?? SYSTEM_PROMPT, piTools);
 
@@ -149,7 +130,7 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
     if (rateLimitedMs >= RATE_LIMIT_WAIT_LOG_THRESHOLD_MS) {
       void options.logRuntime?.('info', 'chat request delayed by client-side rate limit', {
         label: options.label,
-        model: options.model,
+        model: options.model.id,
         waitedMs: rateLimitedMs,
       });
     }

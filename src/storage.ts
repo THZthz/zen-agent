@@ -85,7 +85,12 @@ export interface ToolMessage {
  */
 export type LlmMessage = NamedUserMessage | AssistantMessage | ToolMessage;
 
-export type ProviderId = 'deepseek' | 'openrouter';
+/**
+ * LLM provider backing a session. Any registered provider id is valid:
+ * built-ins are `deepseek` and `openrouter`; users can add more via
+ * ZEN_AGENT_PROVIDERS / ZEN_AGENT_PROVIDERS_FILE (see provider-registry.ts).
+ */
+export type ProviderId = string;
 
 /**
  * Model identifier for the active provider, e.g. "deepseek-v4-flash" or
@@ -283,14 +288,6 @@ export function sessionLlmLogPath(cwd: string, sessionId: string): string {
  */
 export function clientLogPath(cwd: string, startupKey: string): string {
   return join(sessionDirectory(cwd), 'client', startupKey, 'log.jsonl');
-}
-
-/**
- * Cached OpenRouter model catalog shared across agent restarts:
- * <project>/.sessions/client/models.openrouter.json
- */
-export function clientModelsPath(cwd: string): string {
-  return join(sessionDirectory(cwd), 'client', 'models.openrouter.json');
 }
 
 function generateSessionId(): string {
@@ -564,7 +561,7 @@ function normalizeStoredSession(
   // Sessions created before providers existed have no `provider`; they are
   // DeepSeek sessions by definition (the only provider back then).
   const provider: ProviderId =
-    rawConfig.provider === 'deepseek' || rawConfig.provider === 'openrouter'
+    typeof rawConfig.provider === 'string' && rawConfig.provider.length > 0
       ? rawConfig.provider
       : DEFAULT_PROVIDER;
   const config: SessionConfig = {

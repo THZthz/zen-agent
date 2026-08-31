@@ -1,17 +1,15 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { hostname } from 'node:os';
 import { Sonyflake } from 'sonyflake';
-import {
-  DEFAULT_DEEPSEEK_MODEL,
-  DEFAULT_PROVIDER,
-  type ProviderId,
-  type StoredSession,
-  type ThinkingEffort,
-} from './storage.js';
+import { type ProviderId, type StoredSession, type ThinkingEffort } from './storage.js';
 import { envPositiveInt } from './env.js';
-import { getDefaultModel } from './provider.js';
-import { getOpenRouterModelOptions, getOpenRouterReasoning } from './openrouter-models.js';
-import { OPENROUTER_EFFORT_VALUES } from './openrouter.js';
+import {
+  getDefaultModel,
+  getModelOptions,
+  getProviderCurrency,
+  getThinkingEfforts,
+} from './provider.js';
+import { getDefaultProviderId, getProviderDefinitions } from './provider-registry.js';
 
 /** Safety valve for graceful cancel: hard-abort after this long. Unset/0 = wait forever. */
 export const GRACEFUL_CANCEL_TIMEOUT_MS = envPositiveInt('ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS', 0);
@@ -19,92 +17,48 @@ export const GRACEFUL_CANCEL_TIMEOUT_MS = envPositiveInt('ZEN_AGENT_GRACEFUL_CAN
 export const MAX_TURN_STEPS = envPositiveInt('ZEN_AGENT_MAX_TURN_STEPS', 25);
 
 /**
- * Per-session provider selector. DeepSeek and OpenRouter can be used side by
- * side: each session picks its provider here (locked once the user sent the
- * first message, like model and thinking effort). New sessions default to
- * deepseek.
+ * Per-session provider selector, built from the provider registry. Every
+ * registered provider (built-in DeepSeek/OpenRouter plus any user-defined
+ * ZEN_AGENT_PROVIDERS entries) is offered; sessions pick one here (locked
+ * once the user sent the first message, like model and thinking effort).
+ * New sessions default to ZEN_AGENT_DEFAULT_PROVIDER or deepseek.
  */
-export const PROVIDER_CONFIG_OPTION = {
-  id: 'provider',
-  name: 'Provider',
-  description: 'LLM provider used for this session (locked after the first message)',
-  category: 'model',
-  type: 'select',
-  currentValue: DEFAULT_PROVIDER,
-  options: [
-    {
-      value: 'deepseek',
-      name: 'DeepSeek',
-      description: "DeepSeek's own API, billed in CNY",
-    },
-    {
-      value: 'openrouter',
-      name: 'OpenRouter',
-      description: 'OpenRouter model aggregator, billed in USD',
-    },
-  ],
-};
-
-const DEEPSEEK_MODEL_CONFIG_OPTION = {
-  id: 'model',
-  name: 'Model',
-  description: 'Deepseek model used for this session',
-  category: 'model',
-  type: 'select',
-  currentValue: DEFAULT_DEEPSEEK_MODEL,
-  options: [
-    {
-      value: 'deepseek-v4-flash',
-      name: 'Deepseek V4 Flash',
-      description: 'Fast model for everyday coding tasks',
-    },
-    {
-      value: 'deepseek-v4-pro',
-      name: 'Deepseek V4 Pro',
-      description: 'More powerful model for complex tasks',
-    },
-  ],
-};
-
-/**
- * OpenRouter models offered in the session selector. Any OpenRouter model
- * slug can be used beyond this list via OPENROUTER_MODEL or
- * session/set_config_option; `openrouter/free` routes to OpenRouter's
- * free-tier models.
- */
-const OPENROUTER_MODEL_OPTIONS: Array<{
-  value: string;
-  name: string;
-  description: string;
-}> = [
-  {
-    value: 'openrouter/free',
-    name: 'OpenRouter Free',
-    description: "OpenRouter's free-tier routing model",
-  },
-];
-
-/**
- * Model selector for a provider. OpenRouter sessions get the live model
- * catalog (auto-fetched, cached on disk, static list as fallback); DeepSeek
- * sessions get the two fixed models.
- */
-export async function modelConfigOption(provider: ProviderId, cwd: string) {
-  if (provider === 'openrouter') {
-    const options = (await getOpenRouterModelOptions(cwd)) ?? OPENROUTER_MODEL_OPTIONS;
-    return {
-      id: 'model',
-      name: 'Model',
-      description: 'OpenRouter model used for this session',
-      category: 'model',
-      type: 'select',
-      currentValue: getDefaultModel('openrouter'),
-      options,
-    };
-  }
+export function providerConfigOption(): acp.SessionConfigOption {
   return {
-    ...DEEPSEEK_MODEL_CONFIG_OPTION,
-    currentValue: DEFAULT_DEEPSEEK_MODEL,
+    id: 'provider',
+    name: 'Provider',
+    description: 'LLM provider used for this session (locked after the first message)',
+    category: 'model',
+    type: 'select',
+    currentValue: getDefaultProviderId(),
+    options: getProviderDefinitions().map((def) => ({
+      value: def.id,
+      name: def.name,
+      description: `${def.name} · ${def.baseUrl}`,
+    })),
+  };
+}
+
+/**
+ * Model selector for a provider. Discovery providers get the live model
+ * catalog (auto-fetched through pi, cached on disk, static list as
+ * fallback); static providers get their fixed model list.
+ */
+export async function modelConfigOption(provider: ProviderId): Promise<acp.SessionConfigOption> {
+  const options =
+    (await getModelOptions(provider)) ??
+    (getProviderDefinitions().find((def) => def.id === provider)?.staticModels ?? []).map(
+      (opt) => ({ value: opt.value, name: opt.name, description: opt.description }),
+    );
+  const description = `Model used for this session on ${getProviderCurrency(provider)}-billed provider "${provider}"`;
+  return {
+    id: 'model',
+    name: 'Model',
+    description,
+    category: 'model',
+    type: 'select',
+    currentValue: getDefaultModel(provider),
+    options,
   };
 }
 
@@ -130,22 +84,6 @@ export const THINKING_EFFORT_VALUES: readonly ThinkingEffort[] = [
   'max',
 ];
 
-/**
- * Effort selector order: ascending (off < minimal < low < medium < high <
- * xhigh < max). Every session value is offered; OpenRouter models that do
- * not support a tier simply omit it from the selector (unknown models get
- * the full gateway ladder).
- */
-const THINKING_EFFORT_ORDER: readonly ThinkingEffort[] = [
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-];
-
 function thinkingEffortOption(value: ThinkingEffort) {
   const meta = THINKING_EFFORT_OPTIONS[value];
   return { value, name: meta.name, description: meta.description };
@@ -161,14 +99,7 @@ function thinkingEffortOption(value: ThinkingEffort) {
  * `low`.
  */
 export async function thinkingConfigOption(session: StoredSession) {
-  let efforts: readonly ThinkingEffort[] = ['off', 'low', 'high', 'max'];
-  if (session.config.provider === 'openrouter') {
-    const reasoning = await getOpenRouterReasoning(session.config.model, session.cwd);
-    const supported = reasoning.supportedEfforts ?? OPENROUTER_EFFORT_VALUES;
-    efforts = THINKING_EFFORT_ORDER.filter(
-      (effort) => effort === 'off' || supported.includes(effort),
-    );
-  }
+  const efforts = await getThinkingEfforts(session.config.provider, session.config.model);
   return {
     id: 'thinking_effort',
     name: 'Thinking Effort',

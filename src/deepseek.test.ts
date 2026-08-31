@@ -1,41 +1,32 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  costYuan,
-  fetchDeepSeekBalance,
-  getModelPricing,
-  isPeakTime,
-  runLlmStep,
-} from './deepseek.js';
+import { costFromUsage, fetchBalanceSnapshot, getModelPricing, runLlmStep } from './provider.js';
+import { resetPiModels } from './provider-pi.js';
+import { resetCatalogCache } from './provider-catalog.js';
+import { resetProviderRegistry } from './provider-registry.js';
 import { testServerBaseUrl } from './test-server.js';
 
-describe('isPeakTime', () => {
-  // Beijing time = UTC+8, no DST.
-  const atBeijing = (h: number, m = 0) => new Date(Date.UTC(2026, 7, 19, h - 8, m));
+const originalEnv = { ...process.env };
+let xdgHome: string;
 
-  it('treats 09:00-11:59 Beijing as peak', () => {
-    expect(isPeakTime(atBeijing(9, 0))).toBe(true);
-    expect(isPeakTime(atBeijing(10, 30))).toBe(true);
-    expect(isPeakTime(atBeijing(11, 59))).toBe(true);
-  });
-
-  it('treats 12:00-13:59 Beijing as off-peak', () => {
-    expect(isPeakTime(atBeijing(12, 0))).toBe(false);
-    expect(isPeakTime(atBeijing(13, 59))).toBe(false);
-  });
-
-  it('treats 14:00-17:59 Beijing as peak', () => {
-    expect(isPeakTime(atBeijing(14, 0))).toBe(true);
-    expect(isPeakTime(atBeijing(17, 59))).toBe(true);
-  });
-
-  it('treats 18:00-08:59 Beijing as off-peak', () => {
-    expect(isPeakTime(atBeijing(18, 0))).toBe(false);
-    expect(isPeakTime(atBeijing(0, 0))).toBe(false);
-    expect(isPeakTime(atBeijing(8, 59))).toBe(false);
-  });
+beforeEach(() => {
+  xdgHome = mkdtempSync(join(tmpdir(), 'zen-agent-deepseek-test-'));
+  process.env.XDG_DATA_HOME = xdgHome;
 });
 
-describe('costYuan (official DeepSeek V4 pricing, CNY per 1M tokens)', () => {
+afterEach(() => {
+  process.env = { ...originalEnv };
+  resetProviderRegistry();
+  resetPiModels();
+  resetCatalogCache();
+  if (xdgHome) {
+    rmSync(xdgHome, { recursive: true, force: true });
+  }
+});
+
+describe('costFromUsage (official DeepSeek V4 pricing, CNY per 1M tokens)', () => {
   // Off-peak: flash 0.05 hit / 1.5 miss / 4.5 out
   // Peak:     flash 0.10 hit / 3.0 miss / 9.0 out
   const usage = {
@@ -50,50 +41,54 @@ describe('costYuan (official DeepSeek V4 pricing, CNY per 1M tokens)', () => {
     answeringMs: 0,
   };
 
-  it('flash off-peak: 0.8M hit*0.05 + 0.2M miss*1.5 + 1M out*4.5 = 4.84', () => {
+  it('flash off-peak: 0.8M hit*0.05 + 0.2M miss*1.5 + 1M out*4.5 = 4.84', async () => {
     const offPeak = new Date(Date.UTC(2026, 7, 19, 4)); // 12:00 Beijing
-    const pricing = getModelPricing('deepseek-v4-flash', offPeak);
+    const pricing = await getModelPricing('deepseek', 'deepseek-v4-flash', offPeak);
     expect(pricing).toEqual({
-      cacheHitCnyPerM: 0.05,
-      cacheMissCnyPerM: 1.5,
-      outputCnyPerM: 4.5,
+      currency: 'CNY',
+      cacheHitPerM: 0.05,
+      cacheMissPerM: 1.5,
+      outputPerM: 4.5,
     });
-    expect(costYuan(usage, pricing)).toBeCloseTo(4.84, 5);
+    expect(costFromUsage(usage, pricing)).toBeCloseTo(4.84, 5);
   });
 
-  it('flash peak: 0.8M hit*0.10 + 0.2M miss*3.0 + 1M out*9.0 = 9.68', () => {
+  it('flash peak: 0.8M hit*0.10 + 0.2M miss*3.0 + 1M out*9.0 = 9.68', async () => {
     const peak = new Date(Date.UTC(2026, 7, 19, 2)); // 10:00 Beijing
-    const pricing = getModelPricing('deepseek-v4-flash', peak);
+    const pricing = await getModelPricing('deepseek', 'deepseek-v4-flash', peak);
     expect(pricing).toEqual({
-      cacheHitCnyPerM: 0.1,
-      cacheMissCnyPerM: 3.0,
-      outputCnyPerM: 9.0,
+      currency: 'CNY',
+      cacheHitPerM: 0.1,
+      cacheMissPerM: 3.0,
+      outputPerM: 9.0,
     });
-    expect(costYuan(usage, pricing)).toBeCloseTo(9.68, 5);
+    expect(costFromUsage(usage, pricing)).toBeCloseTo(9.68, 5);
   });
 
-  it('pro off-peak: 1M hit*0.15 + 1M out*13.5 = 13.65', () => {
+  it('pro off-peak: 1M hit*0.15 + 1M out*13.5 = 13.65', async () => {
     const offPeak = new Date(Date.UTC(2026, 7, 19, 4));
     const usagePro = { ...usage, cacheReadTokens: 1_000_000, cacheMissTokens: 0 };
-    const pricing = getModelPricing('deepseek-v4-pro', offPeak);
+    const pricing = await getModelPricing('deepseek', 'deepseek-v4-pro', offPeak);
     expect(pricing).toEqual({
-      cacheHitCnyPerM: 0.15,
-      cacheMissCnyPerM: 4.5,
-      outputCnyPerM: 13.5,
+      currency: 'CNY',
+      cacheHitPerM: 0.15,
+      cacheMissPerM: 4.5,
+      outputPerM: 13.5,
     });
-    expect(costYuan(usagePro, pricing)).toBeCloseTo(13.65, 5);
+    expect(costFromUsage(usagePro, pricing)).toBeCloseTo(13.65, 5);
   });
 
-  it('pro peak: 1M hit*0.30 + 1M out*27.0 = 27.30', () => {
+  it('pro peak: 1M hit*0.30 + 1M out*27.0 = 27.30', async () => {
     const peak = new Date(Date.UTC(2026, 7, 19, 2));
     const usagePro = { ...usage, cacheReadTokens: 1_000_000, cacheMissTokens: 0 };
-    const pricing = getModelPricing('deepseek-v4-pro', peak);
+    const pricing = await getModelPricing('deepseek', 'deepseek-v4-pro', peak);
     expect(pricing).toEqual({
-      cacheHitCnyPerM: 0.3,
-      cacheMissCnyPerM: 9.0,
-      outputCnyPerM: 27.0,
+      currency: 'CNY',
+      cacheHitPerM: 0.3,
+      cacheMissPerM: 9.0,
+      outputPerM: 27.0,
     });
-    expect(costYuan(usagePro, pricing)).toBeCloseTo(27.3, 5);
+    expect(costFromUsage(usagePro, pricing)).toBeCloseTo(27.3, 5);
   });
 });
 
@@ -180,7 +175,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
     const t0 = Date.now();
     const reasoningArrivals: number[] = [];
     const textArrivals: number[] = [];
-    const result = await runLlmStep({
+    const result = await runLlmStep('deepseek', {
       messages: [{ role: 'user', content: 'hi' }],
       system: 'sys',
       model: 'deepseek-v4-flash',
@@ -229,7 +224,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
     });
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-    const result = await runLlmStep({
+    const result = await runLlmStep('deepseek', {
       messages: [{ role: 'user', content: 'run' }],
       model: 'deepseek-v4-flash',
       thinkingEffort: 'off',
@@ -270,7 +265,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
     });
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-    const result = await runLlmStep({
+    const result = await runLlmStep('deepseek', {
       messages: [
         { role: 'user', content: 'check' },
         {
@@ -352,7 +347,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
     });
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-    await runLlmStep({
+    await runLlmStep('deepseek', {
       messages: [{ role: 'user', content: 'hi' }],
       model: 'deepseek-v4-flash',
       thinkingEffort: 'high',
@@ -389,7 +384,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
     });
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-    await runLlmStep({
+    await runLlmStep('deepseek', {
       messages: [{ role: 'user', content: 'hi' }],
       model: 'deepseek-v4-flash',
       thinkingEffort: 'off',
@@ -426,7 +421,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     for (const effort of ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
-      await runLlmStep({
+      await runLlmStep('deepseek', {
         messages: [{ role: 'user', content: 'hi' }],
         model: 'deepseek-v4-flash',
         thinkingEffort: effort,
@@ -477,7 +472,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     const reasoning: string[] = [];
-    const result = await runLlmStep({
+    const result = await runLlmStep('deepseek', {
       messages: [{ role: 'user', content: 'hi' }],
       model: 'deepseek-v4-flash',
       thinkingEffort: 'off',
@@ -545,7 +540,7 @@ describe('runLlmStep message wiring', () => {
     process.env.DEEPSEEK_MODEL = 'deepseek-v4-flash';
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
 
-    await runLlmStep({
+    await runLlmStep('deepseek', {
       messages: [
         {
           role: 'user',
@@ -572,7 +567,7 @@ describe('runLlmStep message wiring', () => {
   });
 });
 
-describe('fetchDeepSeekBalance', () => {
+describe('fetchBalanceSnapshot (deepseek)', () => {
   const originalEnv = { ...process.env };
   let server: import('node:http').Server | undefined;
 
@@ -623,15 +618,17 @@ describe('fetchDeepSeekBalance', () => {
     });
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-    const balance = await fetchDeepSeekBalance();
+    const balance = await fetchBalanceSnapshot('deepseek');
 
     expect(authorization).toBe('Bearer test');
     expect(balance).toEqual({
       isAvailable: true,
       currency: 'CNY',
-      totalBalanceCny: 110,
-      grantedBalanceCny: 10,
-      toppedUpBalanceCny: 100,
+      total: 110,
+      details: {
+        grantedBalanceCny: 10,
+        toppedUpBalanceCny: 100,
+      },
     });
   });
 
@@ -642,11 +639,11 @@ describe('fetchDeepSeekBalance', () => {
     });
 
     process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-    await expect(fetchDeepSeekBalance()).rejects.toThrow(/401/);
+    await expect(fetchBalanceSnapshot('deepseek')).rejects.toThrow(/401/);
   });
 
   it('throws without DEEPSEEK_API_KEY', async () => {
     delete process.env.DEEPSEEK_API_KEY;
-    await expect(fetchDeepSeekBalance()).rejects.toThrow(/DEEPSEEK_API_KEY/);
+    await expect(fetchBalanceSnapshot('deepseek')).rejects.toThrow(/DEEPSEEK_API_KEY/);
   });
 });

@@ -1,3 +1,4 @@
+import type { Model } from '@earendil-works/pi-ai';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runChatCompletions } from './chat-completions.js';
 import { resetChatRateLimit } from './rate-limit.js';
@@ -5,6 +6,27 @@ import type { LlmMessage } from './storage.js';
 import { testServerBaseUrl } from './test-server.js';
 
 const originalEnv = { ...process.env };
+
+/** Minimal pi model for adapter-level tests (mirrors registry-built models). */
+function testModel(
+  baseUrl: string,
+  compat: Record<string, unknown> = {},
+): Model<'openai-completions'> {
+  return {
+    id: 'test-model',
+    name: 'Test Model',
+    api: 'openai-completions',
+    provider: 'test',
+    baseUrl,
+    reasoning: true,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 384_000,
+    compat: compat as Model<'openai-completions'>['compat'],
+    thinkingLevelMap: {},
+  };
+}
 let server: import('node:http').Server | undefined;
 
 function startServer(
@@ -42,11 +64,9 @@ describe('runChatCompletions', () => {
     });
     await expect(
       runChatCompletions({
-        baseUrl: testServerBaseUrl(server, port),
+        model: testModel(testServerBaseUrl(server, port)),
         apiKey: 'test',
-        provider: 'test',
         label: 'Test',
-        model: 'test-model',
         messages: [],
         system: 'system',
         thinkingEffort: 'off',
@@ -72,11 +92,9 @@ describe('runChatCompletions', () => {
     });
 
     const options = {
-      baseUrl: testServerBaseUrl(server, port),
+      model: testModel(testServerBaseUrl(server, port)),
       apiKey: 'test',
-      provider: 'test',
       label: 'Test',
-      model: 'test-model',
       messages: [],
       system: 'system',
       thinkingEffort: 'off' as const,
@@ -150,14 +168,14 @@ describe('runChatCompletions', () => {
     });
 
     const baseOptions = {
-      baseUrl: testServerBaseUrl(server, port),
+      model: testModel(testServerBaseUrl(server, port), {
+        supportsDeveloperRole: false,
+        thinkingFormat: 'openrouter',
+      }),
       apiKey: 'test',
-      provider: 'openrouter',
       label: 'OpenRouter',
-      model: 'test-model',
       system: 'system',
       thinkingEffort: 'high' as const,
-      compat: { supportsDeveloperRole: false, thinkingFormat: 'openrouter' as const },
     };
     const first = await runChatCompletions({
       ...baseOptions,
@@ -223,11 +241,9 @@ describe('runChatCompletions', () => {
     });
 
     const result = await runChatCompletions({
-      baseUrl: testServerBaseUrl(server, port),
+      model: testModel(testServerBaseUrl(server, port)),
       apiKey: 'test',
-      provider: 'test',
       label: 'Test',
-      model: 'test-model',
       messages: [],
       system: 'system',
       thinkingEffort: 'off',
@@ -268,11 +284,9 @@ describe('runChatCompletions tools field', () => {
       });
     });
     await runChatCompletions({
-      baseUrl: testServerBaseUrl(server, port),
+      model: testModel(testServerBaseUrl(server, port)),
       apiKey: 'test',
-      provider: 'test',
       label: 'Test',
-      model: 'test-model',
       messages: [],
       system: 'system',
       thinkingEffort: 'off',

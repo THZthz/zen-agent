@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,6 +98,12 @@ describe('newSession default provider', () => {
 
 describe('setSessionConfigOption', () => {
   const originalEnv = { ...process.env };
+  let xdgHome: string;
+
+  beforeEach(() => {
+    xdgHome = mkdtempSync(join(tmpdir(), 'zen-agent-agent-test-'));
+    process.env.XDG_DATA_HOME = xdgHome;
+  });
 
   function register(agent: ZenAgent, session: StoredSession): void {
     (agent as unknown as TestAgent).sessions.set(session.sessionId, {
@@ -110,6 +116,9 @@ describe('setSessionConfigOption', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    if (xdgHome) {
+      rmSync(xdgHome, { recursive: true, force: true });
+    }
   });
 
   it('switches provider before the first message and resets the model to the provider default', async () => {

@@ -115,7 +115,7 @@ export interface LlmStepOptions {
 
 /** Provider-neutral pricing in the provider's billing currency. */
 export interface GenericPricing {
-  currency: 'CNY' | 'USD';
+  currency: string;
   /** Price per 1M input tokens served from cache. */
   cacheHitPerM: number;
   /** Price per 1M input tokens not served from cache. */

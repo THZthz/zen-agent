@@ -1,8 +1,15 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatLlmError } from './llm-errors.js';
+import { resetCatalogCache } from './provider-catalog.js';
+import { resetPiModels } from './provider-pi.js';
+import { resetProviderRegistry } from './provider-registry.js';
 import { testServerBaseUrl } from './test-server.js';
 
 const originalEnv = { ...process.env };
+let xdgHome: string;
 let server: import('node:http').Server | undefined;
 
 function startServer(
@@ -27,13 +34,21 @@ function apiError(status: number, body: string, label = 'DeepSeek'): Error {
 
 describe('formatLlmError', () => {
   beforeEach(() => {
+    xdgHome = mkdtempSync(join(tmpdir(), 'zen-agent-llmerrors-test-'));
+    process.env.XDG_DATA_HOME = xdgHome;
     process.env.DEEPSEEK_API_KEY = 'test';
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    resetProviderRegistry();
+    resetPiModels();
+    resetCatalogCache();
     server?.close();
     server = undefined;
+    if (xdgHome) {
+      rmSync(xdgHome, { recursive: true, force: true });
+    }
   });
 
   it('returns non-API errors unchanged', async () => {

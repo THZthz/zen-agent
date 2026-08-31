@@ -1,4 +1,5 @@
-import { fetchDeepSeekBalance } from './deepseek.js';
+import { fetchBalanceSnapshot } from './provider.js';
+import { requireProviderDefinition } from './provider-registry.js';
 import type { ProviderId } from './storage.js';
 
 /**
@@ -19,6 +20,7 @@ export async function formatLlmError(
 
   const status = Number.parseInt(match[2]!, 10);
   const body = match[3] ?? '';
+  const def = requireProviderDefinition(opts.provider);
 
   // Context overflow comes back as a 400 whose body names the limit — give
   // the user the fix (fresh session) instead of the raw body.
@@ -31,11 +33,9 @@ export async function formatLlmError(
 
   switch (status) {
     case 401:
-      return `API key rejected (401). Check ${
-        opts.provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'OPENROUTER_API_KEY'
-      }.`;
+      return `API key rejected (401). Check ${def.apiKeyEnv ?? 'your API key'}.`;
     case 402:
-      return opts.provider === 'deepseek'
+      return def.id === 'deepseek'
         ? 'Insufficient DeepSeek balance (402). Top up your account at https://platform.deepseek.com.'
         : err.message;
     case 400:
@@ -54,18 +54,20 @@ export async function formatLlmError(
 
 /** 5xx: probe the provider with a cheap balance call so the user knows whether to check their network or wait. */
 async function format5xx(status: number, provider: ProviderId): Promise<string> {
-  if (provider === 'openrouter') {
-    return `OpenRouter returned ${status} — a temporary server error. Retry in a few seconds or try a different model.`;
+  const def = requireProviderDefinition(provider);
+  const canProbe = def.balance && (!def.apiKeyEnv || process.env[def.apiKeyEnv]);
+  if (!canProbe) {
+    return `${def.label} returned ${status} — a temporary server error. Retry in a few seconds or try a different model.`;
   }
-  const reachable = await probeDeepSeekReachable();
+  const reachable = await probeProviderReachable(provider);
   return reachable
-    ? `DeepSeek returned ${status} but the API is reachable — a transient server error. Wait a moment and retry.`
-    : `Cannot reach DeepSeek (${status}) — check your network connection or DeepSeek's service status.`;
+    ? `${def.label} returned ${status} but the API is reachable — a transient server error. Wait a moment and retry.`
+    : `Cannot reach ${def.label} (${status}) — check your network connection or the provider's service status.`;
 }
 
-async function probeDeepSeekReachable(timeoutMs = 1500): Promise<boolean> {
+async function probeProviderReachable(provider: ProviderId): Promise<boolean> {
   try {
-    await fetchDeepSeekBalance({ signal: AbortSignal.timeout(timeoutMs) });
+    await fetchBalanceSnapshot(provider);
     return true;
   } catch {
     return false;

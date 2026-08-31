@@ -1,37 +1,35 @@
 import { type GenericPricing, type LlmStepOptions, type LlmStepResult } from './llm-client.js';
+import { envNonNegativeFloat } from './env.js';
+import { getPiModel, getSupportedThinkingEfforts, ensureProviderRefreshed } from './provider-pi.js';
 import {
-  fetchDeepSeekBalance,
-  getContextWindowTokens as getDeepSeekContextWindow,
-  getModelPricing as getDeepSeekPricing,
-  runLlmStep as runDeepSeekStep,
-} from './deepseek.js';
-import {
-  DEFAULT_OPENROUTER_MODEL,
-  fetchOpenRouterBalance,
-  runOpenRouterStep,
-} from './openrouter.js';
-import { getOpenRouterModelInfo, getOpenRouterModelModalities } from './openrouter-models.js';
-import { DEFAULT_DEEPSEEK_MODEL, type ModelId, type ProviderId } from './storage.js';
+  requireProviderDefinition,
+  resolveApiKey,
+  type BalanceSnapshot,
+  type ProviderDefinition,
+} from './provider-registry.js';
+import { fetchProviderBalance } from './provider-balances.js';
+import { getCatalog } from './provider-catalog.js';
+import { runChatCompletions } from './chat-completions.js';
+import type { ModelId, ProviderId, ThinkingEffort } from './storage.js';
 
 export type { LlmStepResult, LlmStepOptions, LlmToolCall, LlmUsage } from './llm-client.js';
 export { costFromUsage } from './llm-client.js';
+export type { BalanceSnapshot } from './provider-registry.js';
+export { getModelOptions, type ModelOption } from './provider-pi.js';
 
-/** Balance/credit snapshot for the active provider, in its billing currency. */
-export interface BalanceSnapshot {
-  isAvailable: boolean;
-  currency: string;
-  /** Remaining balance in `currency` units. */
-  total: number;
-  /** Provider-specific extras for the debug log. */
-  details: Record<string, unknown>;
+/** Default model for a provider: its configured fallback (env-driven). */
+export function getDefaultModel(provider: ProviderId): ModelId {
+  return requireProviderDefinition(provider).defaultModel;
 }
 
-/** Default model for a provider: DeepSeek's fallback or OPENROUTER_MODEL. */
-export function getDefaultModel(provider: ProviderId): ModelId {
-  if (provider === 'openrouter') {
-    return process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
-  }
-  return process.env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL;
+/** Billing currency of the session's provider (CNY for DeepSeek, USD for OpenRouter). */
+export function getProviderCurrency(provider: ProviderId): string {
+  return requireProviderDefinition(provider).currency;
+}
+
+/** Human display name for a provider (used in diagnostics). */
+export function getProviderName(provider: ProviderId): string {
+  return requireProviderDefinition(provider).name;
 }
 
 /** Run one LLM step with the session's provider (per-session, not process-wide). */
@@ -39,39 +37,89 @@ export async function runLlmStep(
   provider: ProviderId,
   options: LlmStepOptions,
 ): Promise<LlmStepResult> {
-  if (provider === 'openrouter') {
-    return runOpenRouterStep(options);
+  const def = requireProviderDefinition(provider);
+  // Discovery providers load their catalog once per process (best-effort,
+  // 5s timeout); static providers skip this entirely.
+  await ensureProviderRefreshed(provider);
+  const model = getPiModel(provider, options.model ?? def.defaultModel);
+  return runChatCompletions({
+    model,
+    apiKey: resolveApiKey(def),
+    label: def.label,
+    messages: options.messages,
+    tools: options.tools,
+    system: options.system,
+    signal: options.signal,
+    onTextDelta: options.onTextDelta,
+    onReasoningDelta: options.onReasoningDelta,
+    logRuntime: options.logRuntime,
+    thinkingEffort: options.thinkingEffort,
+    extraBody: buildExtraBody(def, options.sessionId),
+    sessionId: def.sendSessionId ? options.sessionId : undefined,
+  });
+}
+
+/** Merge provider-declared body fields with the session affinity field. */
+function buildExtraBody(
+  def: ProviderDefinition,
+  sessionId: string | undefined,
+): Record<string, unknown> | undefined {
+  const body: Record<string, unknown> = { ...def.extraBody };
+  if (def.sendSessionId && sessionId) {
+    body.session_id = sessionId;
   }
-  return runDeepSeekStep(options);
+  return Object.keys(body).length > 0 ? body : undefined;
 }
 
 /**
  * Effective pricing for a model on a provider, in the provider's billing
- * currency (CNY for DeepSeek, USD for OpenRouter).
+ * currency. Static tables (DeepSeek) honor peak/off-peak windows; catalog
+ * providers use the discovered per-model prices.
  */
 export async function getModelPricing(
   provider: ProviderId,
   model: ModelId,
   now: Date = new Date(),
 ): Promise<GenericPricing> {
-  if (provider === 'openrouter') {
-    // OpenRouter bills cached input at the same rate as regular input (no
-    // separate cache price), so both input rates are the model's prompt price.
-    const info = await getOpenRouterModelInfo(model);
+  const def = requireProviderDefinition(provider);
+  if (def.pricing.kind === 'table') {
+    const rates = def.pricing.rates[model] ?? def.pricing.rates[def.pricing.defaultModel]!;
+    const peak = isPeakTime(now);
     return {
-      currency: 'USD',
-      cacheHitPerM: info.inputPerM,
-      cacheMissPerM: info.inputPerM,
-      outputPerM: info.outputPerM,
+      currency: def.currency,
+      cacheHitPerM: envNonNegativeFloat(
+        'DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK',
+        peak ? rates.cacheHit.peak : rates.cacheHit.offPeak,
+      ),
+      cacheMissPerM: envNonNegativeFloat(
+        'DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK',
+        peak ? rates.cacheMiss.peak : rates.cacheMiss.offPeak,
+      ),
+      outputPerM: envNonNegativeFloat(
+        'DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK',
+        peak ? rates.output.peak : rates.output.offPeak,
+      ),
     };
   }
-  const pricing = getDeepSeekPricing(model, now);
+  await ensureProviderRefreshed(provider);
+  const piModel = getPiModel(provider, model);
   return {
-    currency: 'CNY',
-    cacheHitPerM: pricing.cacheHitCnyPerM,
-    cacheMissPerM: pricing.cacheMissCnyPerM,
-    outputPerM: pricing.outputCnyPerM,
+    currency: def.currency,
+    cacheHitPerM: piModel.cost.cacheRead,
+    cacheMissPerM: piModel.cost.input,
+    outputPerM: piModel.cost.output,
   };
+}
+
+/**
+ * Whether `now` (UTC) falls in DeepSeek's peak pricing window.
+ * Peak hours are Beijing time (UTC+8) 09:00-12:00 and 14:00-18:00;
+ * 12:00 and 18:00 themselves are off-peak.
+ */
+export function isPeakTime(now: Date = new Date()): boolean {
+  const beijing = new Date(now.getTime() + 8 * 3_600_000);
+  const minutes = beijing.getUTCHours() * 60 + beijing.getUTCMinutes();
+  return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
 }
 
 /** Session context window size in tokens, used for usage_update.size. */
@@ -79,34 +127,43 @@ export async function getContextWindowTokens(
   provider: ProviderId,
   model: ModelId,
 ): Promise<number> {
-  if (provider === 'openrouter') {
-    return (await getOpenRouterModelInfo(model)).contextLength;
-  }
-  return getDeepSeekContextWindow();
+  // Discovery providers load their catalog first so catalog-known models get
+  // their real context window; static providers skip this entirely.
+  await ensureProviderRefreshed(provider);
+  return getPiModel(provider, model).contextWindow;
 }
 
 /**
  * Input modalities accepted by the session's model.
  *
- * Returns `null` when the answer is TEMPORARILY unknown — the OpenRouter
- * catalog fetch failed or the slug is not in any table — so callers can
- * retry later instead of caching a wrong "text-only" answer for the whole
- * session (a memoized negative would permanently hide read_media from the
- * model). DeepSeek models are text-only by definition, so that branch is
- * always definitive.
+ * Returns `null` when the answer is TEMPORARILY unknown — a discovery
+ * provider whose catalog has not been fetched or whose slug is not in any
+ * table — so callers can retry later instead of caching a wrong "text-only"
+ * answer for the whole session (a memoized negative would permanently hide
+ * read_media from the model). Static providers (DeepSeek) are text-only by
+ * definition, so that branch is always definitive.
  */
 export async function getModelModalities(
   provider: ProviderId,
   model: ModelId,
 ): Promise<{ image: boolean; audio: boolean } | null> {
-  if (provider === 'openrouter') {
-    const modalities = await getOpenRouterModelModalities(model);
-    if (modalities === null) {
-      return null;
-    }
-    return { image: modalities.includes('image'), audio: modalities.includes('audio') };
+  const def = requireProviderDefinition(provider);
+  if (!def.discovery.enabled) {
+    return { image: false, audio: false };
   }
-  return { image: false, audio: false };
+  // Static fallback models (e.g. openrouter/free offline) are known text-only.
+  if (def.staticModels.some((opt) => opt.value === model)) {
+    return { image: false, audio: false };
+  }
+  await ensureProviderRefreshed(provider);
+  const entry = getCatalog(provider)?.get(model) ?? null;
+  if (!entry) {
+    return null;
+  }
+  return {
+    image: entry.inputModalities?.includes('image') ?? false,
+    audio: entry.inputModalities?.includes('audio') ?? false,
+  };
 }
 
 /**
@@ -122,29 +179,18 @@ export async function resolveModelModalities(
   return (await getModelModalities(provider, model)) ?? { image: false, audio: false };
 }
 
-/** Balance/credit snapshot for the active provider. */
-export async function fetchBalanceSnapshot(provider: ProviderId): Promise<BalanceSnapshot> {
-  if (provider === 'openrouter') {
-    const balance = await fetchOpenRouterBalance();
-    return {
-      isAvailable: balance.isAvailable,
-      currency: balance.currency,
-      total: balance.remainingUsd,
-      details: {
-        usageUsd: balance.usageUsd,
-        limitUsd: balance.limitUsd,
-        isFreeTier: balance.isFreeTier,
-      },
-    };
-  }
-  const balance = await fetchDeepSeekBalance();
-  return {
-    isAvailable: balance.isAvailable,
-    currency: balance.currency,
-    total: balance.totalBalanceCny,
-    details: {
-      grantedBalanceCny: balance.grantedBalanceCny,
-      toppedUpBalanceCny: balance.toppedUpBalanceCny,
-    },
-  };
+/** Thinking-effort values the session selector offers for a provider/model. */
+export async function getThinkingEfforts(
+  provider: ProviderId,
+  model: ModelId,
+): Promise<readonly ThinkingEffort[]> {
+  return getSupportedThinkingEfforts(provider, model);
 }
+
+/** Balance/credit snapshot for the active provider (best-effort). */
+export async function fetchBalanceSnapshot(provider: ProviderId): Promise<BalanceSnapshot> {
+  return fetchProviderBalance(requireProviderDefinition(provider));
+}
+
+/** Registry helpers re-exported for config surfaces that need them. */
+export { getProviderDefinition, isKnownProvider } from './provider-registry.js';
