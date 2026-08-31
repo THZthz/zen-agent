@@ -13,6 +13,7 @@ import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { indexDirectory, writeFileAtomic } from './session-index.js';
 import {
+  applyModelSpec,
   getCatalog,
   readCatalogFile,
   setCatalog,
@@ -146,7 +147,7 @@ function entryCost(
     return {
       inputPerM: entry.inputPerM,
       outputPerM: entry.outputPerM,
-      cacheHitPerM: entry.inputPerM,
+      cacheHitPerM: entry.cacheReadPerM > 0 ? entry.cacheReadPerM : entry.inputPerM,
     };
   }
   return fallbackCost(def);
@@ -234,8 +235,11 @@ export function catalogToPiModel(
   modelId: string = entry?.id ?? '',
   modelName: string = entry?.name ?? modelId,
 ): Model<'openai-completions'> {
-  const cost = entryCost(def, entry);
-  const image = entry?.inputModalities?.includes('image') ?? false;
+  // Curated spec overrides (z.ai GLM 5.3 family) win over the upstream entry
+  // so offline/unknown lookups get the same corrected metadata.
+  const effective = applyModelSpec(entry, modelId);
+  const cost = entryCost(def, effective);
+  const image = effective?.inputModalities?.includes('image') ?? false;
   return {
     id: modelId,
     name: modelName,
@@ -250,10 +254,10 @@ export function catalogToPiModel(
       cacheRead: cost.cacheHitPerM,
       cacheWrite: cost.cacheHitPerM,
     },
-    contextWindow: entry?.contextLength ?? defaultContext(def),
-    maxTokens: 384_000,
+    contextWindow: effective?.contextLength ?? defaultContext(def),
+    maxTokens: effective?.maxOutputTokens ?? 384_000,
     compat: def.compat,
-    thinkingLevelMap: buildEffortMap(def, entry),
+    thinkingLevelMap: buildEffortMap(def, effective),
     ...(def.extraHeaders ? { headers: def.extraHeaders } : {}),
   };
 }

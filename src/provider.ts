@@ -8,7 +8,7 @@ import {
   type ProviderDefinition,
 } from './provider-registry.js';
 import { fetchProviderBalance } from './provider-balances.js';
-import { getCatalog } from './provider-catalog.js';
+import { getCatalog, modelSpecFor } from './provider-catalog.js';
 import { runChatCompletions } from './chat-completions.js';
 import type { ModelId, ProviderId, ThinkingEffort } from './storage.js';
 
@@ -158,6 +158,15 @@ export async function getModelModalities(
   await ensureProviderRefreshed(provider);
   const entry = getCatalog(provider)?.get(model) ?? null;
   if (!entry) {
+    // Curated specs (e.g. z.ai GLM 5.3 family) are definitive even before
+    // the catalog is fetched; everything else stays unknown so callers retry.
+    const spec = modelSpecFor(model);
+    if (spec?.inputModalities) {
+      return {
+        image: spec.inputModalities.includes('image'),
+        audio: spec.inputModalities.includes('audio'),
+      };
+    }
     return null;
   }
   return {

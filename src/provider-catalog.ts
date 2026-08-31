@@ -29,6 +29,10 @@ export interface CatalogEntry {
   inputPerM: number;
   /** USD per 1M output tokens. */
   outputPerM: number;
+  /** USD per 1M cache-read input tokens; 0 when the provider does not break it out. */
+  cacheReadPerM: number;
+  /** Maximum output tokens; undefined when unknown. */
+  maxOutputTokens?: number;
   contextLength: number;
   /** Whether the model supports tool calling (the agent requires it). */
   supportsTools: boolean;
@@ -52,7 +56,12 @@ export const CATALOG_CACHE_VERSION = 5;
 /** Convert an OpenRouter-style wire USD/token price to USD/1M-token units. */
 export function parsePricePerM(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? '');
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed * 1_000_000 : 0;
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  // Round to 6 decimals so per-1M prices like 0.0000002*1M come out clean
+  // (0.2) instead of 0.19999999999999998.
+  return Number((parsed * 1_000_000).toFixed(6));
 }
 
 /** Missing `supported_parameters` metadata = assume the model supports tools. */
@@ -103,6 +112,129 @@ export function parseReasoning(raw: unknown): CatalogReasoning {
   };
 }
 
+/**
+ * Curated corrections/fallbacks for models whose provider catalog omits or
+ * misreports spec fields (verified against the vendor docs; tvly/web search
+ * at implementation time):
+ *
+ * - z.ai reports 1M (1,048,576) context for GLM-5.3 / GLM-5.3-Flash;
+ *   OpenRouter's `/models` lists 1,310,720 (its own FAQ says 1,048,576) and
+ *   z.ai's direct endpoint returns no metadata at all.
+ * - GLM-5.3-Flash is natively multimodal (text/image/video per docs.z.ai;
+ *   audio is NOT in the official input list, so it stays disabled).
+ * - Both always reason (thinking cannot be disabled): low/high/max efforts.
+ *
+ * Spec fields always win over the upstream entry; pricing fields only fill
+ * in when the upstream entry has none, so live price updates are not frozen.
+ */
+export interface ModelSpecOverride {
+  contextLength?: number;
+  inputModalities?: string[];
+  maxOutputTokens?: number;
+  reasoning?: CatalogReasoning;
+  inputPerM?: number;
+  outputPerM?: number;
+  cacheReadPerM?: number;
+}
+
+export const KNOWN_MODEL_SPECS: Readonly<Record<string, ModelSpecOverride>> = {
+  // z.ai direct (api.z.ai OpenAI-compatible ids)
+  'glm-5.3': {
+    contextLength: 1_048_576,
+    inputModalities: ['text'],
+    maxOutputTokens: 131_072,
+    reasoning: {
+      supportedEfforts: ['max', 'high', 'low'],
+      defaultEffort: 'max',
+      mandatory: true,
+    },
+    inputPerM: 1.4,
+    outputPerM: 4.4,
+    cacheReadPerM: 0.26,
+  },
+  'glm-5.3-flash': {
+    contextLength: 1_048_576,
+    inputModalities: ['text', 'image', 'video'],
+    maxOutputTokens: 131_072,
+    reasoning: {
+      supportedEfforts: ['max', 'high', 'low'],
+      defaultEffort: 'max',
+      mandatory: true,
+    },
+    inputPerM: 0.075,
+    outputPerM: 0.25,
+    cacheReadPerM: 0.015,
+  },
+  // OpenRouter slugs for the same models (prices only fill in when the
+  // gateway omits them; live OpenRouter pricing wins).
+  'z-ai/glm-5.3': {
+    contextLength: 1_048_576,
+    inputModalities: ['text'],
+    maxOutputTokens: 131_072,
+    reasoning: {
+      supportedEfforts: ['max', 'high', 'low'],
+      defaultEffort: 'max',
+      mandatory: true,
+    },
+    inputPerM: 1.4,
+    outputPerM: 4.4,
+    cacheReadPerM: 0.26,
+  },
+  'z-ai/glm-5.3-flash': {
+    contextLength: 1_048_576,
+    inputModalities: ['text', 'image', 'video'],
+    maxOutputTokens: 131_072,
+    reasoning: {
+      supportedEfforts: ['max', 'high', 'low'],
+      defaultEffort: 'max',
+      mandatory: true,
+    },
+    inputPerM: 0.075,
+    outputPerM: 0.25,
+    cacheReadPerM: 0.015,
+  },
+};
+
+/** Merge the curated spec overrides onto a parsed entry (or synthesize one). */
+export function applyModelSpec(
+  entry: CatalogEntry | null,
+  modelId: string = entry?.id ?? '',
+): CatalogEntry | null {
+  const spec = modelId ? KNOWN_MODEL_SPECS[modelId] : undefined;
+  if (!spec) {
+    return entry;
+  }
+  const base = entry ?? {
+    id: modelId,
+    name: null,
+    inputPerM: 0,
+    outputPerM: 0,
+    cacheReadPerM: 0,
+    contextLength: UNKNOWN_MODEL_CONTEXT,
+    supportsTools: true,
+    inputModalities: null,
+    reasoning: { supportedEfforts: null, defaultEffort: null, mandatory: null },
+  };
+  const hasPricing = base.inputPerM > 0 || base.outputPerM > 0;
+  return {
+    ...base,
+    contextLength: spec.contextLength ?? base.contextLength,
+    inputModalities: spec.inputModalities ?? base.inputModalities,
+    maxOutputTokens: spec.maxOutputTokens ?? base.maxOutputTokens,
+    reasoning: spec.reasoning ?? base.reasoning,
+    // Live prices win when present; curated prices only fill missing data.
+    inputPerM: hasPricing ? base.inputPerM : (spec.inputPerM ?? base.inputPerM),
+    outputPerM: hasPricing ? base.outputPerM : (spec.outputPerM ?? base.outputPerM),
+    cacheReadPerM:
+      base.cacheReadPerM > 0 ? base.cacheReadPerM : (spec.cacheReadPerM ?? base.cacheReadPerM),
+  };
+}
+
+/** Curated spec for a model id (used for offline/unknown lookups). */
+export function modelSpecFor(modelId: string): ModelSpecOverride | undefined {
+  return KNOWN_MODEL_SPECS[modelId];
+}
+
 /** Parse one `/models` catalog entry; null when the entry has no id. */
 export function parseCatalogEntry(raw: unknown): CatalogEntry | null {
   if (typeof raw !== 'object' || raw === null) {
@@ -117,13 +249,20 @@ export function parseCatalogEntry(raw: unknown): CatalogEntry | null {
       ? (entry.pricing as Record<string, unknown>)
       : {}
   ) as Record<string, unknown>;
-  return {
+  const parsed: CatalogEntry = {
     id: entry.id,
     name: typeof entry.name === 'string' ? entry.name : null,
     inputPerM: parsePricePerM(typeof pricing.prompt === 'string' ? pricing.prompt : undefined),
     outputPerM: parsePricePerM(
       typeof pricing.completion === 'string' ? pricing.completion : undefined,
     ),
+    cacheReadPerM: parsePricePerM(
+      typeof pricing.input_cache_read === 'string' ? pricing.input_cache_read : undefined,
+    ),
+    maxOutputTokens:
+      typeof entry.max_output_tokens === 'number' && entry.max_output_tokens > 0
+        ? entry.max_output_tokens
+        : undefined,
     contextLength:
       typeof entry.context_length === 'number' && entry.context_length > 0
         ? entry.context_length
@@ -136,6 +275,7 @@ export function parseCatalogEntry(raw: unknown): CatalogEntry | null {
     ),
     reasoning: parseReasoning(entry.reasoning),
   };
+  return applyModelSpec(parsed);
 }
 
 /** Fetch and parse a provider's `/models` catalog (best-effort, 5s timeout). */

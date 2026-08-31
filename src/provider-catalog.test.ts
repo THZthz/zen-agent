@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CATALOG_CACHE_VERSION,
+  applyModelSpec,
   fetchCatalog,
+  KNOWN_MODEL_SPECS,
   parseCatalogEntry,
   parseInputModalities,
   parsePricePerM,
@@ -97,6 +99,7 @@ describe('parseCatalogEntry', () => {
       name: 'Vendor Model',
       inputPerM: 0.5,
       outputPerM: 1.5,
+      cacheReadPerM: 0,
       contextLength: 123456,
       supportsTools: true,
       inputModalities: ['text', 'image', 'audio'],
@@ -115,6 +118,7 @@ describe('parseCatalogEntry', () => {
       name: null,
       inputPerM: 0,
       outputPerM: 0,
+      cacheReadPerM: 0,
       contextLength: 200_000,
       supportsTools: true,
       inputModalities: null,
@@ -126,6 +130,86 @@ describe('parseCatalogEntry', () => {
     expect(parseCatalogEntry({ name: 'no id' })).toBeNull();
     expect(parseCatalogEntry(null)).toBeNull();
     expect(parseCatalogEntry('nope')).toBeNull();
+  });
+
+  it('parses input_cache_read pricing (cache hits billed below input)', () => {
+    const entry = parseCatalogEntry({
+      id: 'vendor/cache-priced',
+      pricing: {
+        prompt: '0.000001',
+        completion: '0.000003',
+        input_cache_read: '0.0000002',
+      },
+    });
+    expect(entry?.inputPerM).toBe(1);
+    expect(entry?.outputPerM).toBe(3);
+    expect(entry?.cacheReadPerM).toBe(0.2);
+  });
+});
+
+describe('known model spec overrides (z.ai GLM 5.3 family)', () => {
+  it('corrects OpenRouter z-ai/glm-5.3-flash to the official 1M context + multimodal spec', () => {
+    const entry = parseCatalogEntry({
+      id: 'z-ai/glm-5.3-flash',
+      context_length: 1310720,
+      pricing: { prompt: '0.000000075', completion: '0.00000025' },
+      architecture: { input_modalities: ['text', 'image', 'video'] },
+      reasoning: { supported_efforts: ['max', 'high', 'low'], default_effort: 'max' },
+    });
+    expect(entry?.contextLength).toBe(1_048_576);
+    expect(entry?.inputModalities).toEqual(['text', 'image', 'video']);
+    expect(entry?.maxOutputTokens).toBe(131_072);
+    expect(entry?.reasoning).toEqual({
+      supportedEfforts: ['max', 'high', 'low'],
+      defaultEffort: 'max',
+      mandatory: true,
+    });
+  });
+
+  it('synthesizes the full spec from overrides alone (z.ai direct endpoint has no metadata)', () => {
+    const entry = applyModelSpec(null, 'glm-5.3-flash');
+    expect(entry).toMatchObject({
+      id: 'glm-5.3-flash',
+      contextLength: 1_048_576,
+      inputModalities: ['text', 'image', 'video'],
+      maxOutputTokens: 131_072,
+      inputPerM: 0.075,
+      outputPerM: 0.25,
+      cacheReadPerM: 0.015,
+      reasoning: { mandatory: true, supportedEfforts: ['max', 'high', 'low'] },
+    });
+    // GLM-5.3 (non-flash) is text-only per docs.
+    const text = applyModelSpec(null, 'glm-5.3');
+    expect(text?.inputModalities).toEqual(['text']);
+    expect(text?.contextLength).toBe(1_048_576);
+  });
+
+  it('keeps live prices when the upstream entry has them (no stale overrides)', () => {
+    const entry = applyModelSpec(
+      {
+        id: 'z-ai/glm-5.3',
+        name: null,
+        inputPerM: 9.9,
+        outputPerM: 8.8,
+        cacheReadPerM: 1.1,
+        contextLength: 1310720,
+        supportsTools: true,
+        inputModalities: null,
+        reasoning: { supportedEfforts: null, defaultEffort: null, mandatory: null },
+      },
+      'z-ai/glm-5.3',
+    );
+    expect(entry?.inputPerM).toBe(9.9);
+    expect(entry?.outputPerM).toBe(8.8);
+    expect(entry?.cacheReadPerM).toBe(1.1);
+    // Spec fields still win.
+    expect(entry?.contextLength).toBe(1_048_576);
+  });
+
+  it('registers both z.ai direct and OpenRouter ids', () => {
+    for (const id of ['glm-5.3', 'glm-5.3-flash', 'z-ai/glm-5.3', 'z-ai/glm-5.3-flash']) {
+      expect(KNOWN_MODEL_SPECS[id]).toBeDefined();
+    }
   });
 });
 

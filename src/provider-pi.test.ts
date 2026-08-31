@@ -63,6 +63,7 @@ describe('buildEffortMap', () => {
       name: 'GLM',
       inputPerM: 0,
       outputPerM: 0,
+      cacheReadPerM: 0,
       contextLength: 200_000,
       supportsTools: true,
       inputModalities: null,
@@ -90,6 +91,7 @@ describe('buildEffortMap', () => {
       name: 'Full',
       inputPerM: 0,
       outputPerM: 0,
+      cacheReadPerM: 0,
       contextLength: 200_000,
       supportsTools: true,
       inputModalities: null,
@@ -106,6 +108,7 @@ describe('buildEffortMap', () => {
       name: 'No None',
       inputPerM: 0,
       outputPerM: 0,
+      cacheReadPerM: 0,
       contextLength: 200_000,
       supportsTools: true,
       inputModalities: null,
@@ -136,6 +139,22 @@ describe('getPiModel', () => {
     expect(model.input).toEqual(['text']);
     expect(model.cost.input).toBe(1);
     expect(model.cost.output).toBe(2);
+  });
+
+  it('applies curated z.ai specs to GLM 5.3 Flash even without a catalog', () => {
+    delete process.env.OPENROUTER_API_KEY;
+    const flash = getPiModel('openrouter', 'z-ai/glm-5.3-flash');
+    expect(flash.contextWindow).toBe(1_048_576);
+    expect(flash.input).toEqual(['text', 'image']);
+    expect(flash.maxTokens).toBe(131_072);
+    expect(flash.cost.input).toBe(0.075);
+    expect(flash.cost.output).toBe(0.25);
+    expect(flash.cost.cacheRead).toBe(0.015);
+
+    const glm53 = getPiModel('openrouter', 'z-ai/glm-5.3');
+    expect(glm53.contextWindow).toBe(1_048_576);
+    expect(glm53.input).toEqual(['text']);
+    expect(glm53.thinkingLevelMap?.off).toBe('low'); // mandatory reasoning
   });
 });
 
