@@ -124,10 +124,10 @@ Byte-identical across providers.
 ### 5.3 Sandboxing
 
 - `bin/zen-agent-bwrap.sh` wraps the agent process: `--bind / / --ro-bind /mnt /mnt --dev /dev --bind /dev/pts /dev/pts --tmpfs /dev/shm` (`/mnt` = Windows drives, read-only; fresh devtmpfs; host PTYs). Runs in a new user+mount namespace.
-- The bash tool runs on the host, so it needs its own sandbox: with `ZEN_AGENT_SANDBOX=1` (env policy) or `config.sandbox` (`/sandbox on`), each bash call is wrapped in its own `bwrap` with the same `/mnt` policy (`bashSandboxPrefix` in `tool-execution.ts`). The env policy always wins: `/sandbox off` is refused while `ZEN_AGENT_SANDBOX=1`.
+- The bash tool runs on the host, so it needs its own sandbox: with `ZEN_AGENT_SANDBOX=1` (env policy) or `config.sandbox` (`/sandbox on`), each bash call is wrapped in its own `bwrap` with the same `/mnt` policy (`bashSandboxPrefix` in `src/tools/execution.ts`). The env policy always wins: `/sandbox off` is refused while `ZEN_AGENT_SANDBOX=1`.
 - Inside the bash sandbox, `rm`/`grep`/`find` are shadowed (read-only mount) by `bin/zen-agent-sandbox-block.sh`, which refuses to run and suggests `trash`/`rg`/`fdfind`; the host is unaffected. `ZEN_AGENT_SANDBOX_CMD` overrides the whole bwrap command; `ZEN_AGENT_SANDBOX_BLOCK_SHIM` overrides the shim path.
 
-### 5.2 `read_media` Tool (`src/media.ts`)
+### 5.2 `read_media` Tool (`src/tools/media.ts`)
 
 Offered only on sessions whose model accepts image/audio input (OpenRouter `architecture.input_modalities`; unknown catalog entries count as text-only). The model calls it with a file path; the agent resolves it against the session cwd, maps extensions to MIME types (png/jpeg/webp/gif/bmp images, wav/mp3 audio), enforces the size limit, then:
 
@@ -140,7 +140,7 @@ Failures (missing file, unsupported extension, modality not accepted by the mode
 
 Every provider runs through pi-ai's `createProvider`/`Models` collection and the shared OpenAI-compatible chat-completions adapter. There are **no built-in providers** — users define every provider via `ZEN_AGENT_PROVIDERS` (inline JSON) or `ZEN_AGENT_PROVIDERS_FILE` (JSON file).
 
-### 6.1 Provider registry (`src/provider-registry.ts`)
+### 6.1 Provider registry (`src/providers/registry.ts`)
 
 A `ProviderDefinition` is pure data: `id`, `name`, `label`, `baseUrl`, `apiKeyEnv`, `defaultModel`, `currency`, `discovery.enabled` (from `fetchModels`), `thinkingMode` (`openai`/`deepseek`, see §6.4), `staticModels` (declared models with `contextLength`/`cost`/`modalities`/`thinkingEfforts`), `pricing.fallback`, optional `balance`, pi `compat`, and generic `extraBody`/`extraHeaders`/`sendSessionId`. The registry rebuilds automatically when provider-relevant env changes.
 
@@ -174,9 +174,9 @@ Example (`ZEN_AGENT_PROVIDERS`):
 - `fetchModels: true` auto-discovers models from `GET {baseUrl}/models`; declared `models` are still offered alongside the catalog. `defaultModel` is required in this mode.
 - A provider with neither `models` nor `fetchModels: true` is a config error. `apiKeyEnv` is optional (keyless local endpoints). Duplicate ids are rejected with clear errors.
 
-### 6.2 pi integration (`src/provider-pi.ts`)
+### 6.2 pi integration (`src/providers/pi.ts`)
 
-Each definition becomes a pi provider via `createProvider({ id, name, baseUrl, auth: envApiKeyAuth(...), models: declaredModels, fetchModels, api: openAICompletionsApi() })` inside one `Models` collection. `fetchModels` runs the generic `/models` discovery and converts entries to pi `Model` objects carrying `cost`, `contextWindow` and `input` modalities (declared metadata wins over the catalog). pi's `ModelsStore` (a per-provider file under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json`) restores the catalog on offline starts; Zen's `provider-catalog.ts` keeps a parallel `<providerId>.catalog.json` for modalities and tool support. Unknown slugs on discovery providers are synthesized from the catalog (or conservative defaults), so any slug stays usable.
+Each definition becomes a pi provider via `createProvider({ id, name, baseUrl, auth: envApiKeyAuth(...), models: declaredModels, fetchModels, api: openAICompletionsApi() })` inside one `Models` collection. `fetchModels` runs the generic `/models` discovery and converts entries to pi `Model` objects carrying `cost`, `contextWindow` and `input` modalities (declared metadata wins over the catalog). pi's `ModelsStore` (a per-provider file under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json`) restores the catalog on offline starts; Zen.s `src/providers/catalog.ts` keeps a parallel `<providerId>.catalog.json` for modalities and tool support. Unknown slugs on discovery providers are synthesized from the catalog (or conservative defaults), so any slug stays usable.
 
 ### 6.3 Shared client (`src/chat-completions.ts`)
 
@@ -234,27 +234,56 @@ zen-agent/
     zen-agent-bwrap.sh         bwrap wrapper for the agent process
     zen-agent-sandbox-block.sh shim shadowing rm/grep/find in the bash sandbox
   src/
-    index.ts           stdio entry point (ACP wiring)
-    agent.ts           ACP handlers, session store, turn lifecycle, stats
-    storage.ts         session persistence under <cwd>/.sessions/
-    llm-client.ts      shared LlmUsage/LlmStep types + cost + bash schema
-    chat-completions.ts pi-ai OpenAI-completions adapter (stream loop)
-    provider-registry.ts user-defined provider definitions + parsing
-    provider-pi.ts     pi createProvider/Models collection + discovery
-    provider-catalog.ts generic /models discovery + Zen metadata cache
-    provider-balances.ts optional balance fetch (generic)
-    provider.ts        per-session provider facade (step, pricing, balance)
-    prompt-content.ts  ACP ContentBlock[] -> user-message parts (text + media)
-    media.ts           read_media path resolution/validation
-    media-limit.ts     shared ZEN_AGENT_MAX_MEDIA_BYTES limit
-    tool-execution.ts  bash tool via client terminals, sandboxing
-    system-prompt.ts   system prompt, environment message, user naming
-    skills.ts          Agent Skills discovery and invocation
-    replay.ts          session/load event replay + terminal metadata synthesis
-    stream-throttle.ts LLM delta batching for agent_message_chunk
-    turn-stats.ts      stats formatting
-    logger.ts          log.jsonl writer
-  dist/                build output
+    index.ts                   stdio entry point (ACP wiring)
+    agent/                     ACP orchestration: handlers, sessions, turns, commands, stats
+      index.ts                 ZenAgent class (ACP handlers + mixin composition)
+      core.ts                  shared state and plumbing
+      config.ts                session config options + locking
+      session.ts               session lifecycle mixin (new/load/resume/close/delete)
+      turn.ts                  LLM turn loop + stream cleanup
+      commands.ts              slash commands
+      prompt.ts                prompt/slash-command entry point
+      reporting.ts             turn accounting and reporting
+      stats.ts                 stats formatting
+      stream-throttle.ts       LLM delta batching for agent_message_chunk
+      prompt-content.ts        ACP ContentBlock[] -> user-message parts (text + media)
+      tests/                   lifecycle, concurrency, shutdown, prompt tests
+    providers/                 provider facade, registry, LLM client, wire conversion
+      index.ts                 per-session provider facade (step, pricing, balance)
+      registry.ts              user-defined provider definitions + parsing
+      pi.ts                    pi createProvider/Models collection + discovery
+      catalog.ts               generic /models discovery + Zen metadata cache
+      balances.ts              optional balance fetch (generic)
+      llm-client.ts            shared LlmUsage/LlmStep types + cost + bash schema
+      llm-errors.ts            LLM API failure classification
+      chat-completions.ts      pi-ai OpenAI-completions adapter (stream loop)
+      convert.ts               OpenAI wire conversion (pure layer)
+      heal.ts                  message history healing before API calls
+      rate-limit.ts            client-side chat request spacing
+      cache-diagnostics.ts     per-turn cache hit/miss diagnostics
+      tests/                   facade, registry, client, wire tests
+    tools/                     bash/read_media tools, media handling, sandboxing
+      bash.ts                  bash tool via client terminals
+      execution.ts             tool execution + sandbox policy
+      read-media.ts            read_media tool
+      media.ts                 read_media path resolution/validation
+      media-limit.ts           shared ZEN_AGENT_MAX_MEDIA_BYTES limit
+      sandbox.ts               bwrap policy + rm/grep/find shim shadowing
+      tests/                   execution, sandbox, media flow tests
+    session/                   persistence, replay, skills, system prompt
+      storage.ts               session persistence under <cwd>/.sessions/
+      session-index.ts         session index under the user data dir
+      replay.ts                session/load event replay + terminal metadata synthesis
+      skills.ts                Agent Skills discovery and invocation
+      system-prompt.ts         system prompt, environment message, user naming
+      tests/                   storage, skills, system prompt tests
+    util/                      shared helpers
+      env.ts                   environment variable parsing
+      logger.ts                log.jsonl writer
+      is-record.ts             record type guard
+    test-server.ts             local HTTP server for provider tests
+    test-setup.ts              vitest setup
+  dist/                        build output
 ```
 
 ## 11. Dependencies
