@@ -14,53 +14,8 @@ import {
   DEFAULT_OPENROUTER_MODEL,
   fetchOpenRouterBalance,
   mapOpenRouterEffort,
-  parseOpenRouterUsage,
   runOpenRouterStep,
 } from './openrouter.js';
-
-const timing = { llmMs: 5000, thinkingMs: 2000, answeringMs: 3000 };
-
-describe('parseOpenRouterUsage', () => {
-  it('reads generic OpenAI usage and passthrough cache/reasoning fields', () => {
-    const usage = parseOpenRouterUsage(
-      {
-        prompt_tokens: 10000,
-        completion_tokens: 500,
-        total_tokens: 10500,
-        prompt_cache_hit_tokens: 8000,
-        completion_tokens_details: { reasoning_tokens: 200 },
-      },
-      timing,
-    );
-
-    expect(usage).not.toBeNull();
-    expect(usage?.inputTokens).toBe(10000);
-    expect(usage?.outputTokens).toBe(500);
-    expect(usage?.totalTokens).toBe(10500);
-    expect(usage?.cacheReadTokens).toBe(8000);
-    expect(usage?.cacheMissTokens).toBe(2000);
-    expect(usage?.reasoningTokens).toBe(200);
-    expect(usage?.llmMs).toBe(5000);
-  });
-
-  it('reads Anthropic-style prompt_tokens_details.cached_tokens', () => {
-    const usage = parseOpenRouterUsage(
-      {
-        prompt_tokens: 1000,
-        completion_tokens: 100,
-        prompt_tokens_details: { cached_tokens: 700 },
-      },
-      timing,
-    );
-    expect(usage?.cacheReadTokens).toBe(700);
-    expect(usage?.cacheMissTokens).toBe(300);
-  });
-
-  it('returns null when no token counts are reported', () => {
-    expect(parseOpenRouterUsage(undefined, timing)).toBeNull();
-    expect(parseOpenRouterUsage({}, timing)).toBeNull();
-  });
-});
 
 describe('runOpenRouterStep (live SSE)', () => {
   const originalEnv = { ...process.env };
@@ -85,6 +40,9 @@ describe('runOpenRouterStep (live SSE)', () => {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ data: entries }));
   };
+
+  const reasoningEffort = (body: Record<string, unknown>): unknown =>
+    (body.reasoning as { effort?: unknown } | undefined)?.effort;
 
   beforeEach(() => {
     process.env.OPENROUTER_API_KEY = 'test';
@@ -207,7 +165,7 @@ describe('runOpenRouterStep (live SSE)', () => {
     expect(result.text).toBe('done');
   });
 
-  it('requests include_usage, passes max through when the allowlist is unknown, and omits reasoning_effort for off', async () => {
+  it("uses Pi's reasoning object and includes usage when the allowlist is unknown", async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
@@ -243,17 +201,17 @@ describe('runOpenRouterStep (live SSE)', () => {
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]?.reasoning_effort).toBe('max');
+    expect(reasoningEffort(bodies[0]!)).toBe('max');
     expect(bodies[0]?.stream_options).toEqual({ include_usage: true });
     expect(bodies[0]?.provider).toEqual({ sort: 'price' });
     expect(bodies[0]?.stream).toBe(true);
     expect((bodies[0]?.tools as unknown[]).length).toBe(1);
     expect(bodies[0]?.model).toBe(DEFAULT_OPENROUTER_MODEL);
-    expect(bodies[1]?.reasoning_effort).toBeUndefined();
+    expect(reasoningEffort(bodies[1]!)).toBeUndefined();
     expect(bodies[1]?.provider).toEqual({ sort: 'price' });
   });
 
-  it("maps reasoning_effort to the model's supported_efforts allowlist", async () => {
+  it("maps Pi's reasoning effort to the model's supported_efforts allowlist", async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
@@ -303,10 +261,10 @@ describe('runOpenRouterStep (live SSE)', () => {
     // off has no `none` tier here → lowest supported effort (low).
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
 
-    expect(bodies.map((body) => body.reasoning_effort)).toEqual(['max', 'high', 'low']);
+    expect(bodies.map(reasoningEffort)).toEqual(['max', 'high', 'low']);
   });
 
-  it('sends reasoning_effort none for off when the model supports it', async () => {
+  it('sends Pi reasoning none for off when the model supports it', async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
@@ -351,10 +309,10 @@ describe('runOpenRouterStep (live SSE)', () => {
       thinkingEffort: 'minimal',
     });
 
-    expect(bodies.map((body) => body.reasoning_effort)).toEqual(['none', 'minimal']);
+    expect(bodies.map(reasoningEffort)).toEqual(['none', 'minimal']);
   });
 
-  it('keeps the reasoning_effort body stable across consecutive steps (cache-safe)', async () => {
+  it('keeps Pi reasoning stable across consecutive steps (cache-safe)', async () => {
     let bodies: Array<Record<string, unknown>> = [];
     const port = await new Promise<number>((resolve) => {
       const srv = require('node:http').createServer(
@@ -394,7 +352,7 @@ describe('runOpenRouterStep (live SSE)', () => {
     process.env.OPENROUTER_MODEL = 'vendor/stable';
 
     // Two steps at the same effort: the allowlist lookup is cached in memory,
-    // so the request body (including reasoning_effort) is deterministic. The
+    // so the request body (including Pi's reasoning object) is deterministic. The
     // provider's context cache keys on system + tools + messages, none of
     // which vary between steps.
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
@@ -402,9 +360,9 @@ describe('runOpenRouterStep (live SSE)', () => {
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'max' });
 
     expect(bodies).toHaveLength(3);
-    expect(bodies[0]?.reasoning_effort).toBe('none');
-    expect(bodies[1]?.reasoning_effort).toBe('none');
-    expect(bodies[2]?.reasoning_effort).toBe('max');
+    expect(reasoningEffort(bodies[0]!)).toBe('none');
+    expect(reasoningEffort(bodies[1]!)).toBe('none');
+    expect(reasoningEffort(bodies[2]!)).toBe('max');
   });
 
   it('sends HTTP-Referer and X-Title when configured, and honors OPENROUTER_MODEL', async () => {

@@ -42,14 +42,12 @@ describe('runChatCompletions', () => {
       runChatCompletions({
         baseUrl: `http://127.0.0.1:${port}`,
         apiKey: 'test',
+        provider: 'test',
         label: 'Test',
         model: 'test-model',
         messages: [],
         system: 'system',
         thinkingEffort: 'off',
-        reasoningMessageField: 'reasoning_content',
-        reasoningDeltaFields: ['reasoning_content'],
-        parseUsage: () => null,
       }),
     ).rejects.toThrow('timed out after 100ms');
   });
@@ -74,14 +72,12 @@ describe('runChatCompletions', () => {
     const options = {
       baseUrl: `http://127.0.0.1:${port}`,
       apiKey: 'test',
+      provider: 'test',
       label: 'Test',
       model: 'test-model',
       messages: [],
       system: 'system',
       thinkingEffort: 'off' as const,
-      reasoningMessageField: 'reasoning_content',
-      reasoningDeltaFields: ['reasoning_content'],
-      parseUsage: () => null,
       logRuntime,
     };
 
@@ -104,7 +100,7 @@ describe('runChatCompletions', () => {
     const port = await startServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const chunk = JSON.stringify({
-        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: 'stop' }],
       });
       // First write ends in the MIDDLE of the "\r\n\r\n" terminator.
       res.write(`data: ${chunk}\r\n\r`);
@@ -117,14 +113,12 @@ describe('runChatCompletions', () => {
     const result = await runChatCompletions({
       baseUrl: `http://127.0.0.1:${port}`,
       apiKey: 'test',
+      provider: 'test',
       label: 'Test',
       model: 'test-model',
       messages: [],
       system: 'system',
       thinkingEffort: 'off',
-      reasoningMessageField: 'reasoning_content',
-      reasoningDeltaFields: ['reasoning_content'],
-      parseUsage: () => null,
     });
     expect(result.text).toBe('hi');
   });
@@ -164,15 +158,13 @@ describe('runChatCompletions tools field', () => {
     await runChatCompletions({
       baseUrl: `http://127.0.0.1:${port}`,
       apiKey: 'test',
+      provider: 'test',
       label: 'Test',
       model: 'test-model',
       messages: [],
       system: 'system',
       thinkingEffort: 'off',
       tools,
-      reasoningMessageField: 'reasoning_content',
-      reasoningDeltaFields: ['reasoning_content'],
-      parseUsage: () => null,
     });
     return bodyPromise;
   }

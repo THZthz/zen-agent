@@ -4,53 +4,8 @@ import {
   fetchDeepSeekBalance,
   getModelPricing,
   isPeakTime,
-  parseDeepSeekUsage,
   runLlmStep,
 } from './deepseek.js';
-
-const timing = { llmMs: 5000, thinkingMs: 2000, answeringMs: 3000 };
-
-describe('parseDeepSeekUsage', () => {
-  it('reads DeepSeek-style cache tokens and reasoning tokens from raw usage', () => {
-    const usage = parseDeepSeekUsage(
-      {
-        prompt_tokens: 10000,
-        completion_tokens: 500,
-        total_tokens: 10500,
-        prompt_cache_hit_tokens: 8000,
-        prompt_cache_miss_tokens: 2000,
-        completion_tokens_details: { reasoning_tokens: 200 },
-      },
-      timing,
-    );
-
-    expect(usage).not.toBeNull();
-    expect(usage?.inputTokens).toBe(10000);
-    expect(usage?.outputTokens).toBe(500);
-    expect(usage?.totalTokens).toBe(10500);
-    expect(usage?.cacheReadTokens).toBe(8000);
-    expect(usage?.cacheMissTokens).toBe(2000);
-    expect(usage?.reasoningTokens).toBe(200);
-    expect(usage?.llmMs).toBe(5000);
-    expect(usage?.thinkingMs).toBe(2000);
-    expect(usage?.answeringMs).toBe(3000);
-  });
-
-  it('falls back to input-minus-cache for miss and sums totals when absent', () => {
-    const usage = parseDeepSeekUsage(
-      { prompt_tokens: 10000, completion_tokens: 100, prompt_cache_hit_tokens: 4000 },
-      timing,
-    );
-    expect(usage?.cacheReadTokens).toBe(4000);
-    expect(usage?.cacheMissTokens).toBe(6000);
-    expect(usage?.totalTokens).toBe(10100);
-  });
-
-  it('returns null when no token counts are reported', () => {
-    expect(parseDeepSeekUsage(undefined, timing)).toBeNull();
-    expect(parseDeepSeekUsage({}, timing)).toBeNull();
-  });
-});
 
 describe('isPeakTime', () => {
   // Beijing time = UTC+8, no DST.

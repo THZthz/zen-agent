@@ -1,63 +1,78 @@
-import { describe, expect, it } from 'vitest';
-import { userPartsToOpenAi, toOpenAiMessages } from './llm-client.js';
-import type { NamedUserMessage } from './storage.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { runChatCompletions } from './chat-completions.js';
 
-describe('userPartsToOpenAi', () => {
-  it('maps text parts unchanged', () => {
-    expect(userPartsToOpenAi([{ type: 'text', text: 'hi' }])).toEqual([
-      { type: 'text', text: 'hi' },
-    ]);
-  });
+let server: import('node:http').Server | undefined;
 
-  it('maps images to image_url data URIs', () => {
-    expect(userPartsToOpenAi([{ type: 'image', mimeType: 'image/png', data: 'QUJD' }])).toEqual([
-      { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } },
-    ]);
-  });
-
-  it('maps wav/mp3 audio to input_audio with a format field', () => {
-    expect(
-      userPartsToOpenAi([
-        { type: 'audio', mimeType: 'audio/wav', data: 'UklGRg==' },
-        { type: 'audio', mimeType: 'audio/mpeg', data: 'SUQz' },
-      ]),
-    ).toEqual([
-      { type: 'input_audio', input_audio: { data: 'UklGRg==', format: 'wav' } },
-      { type: 'input_audio', input_audio: { data: 'SUQz', format: 'mp3' } },
-    ]);
-  });
-
-  it('degrades unsupported audio containers to placeholder text', () => {
-    const parts = userPartsToOpenAi([{ type: 'audio', mimeType: 'audio/ogg', data: 'T0dn' }]);
-    expect(parts).toHaveLength(1);
-    expect(parts[0]).toMatchObject({ type: 'text' });
-    expect((parts[0] as { text: string }).text).toContain('unsupported format');
-  });
+afterEach(() => {
+  server?.closeAllConnections?.();
+  server?.close();
+  server = undefined;
 });
 
-describe('toOpenAiMessages multi-part user content', () => {
-  it('emits an array content when the stored message is multi-part', () => {
-    const message: NamedUserMessage = {
-      role: 'user',
-      content: [
-        { type: 'text', text: 'look at this' },
-        { type: 'image', mimeType: 'image/jpeg', data: 'QUJD' },
+function startServer(
+  handler: (
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
+  ) => void,
+): Promise<number> {
+  return new Promise((resolve) => {
+    const srv = require('node:http').createServer(handler);
+    server = srv;
+    srv.listen(0, () => resolve((srv.address() as import('node:net').AddressInfo).port));
+  });
+}
+
+describe('pi-ai message adapter', () => {
+  it('preserves named users and converts supported media to the OpenAI wire format', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const port = await startServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        requestBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.end(
+          `data: ${JSON.stringify({
+            choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
+          })}\n\ndata: [DONE]\n\n`,
+        );
+      });
+    });
+
+    const result = await runChatCompletions({
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKey: 'test',
+      provider: 'test',
+      label: 'Test',
+      model: 'test-model',
+      system: 'system',
+      messages: [
+        {
+          role: 'user',
+          name: 'Amias',
+          content: [
+            { type: 'text', text: 'look at these' },
+            { type: 'image', mimeType: 'image/jpeg', data: 'QUJD' },
+            { type: 'audio', mimeType: 'audio/wav', data: 'UklGRg==' },
+            { type: 'audio', mimeType: 'audio/ogg', data: 'T0dn' },
+          ],
+        },
       ],
-    };
-    const wire = toOpenAiMessages([message], 'reasoning_content');
-    expect(wire).toEqual([
+    });
+
+    expect(result.text).toBe('ok');
+    expect(requestBody?.messages).toEqual([
+      { role: 'system', content: 'system' },
       {
         role: 'user',
+        name: 'Amias',
         content: [
-          { type: 'text', text: 'look at this' },
+          { type: 'text', text: 'look at these' },
           { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,QUJD' } },
+          { type: 'input_audio', input_audio: { data: 'UklGRg==', format: 'wav' } },
+          { type: 'text', text: '[audio attached (audio/ogg) omitted: unsupported format]' },
         ],
       },
     ]);
-  });
-
-  it('keeps plain-string user messages as strings (cache-compatible)', () => {
-    const wire = toOpenAiMessages([{ role: 'user', content: 'plain' }], 'reasoning_content');
-    expect(wire).toEqual([{ role: 'user', content: 'plain' }]);
   });
 });

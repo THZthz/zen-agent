@@ -26,8 +26,12 @@
   ],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
+    "@earendil-works/pi-ai": "^0.84.4",
     "sonyflake": "^2.0.0"
   },
   "devDependencies": {

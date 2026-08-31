@@ -135,13 +135,13 @@ Failures (missing file, unsupported extension, modality not accepted by the mode
 
 ## 6. LLM Providers
 
-Both providers are OpenAI-compatible chat completions endpoints spoken to by one hand-rolled SSE client.
+Both providers use Pi's `@earendil-works/pi-ai` OpenAI-compatible chat-completions adapter.
 
-### 6.1 Shared Client (`src/llm-client.ts`)
+### 6.1 Shared Client (`src/chat-completions.ts`)
 
-`runChatCompletions` POSTs to `<baseUrl>/chat/completions` (retry on 429/5xx before the first byte, abort-aware) and parses the SSE stream directly. **The Vercel AI SDK was deliberately dropped**: `@ai-sdk/openai`'s `throwIfOpenAIStreamErrorBeforeOutput` reads ahead until the first output chunk — invisible to DeepSeek's `reasoning_content`-only reasoning phase — so the SDK buffered the whole thinking block, breaking live streaming. The raw parse also preserves provider-specific usage fields (cache tokens) that the SDK's zod schema strips.
+`runChatCompletions` converts Zen's persisted history and tool schemas to Pi's typed context, then consumes Pi's `openai-completions` event stream. Pi owns endpoint construction, provider compatibility, retry behavior, and SSE parsing; it emits live text/thinking deltas and normalized tool calls, finish reasons, and usage. Zen keeps its client-side rate limit, hard request timeout, session-specific routing fields, and local usage/timing rollup.
 
-Provider-specific knobs: reasoning delta fields, reasoning field in assistant history messages, extra body/headers, thinking-effort mapping, and a usage parser.
+Provider-specific knobs are expressed as Pi model compatibility and thinking-level configuration, plus Zen's extra request headers/routing fields.
 
 ### 6.2 DeepSeek (`src/deepseek.ts`, default)
 
@@ -153,8 +153,8 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 | `DEEPSEEK_CONTEXT_WINDOW`       | `1_000_000`                | Context size for `usage_update`. |
 | `DEEPSEEK_PRICE_*_CNY_PER_MTOK` | rate table                 | Per-rate price overrides.        |
 
-- Reasoning streams as `delta.reasoning_content`; stored reasoning is echoed back as `reasoning_content` in assistant history (only alongside tool calls).
-- Usage parsed from the raw chunk: `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`.
+- Pi normalizes `delta.reasoning_content` into live thinking events and replays stored reasoning as `reasoning_content` in assistant history.
+- Pi preserves the provider's cache and reasoning usage fields while normalizing them for Zen's token/cost rollup.
 - `thinking_effort` maps to DeepSeek's thinking controls. DeepSeek defaults thinking mode to **enabled**, so `off` must send `thinking: {type: 'disabled'}` (non-thinking mode, no `reasoning_effort` key) — omitting the field alone would still think. Non-off efforts send `thinking: {type: 'enabled'}` plus `reasoning_effort`, mapped per DeepSeek's official table (`minimal`→`low`, `low`→`low`, `medium`→`high`, `high`→`high`, `xhigh`→`high`, `max`→`max`).
 - Cost: static CNY rate table with Beijing peak/off-peak windows (peak 09:00-12:00 and 14:00-18:00; off-peak = half), CNY per 1M tokens:
 
@@ -176,10 +176,10 @@ Provider-specific knobs: reasoning delta fields, reasoning field in assistant hi
 | `OPENROUTER_MODEL`                            | `openrouter/free`              | Fallback model slug.                |
 | `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` | —                              | `HTTP-Referer` / `X-Title` headers. |
 
-- Reasoning streams as `delta.reasoning` (with `reasoning_content` accepted as passthrough for DeepSeek routes); stored reasoning is echoed back as `reasoning`.
-- Sends `stream_options: { include_usage: true }` (OpenRouter omits usage otherwise). `parseOpenRouterUsage` reads generic `prompt_tokens`/`completion_tokens` plus optional passthrough cache (`prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`) and reasoning fields.
+- Pi normalizes `delta.reasoning`, `delta.reasoning_content`, and related OpenAI-compatible reasoning fields into live thinking events and replays reasoning with the provider's compatible field.
+- Pi sends `stream_options: { include_usage: true }` and normalizes generic/passthrough cache and reasoning usage fields for Zen.
 - Sends the zen-agent `sessionId` as OpenRouter's `session_id` (top-level body field, ≤256 chars). OpenRouter derives Z.AI's session affinity key from it and pins the upstream context cache to the conversation from the first request; without it Z.AI's cache is keyed per account and GLM sessions can randomly drop to a 0% cache-hit rate even with a byte-stable prefix (see opencode issue #31348).
-- `reasoning_effort` honors the model's `reasoning.supported_efforts` allowlist from the catalog (see §6.3 catalog): the session's `off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max` map to the model's own vocabulary, so e.g. `max` reaches models that support `xhigh` or `max` natively instead of being collapsed to `high`. `off` sends `none` when supported; on mandatory-reasoning models it sends the lowest supported effort; otherwise the field is omitted. Every gateway tier — including `minimal`, which the live catalog lists as a distinct supported/default effort on several models (e.g. Gemini routes) — is offered as itself in the selector when the model's allowlist contains it; the selector shows exactly `off` plus the model's supported tiers. The mapping is deterministic per model (allowlist cached per process), and `reasoning_effort` is a sampling parameter outside the cache prefix (system + tools + environment + history), so it does not affect provider context-cache hits.
+- Pi's OpenRouter compatibility sends the resolved effort as `reasoning: { effort }`. Zen honors the model's `reasoning.supported_efforts` allowlist from the catalog (see §6.3 catalog): the session's `off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max` map to the model's own vocabulary, so e.g. `max` reaches models that support `xhigh` or `max` natively instead of being collapsed to `high`. `off` sends `none` when supported; on mandatory-reasoning models it sends the lowest supported effort; otherwise the field is omitted. Every gateway tier — including `minimal`, which the live catalog lists as a distinct supported/default effort on several models (e.g. Gemini routes) — is offered as itself in the selector when the model's allowlist contains it; the selector shows exactly `off` plus the model's supported tiers. The mapping is deterministic per model (allowlist cached per process), and the reasoning setting is outside the cache prefix (system + tools + environment + history), so it does not affect provider context-cache hits.
 - Cost/context: `GET /models` (fetched once per base URL+key, cached) provides USD pricing and `context_length`; static fallbacks cover `openrouter/free` ($0) and generic defaults for unknown slugs. OpenRouter bills cached reads at the regular input rate. Balance verification: `GET /auth/key` (remaining = limit − usage).
 - **Model catalog**: the catalog is auto-fetched from `/models` (5s timeout) the first time an OpenRouter session's config options are requested, kept in memory per process, and persisted to `<cwd>/.sessions/client/models.openrouter.json` (versioned; best-effort). Offline starts load that file. The session `model` selector is built from the catalog — tool-capable models only (`supported_parameters` missing = assume yes), `openrouter/free` pinned first, then alphabetical — with the static list (`openrouter/free`) as final fallback. v2 cache files also carry `architecture.input_modalities`, exposed via `getOpenRouterModelModalities` / `provider.getModelModalities` to gate media input. v3 cache files additionally carry each model's `reasoning.supported_efforts`/`default_effort`/`mandatory` (parsed from the catalog's `reasoning` object, `getOpenRouterReasoning`), which drive the thinking-effort selector and the per-model `reasoning_effort` mapping (`mapOpenRouterEffort`).
 

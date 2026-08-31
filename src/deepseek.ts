@@ -2,7 +2,6 @@ import type { ModelId, ThinkingEffort } from './storage.js';
 import { envNonNegativeFloat, envPositiveInt } from './env.js';
 import { runChatCompletions } from './chat-completions.js';
 import {
-  buildLlmUsage,
   costFromUsage,
   type LlmStepOptions,
   type LlmStepResult,
@@ -159,56 +158,6 @@ export async function fetchDeepSeekBalance(
 }
 
 /**
- * DeepSeek's streaming usage object. We read the cache tokens from the raw
- * chunk usage: DeepSeek reports `prompt_cache_hit_tokens` /
- * `prompt_cache_miss_tokens` which OpenAI's schema (and the AI SDK's zod
- * parser) strips, so they must come straight from the wire.
- */
-interface DeepSeekUsage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  prompt_cache_hit_tokens?: number;
-  prompt_cache_miss_tokens?: number;
-  completion_tokens_details?: { reasoning_tokens?: number };
-}
-
-function toNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-export function parseDeepSeekUsage(
-  usage: DeepSeekUsage | undefined,
-  timing: { llmMs: number; thinkingMs: number; answeringMs: number },
-): LlmUsage | null {
-  if (!usage) {
-    return null;
-  }
-  const inputTokens = toNumber(usage.prompt_tokens);
-  const outputTokens = toNumber(usage.completion_tokens);
-  const cacheReadTokens = toNumber(usage.prompt_cache_hit_tokens);
-  // DeepSeek reports prompt_cache_miss_tokens explicitly; when absent (some
-  // proxies/models), fall back to input - cache-hit.
-  const cacheMissTokens =
-    usage.prompt_cache_miss_tokens !== undefined
-      ? toNumber(usage.prompt_cache_miss_tokens)
-      : Math.max(0, inputTokens - cacheReadTokens);
-  const reasoningTokens = toNumber(usage.completion_tokens_details?.reasoning_tokens);
-
-  return buildLlmUsage(
-    {
-      inputTokens,
-      outputTokens,
-      totalTokens: toNumber(usage.total_tokens),
-      cacheReadTokens,
-      cacheMissTokens,
-      reasoningTokens,
-    },
-    timing,
-  );
-}
-
-/**
  * DeepSeek's `reasoning_effort` vocabulary is `low` / `high` / `max` (no
  * `minimal`/`medium`/`xhigh`). Values outside the vocabulary map per
  * DeepSeek's official table: `minimal`→`low`, `medium`→`high`, `xhigh`→`high`
@@ -224,10 +173,8 @@ export const DEEPSEEK_EFFORT_MAP: Record<Exclude<ThinkingEffort, 'off'>, string>
 };
 
 /**
- * DeepSeek's OpenAI-compatible chat completions step. The SSE client itself
- * is shared with the OpenRouter provider (see runChatCompletions); this
- * wrapper supplies DeepSeek's endpoint, reasoning field (`reasoning_content`)
- * and usage parsing.
+ * DeepSeek's OpenAI-compatible chat-completions step. Pi's shared adapter
+ * owns request construction, compatibility handling, retries, and SSE parsing.
  */
 export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -239,6 +186,7 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
   return runChatCompletions({
     baseUrl: baseURL,
     apiKey,
+    provider: 'deepseek',
     label: 'DeepSeek',
     model: modelName,
     messages: options.messages,
@@ -249,20 +197,13 @@ export async function runLlmStep(options: LlmStepOptions): Promise<LlmStepResult
     onReasoningDelta: options.onReasoningDelta,
     logRuntime: options.logRuntime,
     thinkingEffort: options.thinkingEffort,
-    reasoningMessageField: 'reasoning_content',
-    reasoningDeltaFields: ['reasoning_content'],
-    effortBody: (effort) =>
-      // DeepSeek defaults thinking mode to ENABLED, so omitting
-      // reasoning_effort is not enough to turn it off: `off` must send
-      // thinking.type=disabled (non-thinking mode, no reasoning_effort key).
-      // Non-off efforts send thinking.type=enabled plus the mapped
-      // reasoning_effort.
-      effort === 'off'
-        ? { thinking: { type: 'disabled' } }
-        : {
-            thinking: { type: 'enabled' },
-            reasoning_effort: DEEPSEEK_EFFORT_MAP[effort] ?? 'high',
-          },
-    parseUsage: (raw, timing) => parseDeepSeekUsage(raw as DeepSeekUsage, timing),
+    thinkingLevelMap: DEEPSEEK_EFFORT_MAP,
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      maxTokensField: 'max_tokens',
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: 'deepseek',
+    },
   });
 }

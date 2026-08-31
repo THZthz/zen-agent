@@ -1,4 +1,4 @@
-import type { LlmMessage, ModelId, ThinkingEffort, UserContentPart } from './storage.js';
+import type { LlmMessage, ModelId, ThinkingEffort } from './storage.js';
 
 export interface LlmToolCall {
   id: string;
@@ -129,10 +129,9 @@ export function costFromUsage(usage: LlmUsage, pricing: GenericPricing): number 
 
 /**
  * The bash tool exposed to the model, in OpenAI function-calling wire format.
- * Kept as a plain object (no AI SDK `tool()` wrapper) because we talk to
- * OpenAI-compatible endpoints directly (see runChatCompletions) — the
- * description and schema must stay byte-identical so the model's behavior
- * does not change across providers.
+ * Kept as the OpenAI-compatible source schema. The pi-ai adapter converts it
+ * to Pi's tool representation without changing its name, description, or
+ * JSON Schema across providers.
  */
 export const BASH_TOOL_SCHEMA = {
   type: 'function',
@@ -153,60 +152,6 @@ export const BASH_TOOL_SCHEMA = {
     },
   },
 } as const;
-
-/** Audio formats accepted by OpenAI-compatible `input_audio` parts. */
-const INPUT_AUDIO_FORMATS: Record<string, string> = {
-  'audio/wav': 'wav',
-  'audio/x-wav': 'wav',
-  'audio/wave': 'wav',
-  'audio/vnd.wave': 'wav',
-  'audio/mpeg': 'mp3',
-  'audio/mp3': 'mp3',
-  'audio/mpeg3': 'mp3',
-};
-
-function inputAudioFormat(mimeType: string): string | null {
-  return INPUT_AUDIO_FORMATS[mimeType.toLowerCase()] ?? null;
-}
-
-/**
- * Multi-part user content to OpenAI-compatible wire parts: text stays text,
- * images become `image_url` data URIs and audio becomes `input_audio`
- * (base64 + format; URLs are not supported for audio by the API).
- */
-export function userPartsToOpenAi(parts: UserContentPart[]): unknown[] {
-  const out: unknown[] = [];
-  for (const part of parts) {
-    switch (part.type) {
-      case 'text':
-        out.push({ type: 'text', text: part.text });
-        break;
-      case 'image':
-        out.push({
-          type: 'image_url',
-          image_url: { url: `data:${part.mimeType};base64,${part.data}` },
-        });
-        break;
-      case 'audio': {
-        const format = inputAudioFormat(part.mimeType);
-        if (format === null) {
-          // Unsupported container: degrade instead of failing the request.
-          out.push({
-            type: 'text',
-            text: `[audio attached (${part.mimeType}) omitted: unsupported format]`,
-          });
-          break;
-        }
-        out.push({
-          type: 'input_audio',
-          input_audio: { data: part.data, format },
-        });
-        break;
-      }
-    }
-  }
-  return out;
-}
 
 /**
  * The read_media tool: lets the model view an image or audio file by itself.
@@ -233,94 +178,3 @@ export const READ_MEDIA_TOOL_SCHEMA = {
     },
   },
 } as const;
-
-/**
- * Convert our stored message history to the OpenAI wire format.
- * `reasoningMessageField` is the provider-specific field used to send stored
- * reasoning back in assistant history messages ("reasoning_content" for
- * DeepSeek, "reasoning" for OpenRouter).
- */
-export function toOpenAiMessages(messages: LlmMessage[], reasoningMessageField: string): unknown[] {
-  const out: unknown[] = [];
-
-  for (const message of messages) {
-    switch (message.role) {
-      case 'user': {
-        const content =
-          typeof message.content === 'string'
-            ? message.content
-            : userPartsToOpenAi(message.content);
-        const userMessage: Record<string, unknown> = { role: 'user', content };
-        if ('name' in message && typeof message.name === 'string' && message.name.length > 0) {
-          userMessage.name = message.name;
-        }
-        out.push(userMessage);
-        break;
-      }
-      case 'assistant': {
-        const parts = Array.isArray(message.content) ? message.content : [];
-        const text = parts
-          .filter((part) => part.type === 'text')
-          .map((part) => (part as { text: string }).text)
-          .join('');
-        const reasoning = parts
-          .filter((part) => part.type === 'reasoning')
-          .map((part) => (part as { text: string }).text)
-          .join('');
-        const toolCalls = parts
-          .filter((part) => part.type === 'tool-call')
-          .map((part) => ({
-            id: (part as { toolCallId: string }).toolCallId,
-            type: 'function',
-            function: {
-              name: (part as { toolName: string }).toolName,
-              arguments: JSON.stringify((part as { input: unknown }).input),
-            },
-          }));
-        const assistantMessage: Record<string, unknown> = {
-          role: 'assistant',
-          content: text || null,
-        };
-        // Reasoning is replayed only alongside tool-call continuations:
-        // thinking-mode endpoints expect their reasoning field echoed back
-        // while they continue a tool exchange. Final-answer assistants omit
-        // it here; runChatCompletions backfills an empty reasoning field for
-        // thinking-mode sessions so the wire shape stays valid either way.
-        if (toolCalls.length > 0 && parts.some((part) => part.type === 'reasoning')) {
-          assistantMessage[reasoningMessageField] = reasoning;
-        }
-        if (toolCalls.length > 0) {
-          assistantMessage.tool_calls = toolCalls;
-        }
-        out.push(assistantMessage);
-        break;
-      }
-      case 'tool': {
-        const parts = Array.isArray(message.content) ? message.content : [];
-        for (const part of parts) {
-          if (part.type !== 'tool-result') {
-            continue;
-          }
-          const output = (part as { output: unknown }).output;
-          const text =
-            typeof output === 'string'
-              ? output
-              : typeof output === 'object' &&
-                  output !== null &&
-                  'value' in (output as Record<string, unknown>) &&
-                  typeof (output as Record<string, unknown>).value === 'string'
-                ? ((output as Record<string, unknown>).value as string)
-                : JSON.stringify(output);
-          out.push({
-            role: 'tool',
-            tool_call_id: (part as { toolCallId: string }).toolCallId,
-            content: text,
-          });
-        }
-        break;
-      }
-    }
-  }
-
-  return out;
-}

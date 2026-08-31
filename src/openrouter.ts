@@ -1,10 +1,5 @@
 import { runChatCompletions } from './chat-completions.js';
-import {
-  buildLlmUsage,
-  type LlmStepOptions,
-  type LlmStepResult,
-  type LlmUsage,
-} from './llm-client.js';
+import { type LlmStepOptions, type LlmStepResult } from './llm-client.js';
 import { DEFAULT_OPENROUTER_MODEL, type ThinkingEffort } from './storage.js';
 import {
   getOpenRouterApiKey,
@@ -15,52 +10,8 @@ import {
 
 export { DEFAULT_OPENROUTER_MODEL } from './storage.js';
 
-/** OpenRouter's streaming usage object (normalized OpenAI shape). */
-interface OpenRouterUsage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  /** Provider passthrough — DeepSeek routes report cache hits this way. */
-  prompt_cache_hit_tokens?: number;
-  /** Anthropic-style passthrough of cached input tokens. */
-  prompt_tokens_details?: { cached_tokens?: number };
-  completion_tokens_details?: { reasoning_tokens?: number };
-}
-
-function toNumber(value: unknown): number {
+function finiteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-/**
- * Parse OpenRouter's usage chunk. Cache-hit and reasoning-token fields are
- * only present when the upstream provider passes them through; everything
- * else falls back to 0 (stats then show cache hit 0% / no reasoning tokens,
- * which is accurate for providers that do not report them).
- */
-export function parseOpenRouterUsage(
-  usage: OpenRouterUsage | undefined,
-  timing: { llmMs: number; thinkingMs: number; answeringMs: number },
-): LlmUsage | null {
-  if (!usage) {
-    return null;
-  }
-  const inputTokens = toNumber(usage.prompt_tokens);
-  const outputTokens = toNumber(usage.completion_tokens);
-  const cacheReadTokens =
-    usage.prompt_cache_hit_tokens !== undefined
-      ? toNumber(usage.prompt_cache_hit_tokens)
-      : toNumber(usage.prompt_tokens_details?.cached_tokens);
-  return buildLlmUsage(
-    {
-      inputTokens,
-      outputTokens,
-      totalTokens: toNumber(usage.total_tokens),
-      cacheReadTokens,
-      cacheMissTokens: Math.max(0, inputTokens - cacheReadTokens),
-      reasoningTokens: toNumber(usage.completion_tokens_details?.reasoning_tokens),
-    },
-    timing,
-  );
 }
 
 /** OpenRouter key info from `GET /auth/key`, in USD credits. */
@@ -93,8 +44,8 @@ export async function fetchOpenRouterBalance(): Promise<OpenRouterBalance> {
   const data = (await response.json()) as {
     data?: { label?: string; usage?: number; limit?: number; is_free_tier?: boolean };
   };
-  const usageUsd = toNumber(data.data?.usage);
-  const limitUsd = toNumber(data.data?.limit);
+  const usageUsd = finiteNumber(data.data?.usage);
+  const limitUsd = finiteNumber(data.data?.limit);
   return {
     isAvailable: true,
     currency: 'USD',
@@ -195,23 +146,9 @@ export function mapOpenRouterEffort(
 }
 
 /**
- * OpenRouter's chat completions step (OpenAI-compatible). Shares the SSE
- * client with DeepSeek; OpenRouter-specific bits:
- *
- * - reasoning streams as `delta.reasoning` (OpenRouter's normalized field;
- *   `delta.reasoning_content` is also accepted for DeepSeek passthrough
- *   routes), and stored reasoning is sent back as `reasoning` in history
- * - `stream_options.include_usage` requests the final usage chunk (OpenRouter
- *   does not send usage otherwise)
- * - `provider.sort` defaults to `price` so requests route to the cheapest
- *   provider for the model (OPENROUTER_PROVIDER_SORT overrides; empty disables)
- * - `reasoning_effort` honors the model's `supported_efforts` allowlist from
- *   the catalog (see {@link mapOpenRouterEffort}): the session's `off`/`high`/
- *   `max` map to the model's own vocabulary (`none`/`minimal`/.../`xhigh`),
- *   so e.g. `max` reaches models that support `xhigh` or `max` natively
- *   instead of being collapsed to `high`
- * - optional `HTTP-Referer` / `X-Title` headers identify the app
- *   (OPENROUTER_SITE_URL / OPENROUTER_APP_NAME)
+ * OpenRouter's OpenAI-compatible chat-completions step. Pi owns the request
+ * and stream protocol, including normalized reasoning deltas and usage. Zen
+ * supplies gateway routing, its dynamic effort allowlist, and app headers.
  */
 export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmStepResult> {
   const apiKey = getOpenRouterApiKey();
@@ -237,9 +174,18 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     reasoning.mandatory === true,
   );
 
+  const requestedEffort = options.thinkingEffort ?? 'off';
+  const thinkingLevelMap =
+    requestedEffort === 'off'
+      ? { off: reasoningEffort }
+      : reasoningEffort === null
+        ? undefined
+        : { [requestedEffort]: reasoningEffort };
+
   return runChatCompletions({
     baseUrl,
     apiKey,
+    provider: 'openrouter',
     label: 'OpenRouter',
     model: modelName,
     messages: options.messages,
@@ -250,27 +196,20 @@ export async function runOpenRouterStep(options: LlmStepOptions): Promise<LlmSte
     onReasoningDelta: options.onReasoningDelta,
     logRuntime: options.logRuntime,
     thinkingEffort: options.thinkingEffort,
-    reasoningMessageField: 'reasoning',
-    reasoningDeltaFields: ['reasoning', 'reasoning_content'],
-    effortBody: () =>
-      reasoningEffort === null ? undefined : { reasoning_effort: reasoningEffort },
+    thinkingLevelMap,
+    compat: {
+      supportsDeveloperRole: false,
+      thinkingFormat: 'openrouter',
+    },
     extraBody: {
-      stream_options: { include_usage: true },
       ...(providerSort ? { provider: { sort: providerSort } } : {}),
       // OpenRouter's provider sticky routing keeps consecutive requests of a
       // conversation on the same provider endpoint so the upstream context
-      // cache stays warm. Without a session_id it only activates AFTER a
-      // cache hit is observed, and the conversation identity falls back to a
-      // hash of the first system + first non-system message. Both break when
-      // read_media injects image/audio content mid-turn: the request becomes
-      // multimodal and can route to a different provider (GLM models have
-      // several hosts on OpenRouter), so the previously cached prefix misses
-      // and the hit ratio drops to 0. Passing the zen-agent sessionId pins
-      // routing from the FIRST request and gives Z.AI a session affinity key
-      // (OpenRouter docs, "Prompt Caching" -> Z.AI).
+      // cache stays warm. Passing the zen-agent session id pins that routing
+      // from the first request and gives Z.AI a session affinity key.
       ...(options.sessionId ? { session_id: options.sessionId } : {}),
     },
     extraHeaders,
-    parseUsage: (raw, timing) => parseOpenRouterUsage(raw as OpenRouterUsage, timing),
+    sessionId: options.sessionId,
   });
 }

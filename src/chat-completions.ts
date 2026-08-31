@@ -1,67 +1,32 @@
-import type { LlmMessage, ThinkingEffort } from './storage.js';
+import {
+  type AssistantMessage as PiAssistantMessage,
+  type Context as PiContext,
+  type Model as PiModel,
+  type OpenAICompletionsCompat,
+  type Tool as PiTool,
+} from '@earendil-works/pi-ai';
+import { stream as streamOpenAiCompletions } from '@earendil-works/pi-ai/api/openai-completions';
+import type { LlmMessage, ThinkingEffort, UserContentPart } from './storage.js';
 import { healMessages } from './heal.js';
 import { waitForChatRateLimit } from './rate-limit.js';
-import { fetchWithRetry, type RetryOptions } from './retry.js';
+import type { RetryOptions } from './retry.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { envPositiveInt } from './env.js';
 import {
   BASH_TOOL_SCHEMA,
-  toOpenAiMessages,
+  buildLlmUsage,
   type LlmStepResult,
   type LlmToolCall,
   type LlmUsage,
 } from './llm-client.js';
 
-function mapFinishReason(raw: string | null | undefined): string {
-  switch (raw) {
-    case 'stop':
-      return 'stop';
-    case 'length':
-      return 'length';
-    case 'tool_calls':
-      return 'tool-calls';
-    case 'content_filter':
-      return 'content-filter';
-    case 'insufficient_system_resource':
-      return 'error';
-    default:
-      return raw ? 'other' : 'unknown';
-  }
-}
-
-/** A single parsed SSE chunk from an OpenAI-compatible chat completions stream. */
-interface WireChunk {
-  choices?: Array<{
-    index: number;
-    delta?: {
-      role?: string;
-      content?: string | null;
-      tool_calls?: Array<{
-        index?: number;
-        id?: string;
-        type?: string;
-        function?: { name?: string; arguments?: string };
-      }>;
-      [field: string]: unknown;
-    };
-    finish_reason?: string | null;
-  }>;
-  usage?: unknown;
-  error?: { message?: string };
-}
-
-/** Partial tool call accumulated from streaming `delta.tool_calls` fragments. */
-interface PartialToolCall {
-  id: string;
-  name: string;
-  arguments: string;
-}
-
 export interface ChatCompletionsOptions {
   /** Base URL without trailing slash, e.g. "https://api.deepseek.com". */
   baseUrl: string;
   apiKey: string;
-  /** Provider name used in error messages, e.g. "DeepSeek". */
+  /** Pi provider id, used for compatibility detection and message replay. */
+  provider: string;
+  /** Provider name used in Zen's error messages, e.g. "DeepSeek". */
   label: string;
   model: string;
   messages: LlmMessage[];
@@ -69,18 +34,17 @@ export interface ChatCompletionsOptions {
   tools?: unknown[];
   system?: string;
   thinkingEffort?: ThinkingEffort;
-  /**
-   * Wire field used to send stored reasoning back in assistant history
-   * messages ("reasoning_content" for DeepSeek, "reasoning" for OpenRouter).
-   */
-  reasoningMessageField: string;
-  /** Delta fields that may carry reasoning tokens while streaming. */
-  reasoningDeltaFields: readonly string[];
-  /** Extra request body fields for this provider (e.g. OpenRouter's stream_options). */
+  /** Provider/model-specific Pi compatibility configuration. */
+  compat?: OpenAICompletionsCompat;
+  /** Pi thinking-level mapping for this provider/model. */
+  thinkingLevelMap?: Partial<Record<ThinkingEffort, string | null>>;
+  /** Extra request fields for this provider (e.g. OpenRouter routing). */
   extraBody?: Record<string, unknown>;
   /** Extra request headers for this provider (e.g. OpenRouter's HTTP-Referer / X-Title). */
   extraHeaders?: Record<string, string>;
-  /** Retry configuration for the initial chat request. Pass `{ maxAttempts: 1 }` to disable retries. */
+  /** Stable provider-side cache/routing session identity. */
+  sessionId?: string;
+  /** Retry configuration for the initial chat request. */
   retry?: RetryOptions;
   /** Debug-log sink for provider-internal diagnostics (see LlmStepOptions). */
   logRuntime?: (
@@ -88,77 +52,310 @@ export interface ChatCompletionsOptions {
     message: string,
     details?: Record<string, unknown>,
   ) => void;
-  /** Maps a thinking effort to extra body fields; return undefined to omit them. */
-  effortBody?: (effort: ThinkingEffort) => Record<string, unknown> | undefined;
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void | Promise<void>;
   onReasoningDelta?: (delta: string) => void | Promise<void>;
-  /**
-   * Provider-specific usage parser. Cache/reasoning token fields differ per
-   * provider (DeepSeek's prompt_cache_hit_tokens vs OpenRouter's normalized
-   * shape), so the raw usage chunk is handed to the provider.
-   */
-  parseUsage: (
-    raw: unknown,
-    timing: { llmMs: number; thinkingMs: number; answeringMs: number },
-  ) => LlmUsage | null;
 }
 
 /**
  * Hard cap on a single chat request in ms. The provider's own timeout usually
- * closes the connection first (clean EOF → natural retry); this is the safety
- * net for genuinely hung sockets. Override with ZEN_AGENT_CHAT_TIMEOUT_MS.
+ * closes the connection first; this is the safety net for genuinely hung
+ * sockets. Override with ZEN_AGENT_CHAT_TIMEOUT_MS.
  */
-/** Rate-limit waits longer than this are recorded via logRuntime (log.jsonl). */
 const RATE_LIMIT_WAIT_LOG_THRESHOLD_MS = 1_000;
 
 function parseChatTimeoutMs(): number {
   return envPositiveInt('ZEN_AGENT_CHAT_TIMEOUT_MS', 6_600_000);
 }
 
-/**
- * Locates the next SSE event terminator in the ASSEMBLED buffer ("\n\n", or
- * CRLF "\r\n\r\n"). Terminators must be searched after assembly: normalizing
- * each network chunk separately misses a "\r\n\r\n" that is split across two
- * reads, which would glue consecutive events together.
- */
-function findEventSeparator(buffer: string): { index: number; length: number } | null {
-  const lf = buffer.indexOf('\n\n');
-  const crlf = buffer.indexOf('\r\n\r\n');
-  if (crlf !== -1 && (lf === -1 || crlf < lf)) {
-    return { index: crlf, length: 4 };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toolFromSchema(schema: unknown): PiTool {
+  const functionSpec = isRecord(schema) && isRecord(schema.function) ? schema.function : schema;
+  if (
+    !isRecord(functionSpec) ||
+    typeof functionSpec.name !== 'string' ||
+    typeof functionSpec.description !== 'string' ||
+    !isRecord(functionSpec.parameters)
+  ) {
+    throw new Error('Tool schemas must use the OpenAI function-calling format.');
   }
-  if (lf !== -1) {
-    return { index: lf, length: 2 };
+  // Pi's Tool generic is TypeBox-oriented, but its OpenAI adapter accepts the
+  // JSON Schema objects Zen already persists and sends.
+  return {
+    name: functionSpec.name,
+    description: functionSpec.description,
+    parameters: functionSpec.parameters,
+  } as PiTool;
+}
+
+function toPiTools(tools: unknown[] | undefined): PiTool[] | undefined {
+  if (tools !== undefined && tools.length === 0) {
+    return undefined;
   }
-  return null;
+  return (tools ?? [BASH_TOOL_SCHEMA]).map(toolFromSchema);
+}
+
+/** Pi's public chat context has text/image blocks; model audio stays OpenAI-compatible at payload time. */
+function toPiUserContent(
+  content: string | UserContentPart[],
+):
+  | string
+  | Array<{ type: 'text'; text: string } | { type: 'image'; mimeType: string; data: string }> {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content.map((part) => {
+    if (part.type === 'text') {
+      return { type: 'text' as const, text: part.text };
+    }
+    // Pi currently models images, not OpenAI `input_audio`. Keep audio as an
+    // image-shaped transport block and restore its OpenAI wire representation
+    // in patchPayload before the request leaves the process.
+    return { type: 'image' as const, mimeType: part.mimeType, data: part.data };
+  });
+}
+
+function reasoningReplayField(model: PiModel<'openai-completions'>): string | undefined {
+  if (model.compat?.requiresReasoningContentOnAssistantMessages) {
+    return 'reasoning_content';
+  }
+  return model.compat?.thinkingFormat === 'openrouter' ? 'reasoning' : undefined;
+}
+
+function toolResultText(output: unknown): string {
+  if (typeof output === 'string') {
+    return output;
+  }
+  if (isRecord(output) && typeof output.value === 'string') {
+    return output.value;
+  }
+  return JSON.stringify(output);
+}
+
+function toPiContext(
+  messages: LlmMessage[],
+  model: PiModel<'openai-completions'>,
+  systemPrompt: string,
+  tools: PiTool[] | undefined,
+): PiContext {
+  const piMessages: unknown[] = messages.flatMap((message): unknown[] => {
+    switch (message.role) {
+      case 'user':
+        return [{ role: 'user', content: toPiUserContent(message.content), timestamp: 0 }];
+      case 'assistant':
+        return [
+          {
+            role: 'assistant',
+            content: message.content.map((part) => {
+              switch (part.type) {
+                case 'text':
+                  return { type: 'text' as const, text: part.text };
+                case 'reasoning':
+                  return {
+                    type: 'thinking' as const,
+                    thinking: part.text,
+                    thinkingSignature: reasoningReplayField(model),
+                  };
+                case 'tool-call':
+                  return {
+                    type: 'toolCall' as const,
+                    id: part.toolCallId,
+                    name: part.toolName,
+                    arguments: part.input as Record<string, unknown>,
+                  };
+              }
+            }),
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'stop' as const,
+            timestamp: 0,
+          },
+        ];
+      case 'tool':
+        return message.content.map((part) => ({
+          role: 'toolResult' as const,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName ?? '',
+          content: [{ type: 'text' as const, text: toolResultText(part.output) }],
+          isError: false,
+          timestamp: 0,
+        }));
+    }
+  });
+  return {
+    systemPrompt,
+    messages: piMessages as PiContext['messages'],
+    tools,
+  };
+}
+
+function userContentSignature(content: string | UserContentPart[]): string {
+  const piContent = toPiUserContent(content);
+  if (typeof piContent === 'string') {
+    return `string:${piContent}`;
+  }
+  return `parts:${JSON.stringify(
+    piContent.map((part) =>
+      part.type === 'text'
+        ? part
+        : { type: 'image_url', image_url: { url: `data:${part.mimeType};base64,${part.data}` } },
+    ),
+  )}`;
+}
+
+function payloadUserContentSignature(content: unknown): string | null {
+  if (typeof content === 'string') {
+    return `string:${content}`;
+  }
+  return Array.isArray(content) ? `parts:${JSON.stringify(content)}` : null;
+}
+
+function audioFormat(mimeType: string): string | null {
+  switch (mimeType.toLowerCase()) {
+    case 'audio/wav':
+    case 'audio/x-wav':
+    case 'audio/wave':
+    case 'audio/vnd.wave':
+      return 'wav';
+    case 'audio/mpeg':
+    case 'audio/mp3':
+    case 'audio/mpeg3':
+      return 'mp3';
+    default:
+      return null;
+  }
+}
+
+/** Restores Zen's named-user and audio extensions after Pi builds the standard payload. */
+function patchPayload(
+  payload: unknown,
+  messages: LlmMessage[],
+  toolsWereDisabled: boolean,
+): unknown {
+  if (!isRecord(payload)) {
+    return payload;
+  }
+
+  if (toolsWereDisabled) {
+    delete payload.tools;
+  }
+
+  const namesByContent = new Map<string, Array<string | undefined>>();
+  for (const message of messages) {
+    if (message.role !== 'user') {
+      continue;
+    }
+    const signature = userContentSignature(message.content);
+    const names = namesByContent.get(signature) ?? [];
+    names.push(message.name);
+    namesByContent.set(signature, names);
+  }
+
+  if (!Array.isArray(payload.messages)) {
+    return payload;
+  }
+  for (const message of payload.messages) {
+    if (!isRecord(message) || message.role !== 'user') {
+      continue;
+    }
+
+    const signature = payloadUserContentSignature(message.content);
+    const names = signature === null ? undefined : namesByContent.get(signature);
+    const name = names?.shift();
+    if (name) {
+      message.name = name;
+    }
+
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    message.content = message.content.map((part) => {
+      if (!isRecord(part) || part.type !== 'image_url' || !isRecord(part.image_url)) {
+        return part;
+      }
+      const url = part.image_url.url;
+      if (typeof url !== 'string') {
+        return part;
+      }
+      const match = /^data:([^;,]+);base64,(.*)$/s.exec(url);
+      if (!match || !match[1]!.toLowerCase().startsWith('audio/')) {
+        return part;
+      }
+      const mimeType = match[1]!;
+      const format = audioFormat(mimeType);
+      return format === null
+        ? { type: 'text', text: `[audio attached (${mimeType}) omitted: unsupported format]` }
+        : { type: 'input_audio', input_audio: { data: match[2]!, format } };
+    });
+  }
+  return payload;
+}
+
+function toLlmUsage(
+  usage: PiAssistantMessage['usage'],
+  timing: { llmMs: number; thinkingMs: number; answeringMs: number },
+): LlmUsage | null {
+  return buildLlmUsage(
+    {
+      // Pi separates cache reads/writes from normal input. Zen's historical
+      // input count is the provider's full prompt token count.
+      inputTokens: usage.input + usage.cacheRead + usage.cacheWrite,
+      outputTokens: usage.output,
+      totalTokens: usage.totalTokens,
+      cacheReadTokens: usage.cacheRead,
+      // Zen does not expose a cache-write bucket; count it as non-read input.
+      cacheMissTokens: usage.input + usage.cacheWrite,
+      reasoningTokens: usage.reasoning ?? 0,
+    },
+    timing,
+  );
+}
+
+function mapFinishReason(reason: string): string {
+  switch (reason) {
+    case 'toolUse':
+      return 'tool-calls';
+    case 'length':
+      return 'length';
+    case 'stop':
+      return 'stop';
+    default:
+      return 'other';
+  }
+}
+
+function piStreamError(label: string, message: string): Error {
+  const detailed = /^(\d{3}):\s*([\s\S]*)$/.exec(message);
+  if (detailed) {
+    return new Error(`${label} API error ${detailed[1]}: ${detailed[2]}`);
+  }
+  const statusOnly = /^(\d{3})\s+status code(?:\s+\(no body\))?$/.exec(message);
+  if (statusOnly) {
+    return new Error(`${label} API error ${statusOnly[1]}: `);
+  }
+  return new Error(message);
 }
 
 /**
- * Calls an OpenAI-compatible chat completions API DIRECTLY and parses the SSE
- * stream ourselves.
- *
- * WHY NOT the AI SDK (`streamText` + `@ai-sdk/openai`): the provider's
- * `throwIfOpenAIStreamErrorBeforeOutput` reads ahead from the response until
- * it sees the first "output" chunk (non-empty `delta.content` / tool call).
- * DeepSeek's thinking mode only sends `delta.reasoning_content` during the
- * reasoning phase, which is invisible to that check, so the SDK swallows the
- * ENTIRE reasoning phase and hands the consumer a buffered burst once the
- * answer starts — the thinking block appears to not stream at all. By parsing
- * the SSE directly we get every reasoning delta live.
- *
- * This also lets us read provider-specific raw usage fields (cache tokens,
- * reasoning tokens) which the SDK's zod schema strips.
+ * Calls an OpenAI-compatible chat-completions endpoint through pi-ai.
+ * Pi owns payload construction, provider compatibility handling, retries, and
+ * SSE parsing; this adapter only bridges Zen's persisted message/result shape.
  */
 export async function runChatCompletions(options: ChatCompletionsOptions): Promise<LlmStepResult> {
-  // Heal the history before sending: drop unpaired assistant tool calls and
-  // stray tool results (DeepSeek 400s on either shape) without mutating the
-  // session's stored messages.
   const healed = healMessages(options.messages);
   if (healed.droppedAssistants > 0 || healed.droppedTools > 0) {
-    // Healing silently loses history by design; the drop must be visible in
-    // the session's log.jsonl (via the agent's logRuntime sink) rather than
-    // on stdout/stderr, which Zed swallows.
     void options.logRuntime?.('warn', 'healed message history before LLM request', {
       label: options.label,
       model: options.model,
@@ -166,78 +363,41 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
       droppedTools: healed.droppedTools,
     });
   }
-  const wireMessages = toOpenAiMessages(healed.messages, options.reasoningMessageField);
 
-  // Thinking-mode DeepSeek 400s on assistant messages without
-  // `reasoning_content`. Back-fill "" — thinking-mode sessions only, because
-  // on non-thinking sessions the extra field would churn the prefix cache.
-  if (
-    (options.thinkingEffort ?? 'off') !== 'off' &&
-    options.reasoningMessageField === 'reasoning_content'
-  ) {
-    for (const message of wireMessages) {
-      const wire = message as { role?: string; [key: string]: unknown };
-      if (wire.role === 'assistant' && typeof wire[options.reasoningMessageField] !== 'string') {
-        wire[options.reasoningMessageField] = '';
-      }
-    }
-  }
-  const body: Record<string, unknown> = {
-    model: options.model,
-    messages: [
-      { role: 'system', content: options.system ?? SYSTEM_PROMPT },
-      ...(wireMessages.filter(
-        (message) => (message as { role?: string }).role !== 'system',
-      ) as Array<Record<string, unknown>>),
-    ],
-    stream: true,
-    ...options.extraBody,
-    ...(options.effortBody?.(options.thinkingEffort ?? 'off') ?? {}),
+  const model: PiModel<'openai-completions'> = {
+    id: options.model,
+    name: options.model,
+    api: 'openai-completions',
+    provider: options.provider,
+    baseUrl: options.baseUrl,
+    reasoning: true,
+    // Zen already gates media against its model catalog. Keep Pi from
+    // downgrading valid OpenAI-compatible image/audio payloads in transit.
+    input: ['text', 'image'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 384_000,
+    compat: options.compat,
+    thinkingLevelMap: options.thinkingLevelMap,
   };
-  // `tools: []` is rejected by some providers (and pointless): omit the
-  // field entirely when the session has no tools (/tools off), and keep the
-  // bash-only default when the caller did not specify a list.
-  if (options.tools === undefined) {
-    body.tools = [BASH_TOOL_SCHEMA];
-  } else if (options.tools.length > 0) {
-    body.tools = options.tools;
-  }
+  const piTools = toPiTools(options.tools);
+  const context = toPiContext(healed.messages, model, options.system ?? SYSTEM_PROMPT, piTools);
 
-  // Timing: "thinking" is the wall time from request start until the first
-  // answer (non-reasoning) token arrives — i.e. TTFB, dominated by the
-  // model's reasoning phase when thinking is enabled. "answering" is the
-  // remaining stream time. If the step only produced reasoning (no text,
-  // e.g. a tool-call-only step), firstTextAt stays null and thinking covers
-  // the whole request.
   const requestStart = Date.now();
   let firstTextAt: number | null = null;
   let lastReasoningAt: number | null = null;
-
   let text = '';
   let reasoning = '';
-  let finishReason = 'unknown';
-  let sawFinishReason = false;
-  let sawOutput = false;
-  let rawUsage: unknown;
-  const toolCallsByIndex = new Map<number, PartialToolCall>();
+  let finalMessage: PiAssistantMessage | undefined;
 
-  // Hard cap on a single request: the provider's own timeout usually closes
-  // the connection first (clean EOF → natural retry); this timer is the
-  // safety net for genuinely hung sockets.
   const timeoutMs = parseChatTimeoutMs();
   const timeoutCtrl = new AbortController();
-  // Combine — `options.signal ?? timeoutCtrl.signal` orphans the timer when
-  // the caller passes a signal, so timeoutMs never reaches fetch.
   const signal = options.signal
     ? AbortSignal.any([options.signal, timeoutCtrl.signal])
     : timeoutCtrl.signal;
 
   let timer: NodeJS.Timeout | undefined;
   try {
-    // Rate-limit waiting happens BEFORE the chat timeout starts ticking:
-    // queueing behind ZEN_AGENT_CHAT_RPM is not the request's time, and
-    // arming earlier would kill queued requests before they were ever sent.
-    // Only the caller's signal can interrupt the wait itself.
     const rateLimitStart = Date.now();
     await waitForChatRateLimit(options.signal);
     const rateLimitedMs = Date.now() - rateLimitStart;
@@ -248,188 +408,87 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
         waitedMs: rateLimitedMs,
       });
     }
+
     timer = setTimeout(() => {
       timeoutCtrl.abort(new Error(`${options.label} request timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     timer.unref?.();
 
-    const response = await fetchWithRetry(
-      fetch,
-      `${options.baseUrl}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${options.apiKey}`,
-          ...options.extraHeaders,
-        },
-        body: JSON.stringify(body),
-        signal,
-      },
-      { ...options.retry, signal },
-    );
-    if (!response.ok) {
-      // Only the initial fetch is retried (see fetchWithRetry); a non-2xx here
-      // means the status is non-retryable or attempts ran out — surface it.
-      const errorBody = await response.text().catch(() => '');
-      throw new Error(`${options.label} API error ${response.status}: ${errorBody.slice(0, 500)}`);
-    }
-    if (!response.body) {
-      throw new Error(`${options.label} response has no body`);
-    }
+    const attempts = options.retry?.maxAttempts ?? 4;
+    const stream = streamOpenAiCompletions(model, context, {
+      apiKey: options.apiKey,
+      headers: options.extraHeaders,
+      signal,
+      sessionId: options.sessionId,
+      reasoningEffort:
+        options.thinkingEffort && options.thinkingEffort !== 'off'
+          ? options.thinkingEffort
+          : undefined,
+      maxRetries: Math.max(0, attempts - 1),
+      maxRetryDelayMs: options.retry?.maxBackoffMs,
+      samplingParams: options.extraBody,
+      onPayload: (payload) => patchPayload(payload, healed.messages, options.tools?.length === 0),
+    });
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const processEvent = async (rawEvent: string): Promise<boolean> => {
-      // SSE spec: consecutive `data:` lines are joined with \n. Some servers
-      // emit one data line per event; DeepSeek and OpenRouter use single lines.
-      const dataLines: string[] = [];
-      for (const line of rawEvent.split(/\r?\n/)) {
-        if (line.startsWith('data:')) {
-          dataLines.push(line.slice(5).trimStart());
-        }
-      }
-      if (dataLines.length === 0) {
-        return false;
-      }
-      const data = dataLines.join('\n');
-      if (data === '[DONE]') {
-        return true;
-      }
-
-      let chunk: WireChunk;
-      try {
-        chunk = JSON.parse(data) as WireChunk;
-      } catch {
-        return false;
-      }
-
-      if (chunk.error) {
-        throw new Error(`${options.label} stream error: ${chunk.error.message ?? 'unknown'}`);
-      }
-      if (chunk.usage) {
-        rawUsage = chunk.usage;
-      }
-
-      const choice = chunk.choices?.[0];
-      if (!choice) {
-        return false;
-      }
-
-      if (choice.finish_reason != null) {
-        finishReason = mapFinishReason(choice.finish_reason);
-        sawFinishReason = true;
-      }
-
-      const delta = choice.delta;
-      if (!delta) {
-        return false;
-      }
-
-      // Reasoning tokens (DeepSeek's `reasoning_content`, OpenRouter's
-      // `reasoning`) — forwarded LIVE, which is the whole point of bypassing
-      // the AI SDK here.
-      for (const field of options.reasoningDeltaFields) {
-        const reasoningDelta = delta[field];
-        if (typeof reasoningDelta === 'string' && reasoningDelta.length > 0) {
-          reasoning += reasoningDelta;
+    for await (const event of stream) {
+      switch (event.type) {
+        case 'text_delta':
+          if (firstTextAt === null) {
+            firstTextAt = Date.now();
+          }
+          text += event.delta;
+          await options.onTextDelta?.(event.delta);
+          break;
+        case 'thinking_delta':
+          reasoning += event.delta;
           lastReasoningAt = Date.now();
-          sawOutput = true;
-          await options.onReasoningDelta?.(reasoningDelta);
+          await options.onReasoningDelta?.(event.delta);
           break;
-        }
-      }
-
-      // Answer text.
-      if (typeof delta.content === 'string' && delta.content.length > 0) {
-        if (firstTextAt === null) {
-          firstTextAt = Date.now();
-        }
-        text += delta.content;
-        sawOutput = true;
-        await options.onTextDelta?.(delta.content);
-      }
-
-      // Streaming tool calls (accumulate fragments per index).
-      if (delta.tool_calls) {
-        for (const toolCallDelta of delta.tool_calls) {
-          const index = toolCallDelta.index ?? 0;
-          const partial = toolCallsByIndex.get(index) ?? {
-            id: '',
-            name: '',
-            arguments: '',
-          };
-          if (toolCallDelta.id) {
-            partial.id = toolCallDelta.id;
-          }
-          if (toolCallDelta.function?.name) {
-            partial.name = toolCallDelta.function.name;
-          }
-          if (toolCallDelta.function?.arguments) {
-            partial.arguments += toolCallDelta.function.arguments;
-          }
-          toolCallsByIndex.set(index, partial);
-          sawOutput = true;
-        }
-      }
-
-      return false;
-    };
-
-    let done = false;
-    while (!done) {
-      const { value, done: streamDone } = await reader.read();
-      if (streamDone) {
-        // Flush any trailing event without a closing blank line.
-        if (buffer.trim().length > 0) {
-          done = await processEvent(buffer);
-          buffer = '';
-        }
-        break;
-      }
-      buffer += decoder.decode(value, { stream: true });
-      // Split on event terminators found in the assembled buffer (see
-      // findEventSeparator): works for LF and CRLF servers regardless of how
-      // the bytes land in chunks.
-      for (;;) {
-        const separator = findEventSeparator(buffer);
-        if (!separator) {
+        case 'done':
+          finalMessage = event.message;
           break;
-        }
-        const rawEvent = buffer.slice(0, separator.index);
-        buffer = buffer.slice(separator.index + separator.length);
-        done = await processEvent(rawEvent);
-        if (done) {
-          break;
-        }
+        case 'error':
+          if (timeoutCtrl.signal.aborted && timeoutCtrl.signal.reason instanceof Error) {
+            throw timeoutCtrl.signal.reason;
+          }
+          throw piStreamError(options.label, event.error.errorMessage ?? 'Unknown provider error');
       }
     }
 
-    if (!sawOutput && !sawFinishReason) {
-      throw new Error('No output generated. The model stream ended without a finish chunk.');
+    if (!finalMessage) {
+      throw new Error('No output generated. The model stream ended without a completion event.');
+    }
+    const completedMessage = finalMessage;
+
+    // Pi's final message is authoritative even if a provider emitted no delta
+    // event for a content block.
+    if (text.length === 0) {
+      text = completedMessage.content
+        .filter(
+          (part): part is Extract<(typeof completedMessage.content)[number], { type: 'text' }> =>
+            part.type === 'text',
+        )
+        .map((part) => part.text)
+        .join('');
+    }
+    if (reasoning.length === 0) {
+      reasoning = completedMessage.content
+        .filter(
+          (
+            part,
+          ): part is Extract<(typeof completedMessage.content)[number], { type: 'thinking' }> =>
+            part.type === 'thinking',
+        )
+        .map((part) => part.thinking)
+        .join('');
     }
 
-    const toolCalls: LlmToolCall[] = [];
-    for (const partial of toolCallsByIndex.values()) {
-      if (!partial.id) {
-        continue;
-      }
-      let input: unknown;
-      try {
-        input = JSON.parse(partial.arguments || '{}');
-      } catch {
-        // Never parsed: keep the raw string under an explicit marker instead
-        // of guessing the tool's shape (executeLlmToolCall reports it).
-        input = { malformed_arguments: partial.arguments };
-      }
-      toolCalls.push({
-        id: partial.id,
-        name: partial.name || 'bash',
-        input,
-      });
-    }
+    const toolCalls: LlmToolCall[] = completedMessage.content
+      .filter(
+        (part): part is Extract<(typeof completedMessage.content)[number], { type: 'toolCall' }> =>
+          part.type === 'toolCall',
+      )
+      .map((part) => ({ id: part.id, name: part.name || 'bash', input: part.arguments }));
 
     const llmMs = Date.now() - requestStart;
     const thinkingMs = (firstTextAt ?? lastReasoningAt ?? requestStart + llmMs) - requestStart;
@@ -439,9 +498,8 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
       text,
       reasoning,
       toolCalls,
-      finishReason:
-        finishReason === 'unknown' && toolCalls.length > 0 ? 'tool-calls' : finishReason,
-      usage: options.parseUsage(rawUsage, { llmMs, thinkingMs, answeringMs }),
+      finishReason: mapFinishReason(completedMessage.stopReason),
+      usage: toLlmUsage(completedMessage.usage, { llmMs, thinkingMs, answeringMs }),
     };
   } finally {
     if (timer) {
