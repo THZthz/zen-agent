@@ -6,29 +6,11 @@ import { formatLlmError } from './llm-errors.js';
 import { resetCatalogCache } from './provider-catalog.js';
 import { resetPiModels } from './provider-pi.js';
 import { resetProviderRegistry } from './provider-registry.js';
-import { testServerBaseUrl } from './test-server.js';
 
 const originalEnv = { ...process.env };
 let xdgHome: string;
-let server: import('node:http').Server | undefined;
 
-function startServer(
-  handler: (
-    req: import('node:http').IncomingMessage,
-    res: import('node:http').ServerResponse,
-  ) => void,
-): Promise<number> {
-  return new Promise((resolve) => {
-    const srv = require('node:http').createServer(handler);
-    server = srv;
-    srv.listen(0, () => {
-      const addr = srv.address() as import('node:net').AddressInfo;
-      resolve(addr.port);
-    });
-  });
-}
-
-function apiError(status: number, body: string, label = 'DeepSeek'): Error {
+function apiError(status: number, body: string, label = 'Groq'): Error {
   return new Error(`${label} API error ${status}: ${body}`);
 }
 
@@ -36,7 +18,17 @@ describe('formatLlmError', () => {
   beforeEach(() => {
     xdgHome = mkdtempSync(join(tmpdir(), 'zen-agent-llmerrors-test-'));
     process.env.XDG_DATA_HOME = xdgHome;
-    process.env.DEEPSEEK_API_KEY = 'test';
+    process.env.GROQ_API_KEY = 'test';
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      {
+        id: 'groq',
+        name: 'Groq',
+        baseUrl: 'https://api.groq.com/openai/v1',
+        apiKeyEnv: 'GROQ_API_KEY',
+        defaultModel: 'm',
+        models: ['m'],
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -44,34 +36,21 @@ describe('formatLlmError', () => {
     resetProviderRegistry();
     resetPiModels();
     resetCatalogCache();
-    server?.close();
-    server = undefined;
     if (xdgHome) {
       rmSync(xdgHome, { recursive: true, force: true });
     }
   });
 
   it('returns non-API errors unchanged', async () => {
-    await expect(formatLlmError(new Error('boom'), { provider: 'deepseek' })).resolves.toBe('boom');
-    await expect(formatLlmError('not an error', { provider: 'deepseek' })).resolves.toBe(
+    await expect(formatLlmError(new Error('boom'), { provider: 'groq' })).resolves.toBe('boom');
+    await expect(formatLlmError('not an error', { provider: 'groq' })).resolves.toBe(
       'not an error',
     );
   });
 
-  it('points at the right key env for 401', async () => {
-    const ds = await formatLlmError(apiError(401, 'unauthorized'), { provider: 'deepseek' });
-    expect(ds).toContain('DEEPSEEK_API_KEY');
-    const or = await formatLlmError(apiError(401, 'unauthorized', 'OpenRouter'), {
-      provider: 'openrouter',
-    });
-    expect(or).toContain('OPENROUTER_API_KEY');
-  });
-
-  it('tells DeepSeek users to top up on 402', async () => {
-    const msg = await formatLlmError(apiError(402, 'insufficient balance'), {
-      provider: 'deepseek',
-    });
-    expect(msg).toContain('balance');
+  it('points at the declared key env for 401', async () => {
+    const msg = await formatLlmError(apiError(401, 'unauthorized'), { provider: 'groq' });
+    expect(msg).toContain('GROQ_API_KEY');
   });
 
   it('explains context overflow with the requested token count', async () => {
@@ -80,7 +59,7 @@ describe('formatLlmError', () => {
         400,
         '{"error":{"message":"This model\'s maximum context length is 1000000 tokens. However, you requested 1234567 tokens"}}',
       ),
-      { provider: 'deepseek' },
+      { provider: 'groq' },
     );
     expect(msg).toContain('Context window exceeded');
     expect(msg).toContain('1234567');
@@ -88,63 +67,30 @@ describe('formatLlmError', () => {
 
   it('extracts the inner message for plain 400/422', async () => {
     const bad = await formatLlmError(apiError(400, '{"error":{"message":"Invalid format"}}'), {
-      provider: 'deepseek',
+      provider: 'groq',
     });
     expect(bad).toBe('Bad request (400): Invalid format');
     const unprocessable = await formatLlmError(
       apiError(422, '{"error":{"message":"Bad parameters"}}'),
-      { provider: 'deepseek' },
+      { provider: 'groq' },
     );
     expect(unprocessable).toBe('Request rejected (422): Bad parameters');
   });
 
   it('mentions the automatic retry on 429', async () => {
-    const msg = await formatLlmError(apiError(429, 'rate limit'), { provider: 'deepseek' });
+    const msg = await formatLlmError(apiError(429, 'rate limit'), { provider: 'groq' });
     expect(msg).toContain('Rate limit');
     expect(msg).toContain('retried automatically');
   });
 
-  it('distinguishes reachable vs unreachable DeepSeek on 5xx via the balance probe', async () => {
-    const port = await startServer((_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          is_available: true,
-          balance_infos: [{ currency: 'CNY', total_balance: '110.00' }],
-        }),
-      );
-    });
-    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-
-    const reachable = await formatLlmError(apiError(503, 'service unavailable'), {
-      provider: 'deepseek',
-    });
-    expect(reachable).toContain('reachable');
-    expect(reachable).toContain('503');
-  });
-
-  it('reports DeepSeek as unreachable when the probe fails', async () => {
-    const port = await startServer((_req, res) => {
-      res.writeHead(500);
-      res.end('boom');
-    });
-    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
-
-    const msg = await formatLlmError(apiError(503, 'service unavailable'), {
-      provider: 'deepseek',
-    });
-    expect(msg).toContain('Cannot reach DeepSeek');
-  });
-
-  it('uses generic wording for OpenRouter 5xx', async () => {
-    const msg = await formatLlmError(apiError(500, 'boom', 'OpenRouter'), {
-      provider: 'openrouter',
-    });
-    expect(msg).toContain('OpenRouter returned 500');
+  it('uses generic wording for 5xx when the provider has no balance endpoint', async () => {
+    const msg = await formatLlmError(apiError(500, 'boom'), { provider: 'groq' });
+    expect(msg).toContain('Groq returned 500');
+    expect(msg).toContain('temporary server error');
   });
 
   it('leaves unclassified statuses unchanged', async () => {
-    const msg = await formatLlmError(apiError(403, 'forbidden'), { provider: 'deepseek' });
-    expect(msg).toBe('DeepSeek API error 403: forbidden');
+    const msg = await formatLlmError(apiError(418, 'teapot'), { provider: 'groq' });
+    expect(msg).toBe('Groq API error 418: teapot');
   });
 });

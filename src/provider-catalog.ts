@@ -5,21 +5,12 @@ import { readFile } from 'node:fs/promises';
 
 /**
  * Generic OpenAI-compatible model discovery: GET {baseUrl}/models, parsed
- * into a Zen-side catalog (context, pricing, modalities, reasoning, tool
- * support) and persisted per provider for offline starts. OpenRouter's extra
- * fields (pricing, context_length, architecture.input_modalities, reasoning,
+ * into a Zen-side catalog (context, pricing, modalities, tool support) and
+ * persisted per provider for offline starts. OpenRouter's extra fields
+ * (pricing, context_length, architecture.input_modalities,
  * supported_parameters) are optional extras; generic endpoints degrade to
  * conservative defaults.
  */
-
-export interface CatalogReasoning {
-  /** Allowed `reasoning_effort` values for this model, highest first; null = all accepted. */
-  supportedEfforts: readonly string[] | null;
-  /** The model's default effort when the field is omitted; null when unknown. */
-  defaultEffort: string | null;
-  /** Whether reasoning is mandatory (cannot be disabled); null when unknown. */
-  mandatory: boolean | null;
-}
 
 /** Per-model metadata from a `/models` catalog entry. */
 export interface CatalogEntry {
@@ -31,8 +22,6 @@ export interface CatalogEntry {
   outputPerM: number;
   /** USD per 1M cache-read input tokens; 0 when the provider does not break it out. */
   cacheReadPerM: number;
-  /** Maximum output tokens; undefined when unknown. */
-  maxOutputTokens?: number;
   contextLength: number;
   /** Whether the model supports tool calling (the agent requires it). */
   supportsTools: boolean;
@@ -41,7 +30,6 @@ export interface CatalogEntry {
    * ["text", "image", "audio"]), or null when unknown; "text" is implicit.
    */
   inputModalities: string[] | null;
-  reasoning: CatalogReasoning;
 }
 
 /** Conservative default for models unknown to both the catalog and the fallback table. */
@@ -83,158 +71,6 @@ export function parseInputModalities(raw: unknown): string[] | null {
   return modalities.length > 0 ? modalities : null;
 }
 
-/**
- * Parse the catalog's `reasoning` object into an effort allowlist + default.
- * `supported_efforts` is ordered highest-first by OpenRouter; null when
- * absent/malformed (callers then treat every gateway effort value as accepted).
- */
-export function parseReasoning(raw: unknown): CatalogReasoning {
-  if (typeof raw !== 'object' || raw === null) {
-    return { supportedEfforts: null, defaultEffort: null, mandatory: null };
-  }
-  const reasoning = raw as {
-    supported_efforts?: unknown;
-    default_effort?: unknown;
-    mandatory?: unknown;
-  };
-  const supportedEfforts = Array.isArray(reasoning.supported_efforts)
-    ? reasoning.supported_efforts.filter(
-        (entry): entry is string => typeof entry === 'string' && entry.length > 0,
-      )
-    : [];
-  return {
-    supportedEfforts: supportedEfforts.length > 0 ? supportedEfforts : null,
-    defaultEffort:
-      typeof reasoning.default_effort === 'string' && reasoning.default_effort.length > 0
-        ? reasoning.default_effort
-        : null,
-    mandatory: typeof reasoning.mandatory === 'boolean' ? reasoning.mandatory : null,
-  };
-}
-
-/**
- * Curated corrections/fallbacks for models whose provider catalog omits or
- * misreports spec fields (verified against the vendor docs; tvly/web search
- * at implementation time):
- *
- * - z.ai reports 1M (1,048,576) context for GLM-5.3 / GLM-5.3-Flash;
- *   OpenRouter's `/models` lists 1,310,720 (its own FAQ says 1,048,576) and
- *   z.ai's direct endpoint returns no metadata at all.
- * - GLM-5.3-Flash is natively multimodal (text/image/video per docs.z.ai;
- *   audio is NOT in the official input list, so it stays disabled).
- * - Both always reason (thinking cannot be disabled): low/high/max efforts.
- *
- * Spec fields always win over the upstream entry; pricing fields only fill
- * in when the upstream entry has none, so live price updates are not frozen.
- */
-export interface ModelSpecOverride {
-  contextLength?: number;
-  inputModalities?: string[];
-  maxOutputTokens?: number;
-  reasoning?: CatalogReasoning;
-  inputPerM?: number;
-  outputPerM?: number;
-  cacheReadPerM?: number;
-}
-
-export const KNOWN_MODEL_SPECS: Readonly<Record<string, ModelSpecOverride>> = {
-  // z.ai direct (api.z.ai OpenAI-compatible ids)
-  'glm-5.3': {
-    contextLength: 1_048_576,
-    inputModalities: ['text'],
-    maxOutputTokens: 131_072,
-    reasoning: {
-      supportedEfforts: ['max', 'high', 'low'],
-      defaultEffort: 'max',
-      mandatory: true,
-    },
-    inputPerM: 1.4,
-    outputPerM: 4.4,
-    cacheReadPerM: 0.26,
-  },
-  'glm-5.3-flash': {
-    contextLength: 1_048_576,
-    inputModalities: ['text', 'image', 'video'],
-    maxOutputTokens: 131_072,
-    reasoning: {
-      supportedEfforts: ['max', 'high', 'low'],
-      defaultEffort: 'max',
-      mandatory: true,
-    },
-    inputPerM: 0.075,
-    outputPerM: 0.25,
-    cacheReadPerM: 0.015,
-  },
-  // OpenRouter slugs for the same models (prices only fill in when the
-  // gateway omits them; live OpenRouter pricing wins).
-  'z-ai/glm-5.3': {
-    contextLength: 1_048_576,
-    inputModalities: ['text'],
-    maxOutputTokens: 131_072,
-    reasoning: {
-      supportedEfforts: ['max', 'high', 'low'],
-      defaultEffort: 'max',
-      mandatory: true,
-    },
-    inputPerM: 1.4,
-    outputPerM: 4.4,
-    cacheReadPerM: 0.26,
-  },
-  'z-ai/glm-5.3-flash': {
-    contextLength: 1_048_576,
-    inputModalities: ['text', 'image', 'video'],
-    maxOutputTokens: 131_072,
-    reasoning: {
-      supportedEfforts: ['max', 'high', 'low'],
-      defaultEffort: 'max',
-      mandatory: true,
-    },
-    inputPerM: 0.075,
-    outputPerM: 0.25,
-    cacheReadPerM: 0.015,
-  },
-};
-
-/** Merge the curated spec overrides onto a parsed entry (or synthesize one). */
-export function applyModelSpec(
-  entry: CatalogEntry | null,
-  modelId: string = entry?.id ?? '',
-): CatalogEntry | null {
-  const spec = modelId ? KNOWN_MODEL_SPECS[modelId] : undefined;
-  if (!spec) {
-    return entry;
-  }
-  const base = entry ?? {
-    id: modelId,
-    name: null,
-    inputPerM: 0,
-    outputPerM: 0,
-    cacheReadPerM: 0,
-    contextLength: UNKNOWN_MODEL_CONTEXT,
-    supportsTools: true,
-    inputModalities: null,
-    reasoning: { supportedEfforts: null, defaultEffort: null, mandatory: null },
-  };
-  const hasPricing = base.inputPerM > 0 || base.outputPerM > 0;
-  return {
-    ...base,
-    contextLength: spec.contextLength ?? base.contextLength,
-    inputModalities: spec.inputModalities ?? base.inputModalities,
-    maxOutputTokens: spec.maxOutputTokens ?? base.maxOutputTokens,
-    reasoning: spec.reasoning ?? base.reasoning,
-    // Live prices win when present; curated prices only fill missing data.
-    inputPerM: hasPricing ? base.inputPerM : (spec.inputPerM ?? base.inputPerM),
-    outputPerM: hasPricing ? base.outputPerM : (spec.outputPerM ?? base.outputPerM),
-    cacheReadPerM:
-      base.cacheReadPerM > 0 ? base.cacheReadPerM : (spec.cacheReadPerM ?? base.cacheReadPerM),
-  };
-}
-
-/** Curated spec for a model id (used for offline/unknown lookups). */
-export function modelSpecFor(modelId: string): ModelSpecOverride | undefined {
-  return KNOWN_MODEL_SPECS[modelId];
-}
-
 /** Parse one `/models` catalog entry; null when the entry has no id. */
 export function parseCatalogEntry(raw: unknown): CatalogEntry | null {
   if (typeof raw !== 'object' || raw === null) {
@@ -259,10 +95,6 @@ export function parseCatalogEntry(raw: unknown): CatalogEntry | null {
     cacheReadPerM: parsePricePerM(
       typeof pricing.input_cache_read === 'string' ? pricing.input_cache_read : undefined,
     ),
-    maxOutputTokens:
-      typeof entry.max_output_tokens === 'number' && entry.max_output_tokens > 0
-        ? entry.max_output_tokens
-        : undefined,
     contextLength:
       typeof entry.context_length === 'number' && entry.context_length > 0
         ? entry.context_length
@@ -273,9 +105,8 @@ export function parseCatalogEntry(raw: unknown): CatalogEntry | null {
         ? (entry.architecture as Record<string, unknown>).input_modalities
         : undefined,
     ),
-    reasoning: parseReasoning(entry.reasoning),
   };
-  return applyModelSpec(parsed);
+  return parsed;
 }
 
 /** Fetch and parse a provider's `/models` catalog (best-effort, 5s timeout). */
@@ -331,11 +162,6 @@ export async function readCatalogFile(
     const catalog = new Map<string, CatalogEntry>();
     for (const entry of parsed.models) {
       if (entry && typeof entry.id === 'string' && entry.id.length > 0) {
-        // Older cache files predate the reasoning block; unknown allowlist
-        // (null) is the safe default: every gateway effort value accepted.
-        if (!entry.reasoning) {
-          entry.reasoning = { supportedEfforts: null, defaultEffort: null, mandatory: null };
-        }
         catalog.set(entry.id, entry);
       }
     }

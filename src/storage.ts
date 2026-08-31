@@ -5,6 +5,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { CacheDiagnosticEntry } from './cache-diagnostics.js';
 import type { TurnStats } from './turn-stats.js';
 import { forgetSession, rememberSession, writeFileAtomic } from './session-index.js';
+import { getDefaultProviderId, getProviderDefinition } from './provider-registry.js';
 
 export { findSessionCwd, listStoredSessions } from './session-index.js';
 
@@ -112,9 +113,6 @@ export type ModelId = string;
  */
 export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max' | 'xhigh';
 
-export const DEFAULT_DEEPSEEK_MODEL: ModelId = 'deepseek-v4-flash';
-export const DEFAULT_OPENROUTER_MODEL: ModelId = 'openrouter/free';
-export const DEFAULT_PROVIDER: ProviderId = 'deepseek';
 export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'off';
 
 export interface SessionConfig {
@@ -300,7 +298,7 @@ async function ensureDirectory(dir: string): Promise<void> {
 
 export async function createStoredSession(
   cwd: string,
-  provider: ProviderId = DEFAULT_PROVIDER,
+  provider: ProviderId = getDefaultProviderId(),
 ): Promise<StoredSession> {
   await ensureDirectory(sessionDirectory(cwd));
   const now = new Date().toISOString();
@@ -314,7 +312,7 @@ export async function createStoredSession(
     llmMessages: [],
     config: {
       provider,
-      model: provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+      model: getProviderDefinition(provider)?.defaultModel ?? '',
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: '',
       sandbox: false,
@@ -337,10 +335,10 @@ export async function writeSession(session: StoredSession): Promise<void> {
   await rememberSession(session);
 }
 
-function defaultConfig(provider: ProviderId = DEFAULT_PROVIDER): SessionConfig {
+function defaultConfig(provider: ProviderId = getDefaultProviderId()): SessionConfig {
   return {
     provider,
-    model: provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+    model: getProviderDefinition(provider)?.defaultModel ?? '',
     thinkingEffort: DEFAULT_THINKING_EFFORT,
     systemPrompt: '',
     sandbox: false,
@@ -563,7 +561,7 @@ function normalizeStoredSession(
   const provider: ProviderId =
     typeof rawConfig.provider === 'string' && rawConfig.provider.length > 0
       ? rawConfig.provider
-      : DEFAULT_PROVIDER;
+      : getDefaultProviderId();
   const config: SessionConfig = {
     provider,
     model:

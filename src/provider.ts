@@ -1,5 +1,4 @@
 import { type GenericPricing, type LlmStepOptions, type LlmStepResult } from './llm-client.js';
-import { envNonNegativeFloat } from './env.js';
 import { getPiModel, getSupportedThinkingEfforts, ensureProviderRefreshed } from './provider-pi.js';
 import {
   requireProviderDefinition,
@@ -8,7 +7,7 @@ import {
   type ProviderDefinition,
 } from './provider-registry.js';
 import { fetchProviderBalance } from './provider-balances.js';
-import { getCatalog, modelSpecFor } from './provider-catalog.js';
+import { getCatalog } from './provider-catalog.js';
 import { runChatCompletions } from './chat-completions.js';
 import type { ModelId, ProviderId, ThinkingEffort } from './storage.js';
 
@@ -17,12 +16,12 @@ export { costFromUsage } from './llm-client.js';
 export type { BalanceSnapshot } from './provider-registry.js';
 export { getModelOptions, type ModelOption } from './provider-pi.js';
 
-/** Default model for a provider: its configured fallback (env-driven). */
+/** Default model for a provider: its declared fallback. */
 export function getDefaultModel(provider: ProviderId): ModelId {
   return requireProviderDefinition(provider).defaultModel;
 }
 
-/** Billing currency of the session's provider (CNY for DeepSeek, USD for OpenRouter). */
+/** Billing currency of the session's provider (declared in the provider config). */
 export function getProviderCurrency(provider: ProviderId): string {
   return requireProviderDefinition(provider).currency;
 }
@@ -73,34 +72,15 @@ function buildExtraBody(
 
 /**
  * Effective pricing for a model on a provider, in the provider's billing
- * currency. Static tables (DeepSeek) honor peak/off-peak windows; catalog
- * providers use the discovered per-model prices.
+ * currency: the model's declared cost, the discovered `/models` prices (cache
+ * reads at `input_cache_read` when the gateway reports it), or the provider's
+ * fallback.
  */
 export async function getModelPricing(
   provider: ProviderId,
   model: ModelId,
-  now: Date = new Date(),
 ): Promise<GenericPricing> {
   const def = requireProviderDefinition(provider);
-  if (def.pricing.kind === 'table') {
-    const rates = def.pricing.rates[model] ?? def.pricing.rates[def.pricing.defaultModel]!;
-    const peak = isPeakTime(now);
-    return {
-      currency: def.currency,
-      cacheHitPerM: envNonNegativeFloat(
-        'DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK',
-        peak ? rates.cacheHit.peak : rates.cacheHit.offPeak,
-      ),
-      cacheMissPerM: envNonNegativeFloat(
-        'DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK',
-        peak ? rates.cacheMiss.peak : rates.cacheMiss.offPeak,
-      ),
-      outputPerM: envNonNegativeFloat(
-        'DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK',
-        peak ? rates.output.peak : rates.output.offPeak,
-      ),
-    };
-  }
   await ensureProviderRefreshed(provider);
   const piModel = getPiModel(provider, model);
   return {
@@ -109,17 +89,6 @@ export async function getModelPricing(
     cacheMissPerM: piModel.cost.input,
     outputPerM: piModel.cost.output,
   };
-}
-
-/**
- * Whether `now` (UTC) falls in DeepSeek's peak pricing window.
- * Peak hours are Beijing time (UTC+8) 09:00-12:00 and 14:00-18:00;
- * 12:00 and 18:00 themselves are off-peak.
- */
-export function isPeakTime(now: Date = new Date()): boolean {
-  const beijing = new Date(now.getTime() + 8 * 3_600_000);
-  const minutes = beijing.getUTCHours() * 60 + beijing.getUTCMinutes();
-  return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
 }
 
 /** Session context window size in tokens, used for usage_update.size. */
@@ -136,37 +105,31 @@ export async function getContextWindowTokens(
 /**
  * Input modalities accepted by the session's model.
  *
- * Returns `null` when the answer is TEMPORARILY unknown — a discovery
- * provider whose catalog has not been fetched or whose slug is not in any
- * table — so callers can retry later instead of caching a wrong "text-only"
- * answer for the whole session (a memoized negative would permanently hide
- * read_media from the model). Static providers (DeepSeek) are text-only by
- * definition, so that branch is always definitive.
+ * Declared modalities are definitive; a discovery provider whose catalog has
+ * not been fetched, or whose slug is not in any table, returns `null` so
+ * callers retry later instead of caching a wrong "text-only" answer for the
+ * whole session (a memoized negative would permanently hide read_media from
+ * the model).
  */
 export async function getModelModalities(
   provider: ProviderId,
   model: ModelId,
 ): Promise<{ image: boolean; audio: boolean } | null> {
   const def = requireProviderDefinition(provider);
-  if (!def.discovery.enabled) {
-    return { image: false, audio: false };
+  // Declared static models carry their modalities (text-only when omitted).
+  const declared = def.staticModels.find((opt) => opt.value === model);
+  if (declared) {
+    return {
+      image: declared.modalities?.includes('image') ?? false,
+      audio: declared.modalities?.includes('audio') ?? false,
+    };
   }
-  // Static fallback models (e.g. openrouter/free offline) are known text-only.
-  if (def.staticModels.some((opt) => opt.value === model)) {
+  if (!def.discovery.enabled) {
     return { image: false, audio: false };
   }
   await ensureProviderRefreshed(provider);
   const entry = getCatalog(provider)?.get(model) ?? null;
   if (!entry) {
-    // Curated specs (e.g. z.ai GLM 5.3 family) are definitive even before
-    // the catalog is fetched; everything else stays unknown so callers retry.
-    const spec = modelSpecFor(model);
-    if (spec?.inputModalities) {
-      return {
-        image: spec.inputModalities.includes('image'),
-        audio: spec.inputModalities.includes('audio'),
-      };
-    }
     return null;
   }
   return {
@@ -188,12 +151,12 @@ export async function resolveModelModalities(
   return (await getModelModalities(provider, model)) ?? { image: false, audio: false };
 }
 
-/** Thinking-effort values the session selector offers for a provider/model. */
+/** Thinking-effort values the session selector offers (full ladder for all). */
 export async function getThinkingEfforts(
-  provider: ProviderId,
-  model: ModelId,
+  _provider: ProviderId,
+  _model: ModelId,
 ): Promise<readonly ThinkingEffort[]> {
-  return getSupportedThinkingEfforts(provider, model);
+  return getSupportedThinkingEfforts();
 }
 
 /** Balance/credit snapshot for the active provider (best-effort). */

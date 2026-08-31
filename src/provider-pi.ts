@@ -6,19 +6,17 @@ import {
   type ModelsStore,
   type ModelsStoreEntry,
   type MutableModels,
-  type ThinkingLevelMap,
 } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { indexDirectory, writeFileAtomic } from './session-index.js';
 import {
-  applyModelSpec,
+  fetchCatalog,
   getCatalog,
   readCatalogFile,
   setCatalog,
   writeCatalogFile,
-  fetchCatalog,
   type CatalogEntry,
 } from './provider-catalog.js';
 import {
@@ -31,12 +29,13 @@ import {
 import type { ThinkingEffort } from './storage.js';
 
 /**
- * pi-ai integration: a `Models` collection where every registered provider
- * (built-in or user-defined) is built with pi's `createProvider`. Dynamic
- * providers discover their models through `fetchModels` (GET /models), pi
- * restores/persists the catalog through a `ModelsStore`, and Zen reads
- * metadata back out of pi `Model` objects (context, cost, modalities, effort
- * map) for selectors, pricing and streaming.
+ * pi-ai integration: a `Models` collection where every configured provider
+ * (there are no built-ins — all providers come from ZEN_AGENT_PROVIDERS /
+ * ZEN_AGENT_PROVIDERS_FILE) is built with pi's `createProvider`. Providers
+ * with `fetchModels: true` discover their models through `fetchModels`
+ * (GET /models); pi restores/persists the catalog through a `ModelsStore`,
+ * and Zen reads metadata back out of pi `Model` objects (context, cost,
+ * modalities) for selectors, pricing and streaming.
  */
 
 const CATALOG_STORE_VERSION = 5;
@@ -113,133 +112,43 @@ export function getPiModels(): MutableModels {
   return piModels;
 }
 
-function defaultContext(def: ProviderDefinition): number {
-  return def.discovery.enabled ? 200_000 : 1_000_000;
-}
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 
-function fallbackCost(def: ProviderDefinition): {
-  inputPerM: number;
-  outputPerM: number;
-  cacheHitPerM: number;
-} {
-  if (def.pricing.kind === 'catalog') {
-    return {
-      inputPerM: def.pricing.fallback.inputPerM,
-      outputPerM: def.pricing.fallback.outputPerM,
-      cacheHitPerM: def.pricing.fallback.inputPerM,
-    };
-  }
-  if (def.pricing.kind === 'fixed') {
-    return {
-      inputPerM: def.pricing.cacheMissPerM,
-      outputPerM: def.pricing.outputPerM,
-      cacheHitPerM: def.pricing.cacheHitPerM,
-    };
-  }
-  return { inputPerM: 0, outputPerM: 0, cacheHitPerM: 0 };
-}
-
-function entryCost(
+function modelCost(
   def: ProviderDefinition,
   entry: CatalogEntry | null,
-): { inputPerM: number; outputPerM: number; cacheHitPerM: number } {
+  declared: StaticModelOption | null,
+): { inputPerM: number; outputPerM: number; cacheReadPerM: number } {
+  if (declared?.cost) {
+    return {
+      inputPerM: declared.cost.inputPerM,
+      outputPerM: declared.cost.outputPerM,
+      cacheReadPerM: declared.cost.inputPerM,
+    };
+  }
   if (entry && (entry.inputPerM > 0 || entry.outputPerM > 0)) {
     return {
       inputPerM: entry.inputPerM,
       outputPerM: entry.outputPerM,
-      cacheHitPerM: entry.cacheReadPerM > 0 ? entry.cacheReadPerM : entry.inputPerM,
+      cacheReadPerM: entry.cacheReadPerM > 0 ? entry.cacheReadPerM : entry.inputPerM,
     };
   }
-  return fallbackCost(def);
+  return {
+    inputPerM: def.pricing.fallback.inputPerM,
+    outputPerM: def.pricing.fallback.outputPerM,
+    cacheReadPerM: def.pricing.fallback.inputPerM,
+  };
 }
 
-/**
- * Map a session effort to a provider value by ladder distance (ties resolve
- * toward the HIGHER effort). Mirrors OpenRouter's own remap behavior for
- * models whose `supported_efforts` lacks the requested tier.
- */
-function mapOpenRouterEffort(
-  effort: ThinkingEffort,
-  ladder: readonly string[],
-  supportedEfforts: readonly string[] | null,
-  mandatory: boolean,
-  offValue: string,
-): string | null {
-  if (supportedEfforts === null) {
-    // Unknown model/catalog: every gateway value is accepted, `off` omits
-    // the field (the provider picks its default).
-    return effort === 'off' ? null : effort;
-  }
-  if (effort === 'off') {
-    if (supportedEfforts.includes(offValue)) {
-      return offValue;
-    }
-    if (mandatory && supportedEfforts.length > 0) {
-      return supportedEfforts[supportedEfforts.length - 1]!;
-    }
-    return null;
-  }
-  if (supportedEfforts.includes(effort)) {
-    return effort;
-  }
-  const requested = ladder.indexOf(effort);
-  if (requested === -1) {
-    return null;
-  }
-  let best: string | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const candidate of supportedEfforts) {
-    const index = ladder.indexOf(candidate);
-    if (index === -1) {
-      continue;
-    }
-    const distance = Math.abs(index - requested);
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
-/** Build a pi `thinkingLevelMap` from the definition + catalog entry. */
-export function buildEffortMap(
+function piModel(
   def: ProviderDefinition,
+  modelId: string,
+  modelName: string,
   entry: CatalogEntry | null,
-): ThinkingLevelMap | undefined {
-  if (def.effort.kind === 'static-map') {
-    return def.effort.map;
-  }
-  if (def.effort.kind === 'passthrough') {
-    return undefined;
-  }
-  // allowlist (OpenRouter-style): remap every session level, honor `off`.
-  const supported = entry?.reasoning.supportedEfforts ?? null;
-  const mandatory = entry?.reasoning.mandatory === true;
-  const ladder = def.effort.ladder;
-  const map: ThinkingLevelMap = {};
-  for (const effort of ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
-    const mapped = mapOpenRouterEffort(effort, ladder, supported, mandatory, def.effort.offValue);
-    if (mapped !== null) {
-      map[effort] = mapped;
-    }
-  }
-  map.off = mapOpenRouterEffort('off', ladder, supported, mandatory, def.effort.offValue);
-  return map;
-}
-
-/** Convert a catalog entry (or null for an unknown slug) to a pi model. */
-export function catalogToPiModel(
-  def: ProviderDefinition,
-  entry: CatalogEntry | null,
-  modelId: string = entry?.id ?? '',
-  modelName: string = entry?.name ?? modelId,
+  declared: StaticModelOption | null,
 ): Model<'openai-completions'> {
-  // Curated spec overrides (z.ai GLM 5.3 family) win over the upstream entry
-  // so offline/unknown lookups get the same corrected metadata.
-  const effective = applyModelSpec(entry, modelId);
-  const cost = entryCost(def, effective);
-  const image = effective?.inputModalities?.includes('image') ?? false;
+  const cost = modelCost(def, entry, declared);
+  const modalities = declared?.modalities ?? entry?.inputModalities ?? ['text'];
   return {
     id: modelId,
     name: modelName,
@@ -247,52 +156,22 @@ export function catalogToPiModel(
     provider: def.id,
     baseUrl: def.baseUrl,
     reasoning: true,
-    input: ['text', ...(image ? ['image'] : [])] as ('text' | 'image')[],
+    input: ['text', ...(modalities.includes('image') ? ['image'] : [])] as ('text' | 'image')[],
     cost: {
       input: cost.inputPerM,
       output: cost.outputPerM,
-      cacheRead: cost.cacheHitPerM,
-      cacheWrite: cost.cacheHitPerM,
+      cacheRead: cost.cacheReadPerM,
+      cacheWrite: cost.cacheReadPerM,
     },
-    contextWindow: effective?.contextLength ?? defaultContext(def),
-    maxTokens: effective?.maxOutputTokens ?? 384_000,
-    compat: def.compat,
-    thinkingLevelMap: buildEffortMap(def, effective),
-    ...(def.extraHeaders ? { headers: def.extraHeaders } : {}),
-  };
-}
-
-function staticModelToPiModel(
-  def: ProviderDefinition,
-  opt: StaticModelOption,
-): Model<'openai-completions'> {
-  const fallback = fallbackCost(def);
-  const inputPerM = opt.cost?.inputPerM ?? fallback.inputPerM;
-  const outputPerM = opt.cost?.outputPerM ?? fallback.outputPerM;
-  return {
-    id: opt.value,
-    name: opt.name,
-    api: 'openai-completions',
-    provider: def.id,
-    baseUrl: def.baseUrl,
-    reasoning: true,
-    input: ['text'],
-    cost: {
-      input: inputPerM,
-      output: outputPerM,
-      cacheRead: opt.cost ? inputPerM : fallback.cacheHitPerM,
-      cacheWrite: opt.cost ? inputPerM : fallback.cacheHitPerM,
-    },
-    contextWindow: opt.contextLength ?? defaultContext(def),
+    contextWindow: declared?.contextLength ?? entry?.contextLength ?? DEFAULT_CONTEXT_WINDOW,
     maxTokens: 384_000,
     compat: def.compat,
-    thinkingLevelMap: buildEffortMap(def, null),
     ...(def.extraHeaders ? { headers: def.extraHeaders } : {}),
   };
 }
 
 function staticPiModels(def: ProviderDefinition): Model<'openai-completions'>[] {
-  return def.staticModels.map((opt) => staticModelToPiModel(def, opt));
+  return def.staticModels.map((opt) => piModel(def, opt.value, opt.name, null, opt));
 }
 
 /** pi's dynamic-model hook: fetch /models, cache Zen metadata, return pi models. */
@@ -304,13 +183,15 @@ async function fetchPiModels(
   const catalog = await fetchCatalog(def.baseUrl, apiKey, ctx.signal);
   setCatalog(def.id, catalog);
   await writeCatalogFile(def.id, catalog);
-  return [...catalog.values()].map((entry) => catalogToPiModel(def, entry));
+  return [...catalog.values()].map((entry) =>
+    piModel(def, entry.id, entry.name ?? entry.id, entry, null),
+  );
 }
 
 /**
  * Make sure a discovery provider's catalog has been fetched (or restored from
  * disk) at least once this process. Best-effort: failures keep the static
- * fallbacks / persisted catalog, exactly like the old OpenRouter cache.
+ * baseline / persisted catalog.
  */
 export async function ensureProviderRefreshed(providerId: string): Promise<void> {
   const def = requireProviderDefinition(providerId);
@@ -324,7 +205,7 @@ export async function ensureProviderRefreshed(providerId: string): Promise<void>
       signal: AbortSignal.timeout(5_000),
     });
   } catch {
-    // Static fallbacks / persisted catalog remain available.
+    // Static baseline / persisted catalog remain available.
   }
   if (!getCatalog(providerId)) {
     setCatalog(providerId, await readCatalogFile(providerId));
@@ -341,11 +222,12 @@ export function getPiModel(providerId: string, modelId: string): Model<'openai-c
   if (found) {
     return found as Model<'openai-completions'>;
   }
+  const declared = def.staticModels.find((opt) => opt.value === modelId) ?? null;
   const entry = getCatalog(providerId)?.get(modelId) ?? null;
-  return catalogToPiModel(def, entry, modelId);
+  return piModel(def, modelId, declared?.name ?? entry?.name ?? modelId, entry, declared);
 }
 
-/** Selector option for a discovered/static model. */
+/** Selector option for a discovered/declared model. */
 export interface ModelOption {
   value: string;
   name: string;
@@ -363,24 +245,27 @@ function formatContext(tokens: number): string {
 }
 
 /**
- * Model choices for the session selector. Discovery providers return the
- * live catalog (tool-capable models; when the catalog is unavailable the
- * persisted/static list is used); static providers return their fixed list.
- * Returns null when no catalog exists yet (caller falls back to static).
+ * Model choices for the session selector. Static providers return their
+ * declared list; discovery providers return the fetched catalog (when the
+ * catalog is unavailable the declared/restored list is used). Returns null
+ * when a discovery provider has neither catalog nor declared models.
  */
 export async function getModelOptions(providerId: string): Promise<ModelOption[] | null> {
   const def = requireProviderDefinition(providerId);
+  const declared = def.staticModels.map((opt) => ({
+    value: opt.value,
+    name: opt.name,
+    description: opt.contextLength
+      ? `${opt.description} · ${formatContext(opt.contextLength)}`
+      : opt.description,
+  }));
   if (!def.discovery.enabled) {
-    return def.staticModels.map((opt) => ({
-      value: opt.value,
-      name: opt.name,
-      description: opt.description,
-    }));
+    return declared;
   }
   await ensureProviderRefreshed(providerId);
   const all = getPiModels().getModels(providerId);
   if (all.length === 0) {
-    return null;
+    return declared.length > 0 ? declared : null;
   }
   const catalog = getCatalog(providerId);
   const toolCapable =
@@ -389,11 +274,11 @@ export async function getModelOptions(providerId: string): Promise<ModelOption[]
       : new Set(
           [...catalog.values()].filter((entry) => entry.supportsTools).map((entry) => entry.id),
         );
-  // Static baseline models (e.g. openrouter/free) are always offered, even
-  // when a fetched catalog does not list them.
-  const staticIds = new Set(def.staticModels.map((opt) => opt.value));
+  const declaredIds = new Set(def.staticModels.map((opt) => opt.value));
   const options: ModelOption[] = all
-    .filter((model) => staticIds.has(model.id) || toolCapable === null || toolCapable.has(model.id))
+    .filter(
+      (model) => declaredIds.has(model.id) || toolCapable === null || toolCapable.has(model.id),
+    )
     .map((model) => ({
       value: model.id,
       name: model.name,
@@ -421,33 +306,10 @@ const FULL_EFFORT_ORDER: readonly ThinkingEffort[] = [
 ];
 
 /**
- * Thinking-effort values the selector offers for a provider/model: the
- * provider's static vocabulary, the model's catalog allowlist (plus off), or
- * the full ladder for unknown/generic models.
+ * Thinking-effort values the selector offers. Generic OpenAI-compatible
+ * providers accept the full ladder (`reasoning_effort` passthrough); `off`
+ * omits the field so the provider picks its default.
  */
-export async function getSupportedThinkingEfforts(
-  providerId: string,
-  modelId: string,
-): Promise<readonly ThinkingEffort[]> {
-  const def = requireProviderDefinition(providerId);
-  if (def.effort.kind === 'static-map') {
-    return def.effort.options;
-  }
-  if (def.effort.kind === 'passthrough') {
-    return FULL_EFFORT_ORDER;
-  }
-  await ensureProviderRefreshed(providerId);
-  const entry = getCatalog(providerId)?.get(modelId) ?? null;
-  const supported = entry?.reasoning.supportedEfforts ?? null;
-  if (supported === null) {
-    const model = getPiModel(providerId, modelId);
-    const mapped = model.thinkingLevelMap;
-    if (mapped) {
-      return FULL_EFFORT_ORDER.filter(
-        (effort) => effort === 'off' || (mapped[effort] !== undefined && mapped[effort] !== null),
-      );
-    }
-    return FULL_EFFORT_ORDER;
-  }
-  return FULL_EFFORT_ORDER.filter((effort) => effort === 'off' || supported.includes(effort));
+export async function getSupportedThinkingEfforts(): Promise<readonly ThinkingEffort[]> {
+  return FULL_EFFORT_ORDER;
 }

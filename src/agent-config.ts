@@ -90,13 +90,10 @@ function thinkingEffortOption(value: ThinkingEffort) {
 }
 
 /**
- * Thinking-effort selector for a session. DeepSeek offers its own vocabulary
- * (`off`/`low`/`high`/`max`); OpenRouter offers `off` plus the selected
- * model's `supported_efforts` allowlist from the catalog (every gateway
- * value when the model/catalog is unknown), sorted ascending. Every tier is
- * offered as itself — `minimal` is a real gateway level that some models
- * list in their allowlist (and even default to), so it is never folded into
- * `low`.
+ * Thinking-effort selector for a session. Generic OpenAI-compatible
+ * providers accept the full ladder (`off`/`minimal`/`low`/`medium`/`high`/
+ * `xhigh`/`max`) and `off` omits the field so the provider picks its
+ * default.
  */
 export async function thinkingConfigOption(session: StoredSession) {
   const efforts = await getThinkingEfforts(session.config.provider, session.config.model);
