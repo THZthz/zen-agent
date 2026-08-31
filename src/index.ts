@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import * as acp from '@agentclientprotocol/sdk';
 import { Readable, Writable } from 'node:stream';
-import { ZenAgent } from './agent.js';
+import { ZenAgent } from './agent/index.js';
 
 const agent = new ZenAgent();
 

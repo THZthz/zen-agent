@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Zen Agent bash-tool sandbox: refuses to run commands whose real binaries
-# are shadowed inside the bwrap namespace (see src/tool-execution.ts).
+# are shadowed inside the bwrap namespace (see src/tools/execution.ts).
 #
 # The bash tool sandbox bind-mounts this script over /usr/bin/rm,
 # /usr/bin/grep and /usr/bin/find (plus /bin/* where they are separate
