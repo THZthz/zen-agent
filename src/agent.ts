@@ -14,9 +14,9 @@ import { withTurnReporting } from './turn-reporting.js';
  * | Serialization / cancellation     | withSessionOperation queue + AbortController in core/prompt/session mixins |
  * | Turn accounting & reporting      | turn-reporting.ts (withTurnReporting) |
  * | Persistence boundaries (save())  | turn/prompt owners (agent-turn.ts, agent-prompt.ts) |
- * | Terminal lifecycle & kill-on-abort | tool-execution.ts (bash tool path) |
+ * | Terminal lifecycle & kill-on-abort | tool-bash.ts (bash tool handler) |
  * | Stream cleanup                   | StreamThrottle.discard() at the step owner (agent-turn.ts) |
- * | Wire conversion                  | chat-completions.ts pure layer |
+ * | Wire conversion                  | chat-completions-convert.ts (pure layer) |
  *
  * Layering: session lifecycle (agent-session.ts), turn reporting
  * (turn-reporting.ts), the LLM turn loop (agent-turn.ts), slash-command
