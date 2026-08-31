@@ -9,7 +9,6 @@ import { stream as streamOpenAiCompletions } from '@earendil-works/pi-ai/api/ope
 import type { LlmMessage, ThinkingEffort, UserContentPart } from './storage.js';
 import { healMessages } from './heal.js';
 import { waitForChatRateLimit } from './rate-limit.js';
-import type { RetryOptions } from './retry.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { envPositiveInt } from './env.js';
 import {
@@ -44,8 +43,14 @@ export interface ChatCompletionsOptions {
   extraHeaders?: Record<string, string>;
   /** Stable provider-side cache/routing session identity. */
   sessionId?: string;
-  /** Retry configuration for the initial chat request. */
-  retry?: RetryOptions;
+  /**
+   * Maximum total attempts for the initial chat request, including the first.
+   * Default 4. Pi (the provider library) owns retryable-status selection,
+   * `Retry-After` handling, and never re-sending a failed mid-stream request.
+   */
+  maxAttempts?: number;
+  /** Upper bound on any single retry delay. */
+  maxRetryDelayMs?: number;
   /** Debug-log sink for provider-internal diagnostics (see LlmStepOptions). */
   logRuntime?: (
     level: 'debug' | 'info' | 'warn' | 'error',
@@ -55,6 +60,15 @@ export interface ChatCompletionsOptions {
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void | Promise<void>;
   onReasoningDelta?: (delta: string) => void | Promise<void>;
+}
+
+/**
+ * Pi takes a retry COUNT (0 = never retry); `maxAttempts` is the total number
+ * of attempts including the first, so the mapping is `attempts - 1`, clamped
+ * at 0. Default: 4 attempts -> 3 retries.
+ */
+export function piMaxRetries(maxAttempts: number | undefined): number {
+  return Math.max(0, (maxAttempts ?? 4) - 1);
 }
 
 /**
@@ -433,7 +447,6 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
     }, timeoutMs);
     timer.unref?.();
 
-    const attempts = options.retry?.maxAttempts ?? 4;
     const stream = streamOpenAiCompletions(model, context, {
       apiKey: options.apiKey,
       headers: options.extraHeaders,
@@ -443,8 +456,8 @@ export async function runChatCompletions(options: ChatCompletionsOptions): Promi
         options.thinkingEffort && options.thinkingEffort !== 'off'
           ? options.thinkingEffort
           : undefined,
-      maxRetries: Math.max(0, attempts - 1),
-      maxRetryDelayMs: options.retry?.maxBackoffMs,
+      maxRetries: piMaxRetries(options.maxAttempts),
+      maxRetryDelayMs: options.maxRetryDelayMs,
       samplingParams: options.extraBody,
       onPayload: (payload) => patchPayload(payload, healed.messages, options.tools?.length === 0),
     });
