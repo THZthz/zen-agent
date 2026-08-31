@@ -258,7 +258,11 @@ function remapTerminalContent(
     changed = true;
   }
 
-  const meta = readMeta(event) ?? {};
+  // Shallow-clone: meta may alias the persisted event's _meta object, and
+  // writing derived keys into it would mutate session.events (and get
+  // re-persisted on the next save). Only new keys are written here, so a
+  // shallow copy is sufficient.
+  const meta = { ...(readMeta(event) ?? {}) };
   if (displayTerminalId && typeof meta.terminal_output !== 'object') {
     const raw = rawOutput as { output?: unknown; exitCode?: unknown; signal?: unknown } | undefined;
     const data = typeof raw?.output === 'string' ? raw.output : textContentOf(event);

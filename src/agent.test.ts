@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { ZenAgent } from './agent.js';
-import { prepareReplayEvents } from './replay.js';
+import { coalesceReplayEvents, prepareReplayEvents } from './replay.js';
 import { emptySessionUsage, type StoredSession } from './storage.js';
 import { testServerBaseUrl } from './test-server.js';
 
@@ -988,5 +988,69 @@ describe('prepareReplayEvents with display-only terminal info', () => {
       (out[0] as unknown as { _meta?: { terminal_info?: { cwd?: unknown } } })._meta?.terminal_info
         ?.cwd,
     ).toBe('/work');
+  });
+});
+
+describe('replay event immutability', () => {
+  it('prepareReplayEvents does not mutate the input events while deriving terminal meta', () => {
+    const events: ReplayEvent[] = [
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'i1',
+        title: '$ ls',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'ls' },
+        _meta: {
+          terminal_info: { terminal_id: 'zen-i1', cwd: '/tmp' },
+        },
+      },
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'i1',
+        status: 'completed',
+        content: [
+          { type: 'terminal', terminalId: 'real-uuid-i1' },
+          { type: 'content', content: { type: 'text', text: 'out' } },
+        ],
+        // Pre-existing _meta without terminal_output: the exact shape that
+        // used to be mutated in place by the legacy-derivation path.
+        _meta: { note: 'persisted' },
+        rawOutput: { output: 'out' },
+      },
+    ];
+    const snapshot = structuredClone(events);
+
+    const out = prepare(events);
+
+    expect(events).toEqual(snapshot);
+    const update = out[1] as ReplayEvent;
+    expect(update._meta).toMatchObject({
+      terminal_output: { terminal_id: 'zen-i1', data: 'out' },
+      terminal_exit: { terminal_id: 'zen-i1', exit_code: null, signal: null },
+    });
+    expect((events[1]._meta as { terminal_output?: unknown }).terminal_output).toBeUndefined();
+  });
+
+  it('coalesceReplayEvents does not mutate the input events', () => {
+    const events: ReplayEvent[] = [
+      {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'a' },
+        messageId: 'm1',
+      },
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'i2',
+        status: 'completed',
+        // No text content: enrichReplayEvent would derive one from rawOutput.
+        rawOutput: { output: 'res' },
+      },
+    ];
+    const snapshot = structuredClone(events);
+
+    coalesceReplayEvents(events as unknown as SessionUpdate[]);
+
+    expect(events).toEqual(snapshot);
   });
 });
