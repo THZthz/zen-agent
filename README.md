@@ -91,6 +91,8 @@ Add any OpenAI-compatible provider with a base URL + API key; models are auto-di
 
 Or point `ZEN_AGENT_PROVIDERS_FILE` at a JSON file with the same array shape. Optional fields: `name`, `currency` (default `USD`), `apiKeyEnv` (omit for keyless local endpoints like Ollama), and `models` (a static list; omit it to auto-discover). Set `ZEN_AGENT_DEFAULT_PROVIDER` to change the default session provider from `deepseek`.
 
+Provider ids must be unique and must not collide with the built-ins: reusing `deepseek` or `openrouter` is rejected with an error that points at the built-in's own environment variables (`DEEPSEEK_*` / `OPENROUTER_*`) — use those to customize a built-in, or pick a distinct id (e.g. `my-openrouter`) for a new provider.
+
 ### Image & Audio Input
 
 Sessions on OpenRouter models whose catalog entry lists `image`/`audio` in `architecture.input_modalities` accept media:

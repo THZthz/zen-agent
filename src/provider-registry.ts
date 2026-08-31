@@ -484,8 +484,14 @@ export function getProviderDefinitions(): readonly ProviderDefinition[] {
     const seen = new Set<string>(builtins.map((def) => def.id));
     for (const def of users) {
       if (seen.has(def.id)) {
+        const envHint =
+          def.id === 'deepseek'
+            ? 'DEEPSEEK_BASE_URL / DEEPSEEK_API_KEY / DEEPSEEK_MODEL'
+            : 'OPENROUTER_BASE_URL / OPENROUTER_API_KEY / OPENROUTER_MODEL';
         throw new Error(
-          `Provider config error: provider id "${def.id}" collides with a built-in provider`,
+          `Provider config error: provider id "${def.id}" collides with a built-in provider. ` +
+            `Customize the built-in via its ${envHint} environment variables, or pick a different ` +
+            `id for the new provider (e.g. "my-${def.id}").`,
         );
       }
       seen.add(def.id);

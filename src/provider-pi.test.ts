@@ -269,10 +269,27 @@ describe('user-defined providers via ZEN_AGENT_PROVIDERS', () => {
     expect(() => getProviderDefinition('anything')).toThrow(/ZEN_AGENT_PROVIDERS/);
   });
 
-  it('rejects duplicate provider ids colliding with built-ins', () => {
+  it('rejects user providers colliding with built-ins and explains the alternatives', () => {
     process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
       { id: 'openrouter', baseUrl: 'http://x', defaultModel: 'm', models: ['m'] },
     ]);
     expect(() => getProviderDefinition('openrouter')).toThrow(/collides with a built-in provider/);
+    // The message points at the built-in's own env vars and a distinct id.
+    expect(() => getProviderDefinition('openrouter')).toThrow(/OPENROUTER_BASE_URL/);
+    expect(() => getProviderDefinition('openrouter')).toThrow(/"my-openrouter"/);
+
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      { id: 'deepseek', baseUrl: 'http://x', defaultModel: 'm', models: ['m'] },
+    ]);
+    expect(() => getProviderDefinition('deepseek')).toThrow(/DEEPSEEK_BASE_URL/);
+    expect(() => getProviderDefinition('deepseek')).toThrow(/"my-deepseek"/);
+  });
+
+  it('rejects duplicate ids among user providers', () => {
+    process.env.ZEN_AGENT_PROVIDERS = JSON.stringify([
+      { id: 'groq', baseUrl: 'http://a', defaultModel: 'm', models: ['m'] },
+      { id: 'groq', baseUrl: 'http://b', defaultModel: 'm2', models: ['m2'] },
+    ]);
+    expect(() => getProviderDefinition('groq')).toThrow(/duplicate provider id "groq"/);
   });
 });
