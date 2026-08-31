@@ -8,6 +8,7 @@ import {
 import { stream as streamOpenAiCompletions } from '@earendil-works/pi-ai/api/openai-completions';
 import type { LlmMessage, ThinkingEffort, UserContentPart } from './storage.js';
 import { healMessages } from './heal.js';
+import { isRecord } from './is-record.js';
 import { waitForChatRateLimit } from './rate-limit.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { envPositiveInt } from './env.js';
@@ -80,10 +81,6 @@ const RATE_LIMIT_WAIT_LOG_THRESHOLD_MS = 1_000;
 
 function parseChatTimeoutMs(): number {
   return envPositiveInt('ZEN_AGENT_CHAT_TIMEOUT_MS', 6_600_000);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toolFromSchema(schema: unknown): PiTool {
