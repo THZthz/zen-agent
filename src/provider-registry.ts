@@ -130,11 +130,6 @@ export const OPENROUTER_EFFORT_LADDER: readonly string[] = [
   'none',
 ];
 
-/** Gateway effort values excluding the disable value (session selector list). */
-export const OPENROUTER_EFFORT_VALUES: readonly string[] = OPENROUTER_EFFORT_LADDER.filter(
-  (effort) => effort !== 'none',
-);
-
 /**
  * DeepSeek's `reasoning_effort` vocabulary is `low` / `high` / `max` (no
  * `minimal`/`medium`/`xhigh`). Values outside the vocabulary map per
