@@ -6,7 +6,6 @@ import {
   readStoredSession,
   validateSessionId,
   writeSession,
-  type ProviderId,
   type StoredSession,
   type ThinkingEffort,
 } from './storage.js';
@@ -23,10 +22,15 @@ import {
   AVAILABLE_COMMANDS,
   GRACEFUL_CANCEL_TIMEOUT_MS,
   modelConfigOption,
-  PROVIDER_CONFIG_OPTION,
+  providerConfigOption,
   thinkingConfigOption,
   THINKING_EFFORT_VALUES,
 } from './agent-config.js';
+import {
+  getDefaultProviderId,
+  isKnownProvider,
+  requireProviderDefinition,
+} from './provider-registry.js';
 import { listSkills } from './skills.js';
 import type { Constructor, ZenAgentCore } from './agent-core.js';
 
@@ -81,7 +85,7 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
       if (!isAbsolute(params.cwd)) {
         throw new Error('cwd must be an absolute path');
       }
-      const session = await createStoredSession(params.cwd);
+      const session = await createStoredSession(params.cwd, getDefaultProviderId());
       // Freeze the environment snapshot into the persisted conversation at
       // session creation. It sits right after the system prompt, so it must
       // stay byte-identical for the provider's context cache to keep hitting
@@ -224,25 +228,28 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
 
       switch (params.configId) {
         case 'provider': {
-          if (value !== 'deepseek' && value !== 'openrouter') {
-            throw new Error(`Unknown provider: ${value}`);
+          if (!isKnownProvider(value)) {
+            throw new Error(
+              `Unknown provider: ${value}. Configure it via ZEN_AGENT_PROVIDERS or ZEN_AGENT_PROVIDERS_FILE.`,
+            );
           }
           if (value !== active.session.config.provider) {
-            active.session.config.provider = value as ProviderId;
+            active.session.config.provider = value;
             // The previous provider's model likely does not exist on the new
             // one; reset to the provider's default so the selector stays valid.
-            active.session.config.model = getDefaultModel(value as ProviderId);
+            active.session.config.model = getDefaultModel(value);
           }
           break;
         }
         case 'model': {
-          if (active.session.config.provider === 'openrouter') {
-            // OpenRouter accepts any model slug; only the curated list is
-            // offered in the selector.
+          const def = requireProviderDefinition(active.session.config.provider);
+          if (def.discovery.enabled) {
+            // Discovery providers accept any model slug; only the fetched
+            // catalog is offered in the selector.
             if (value.trim().length === 0) {
               throw new Error('Model must not be empty');
             }
-          } else if (value !== 'deepseek-v4-flash' && value !== 'deepseek-v4-pro') {
+          } else if (!def.staticModels.some((opt) => opt.value === value)) {
             throw new Error(`Unknown model: ${value}`);
           }
           active.session.config.model = value;
@@ -355,11 +362,11 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
     private async getConfigOptions(session: StoredSession): Promise<acp.SessionConfigOption[]> {
       return [
         {
-          ...PROVIDER_CONFIG_OPTION,
+          ...providerConfigOption(),
           currentValue: session.config.provider,
         } as acp.SessionConfigOption,
         {
-          ...(await modelConfigOption(session.config.provider, session.cwd)),
+          ...(await modelConfigOption(session.config.provider)),
           currentValue: session.config.model,
         } as acp.SessionConfigOption,
         (await thinkingConfigOption(session)) as acp.SessionConfigOption,

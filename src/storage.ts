@@ -5,6 +5,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { CacheDiagnosticEntry } from './cache-diagnostics.js';
 import type { TurnStats } from './turn-stats.js';
 import { forgetSession, rememberSession, writeFileAtomic } from './session-index.js';
+import { getDefaultProviderId, getProviderDefinition } from './provider-registry.js';
 
 export { findSessionCwd, listStoredSessions } from './session-index.js';
 
@@ -85,7 +86,12 @@ export interface ToolMessage {
  */
 export type LlmMessage = NamedUserMessage | AssistantMessage | ToolMessage;
 
-export type ProviderId = 'deepseek' | 'openrouter';
+/**
+ * LLM provider backing a session. Any registered provider id is valid:
+ * built-ins are `deepseek` and `openrouter`; users can add more via
+ * ZEN_AGENT_PROVIDERS / ZEN_AGENT_PROVIDERS_FILE (see provider-registry.ts).
+ */
+export type ProviderId = string;
 
 /**
  * Model identifier for the active provider, e.g. "deepseek-v4-flash" or
@@ -107,9 +113,6 @@ export type ModelId = string;
  */
 export type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max' | 'xhigh';
 
-export const DEFAULT_DEEPSEEK_MODEL: ModelId = 'deepseek-v4-flash';
-export const DEFAULT_OPENROUTER_MODEL: ModelId = 'openrouter/free';
-export const DEFAULT_PROVIDER: ProviderId = 'deepseek';
 export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'off';
 
 export interface SessionConfig {
@@ -285,14 +288,6 @@ export function clientLogPath(cwd: string, startupKey: string): string {
   return join(sessionDirectory(cwd), 'client', startupKey, 'log.jsonl');
 }
 
-/**
- * Cached OpenRouter model catalog shared across agent restarts:
- * <project>/.sessions/client/models.openrouter.json
- */
-export function clientModelsPath(cwd: string): string {
-  return join(sessionDirectory(cwd), 'client', 'models.openrouter.json');
-}
-
 function generateSessionId(): string {
   return validateSessionId(`sess_${randomBytes(12).toString('hex')}`);
 }
@@ -303,7 +298,7 @@ async function ensureDirectory(dir: string): Promise<void> {
 
 export async function createStoredSession(
   cwd: string,
-  provider: ProviderId = DEFAULT_PROVIDER,
+  provider: ProviderId = getDefaultProviderId(),
 ): Promise<StoredSession> {
   await ensureDirectory(sessionDirectory(cwd));
   const now = new Date().toISOString();
@@ -317,7 +312,7 @@ export async function createStoredSession(
     llmMessages: [],
     config: {
       provider,
-      model: provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+      model: getProviderDefinition(provider)?.defaultModel ?? '',
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: '',
       sandbox: false,
@@ -340,10 +335,10 @@ export async function writeSession(session: StoredSession): Promise<void> {
   await rememberSession(session);
 }
 
-function defaultConfig(provider: ProviderId = DEFAULT_PROVIDER): SessionConfig {
+function defaultConfig(provider: ProviderId = getDefaultProviderId()): SessionConfig {
   return {
     provider,
-    model: provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_DEEPSEEK_MODEL,
+    model: getProviderDefinition(provider)?.defaultModel ?? '',
     thinkingEffort: DEFAULT_THINKING_EFFORT,
     systemPrompt: '',
     sandbox: false,
@@ -564,9 +559,9 @@ function normalizeStoredSession(
   // Sessions created before providers existed have no `provider`; they are
   // DeepSeek sessions by definition (the only provider back then).
   const provider: ProviderId =
-    rawConfig.provider === 'deepseek' || rawConfig.provider === 'openrouter'
+    typeof rawConfig.provider === 'string' && rawConfig.provider.length > 0
       ? rawConfig.provider
-      : DEFAULT_PROVIDER;
+      : getDefaultProviderId();
   const config: SessionConfig = {
     provider,
     model:

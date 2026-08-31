@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +7,6 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { ZenAgent } from './agent.js';
 import { coalesceReplayEvents, prepareReplayEvents } from './replay.js';
 import { emptySessionUsage, type StoredSession } from './storage.js';
-import { testServerBaseUrl } from './test-server.js';
 
 type ReplayEvent = {
   sessionUpdate: string;
@@ -83,7 +82,15 @@ describe('newSession default provider', () => {
       expect(modelOption?.options?.some((o) => o.value === 'deepseek-v4-flash')).toBe(true);
       const thinkingOption = created.configOptions?.find((o) => o.id === 'thinking_effort') as
         { options?: Array<{ value: string }> } | undefined;
-      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'low', 'high', 'max']);
+      expect(thinkingOption?.options?.map((o) => o.value)).toEqual([
+        'off',
+        'minimal',
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+      ]);
       const active = (
         agent as unknown as {
           sessions: Map<string, { session: StoredSession }>;
@@ -98,6 +105,12 @@ describe('newSession default provider', () => {
 
 describe('setSessionConfigOption', () => {
   const originalEnv = { ...process.env };
+  let xdgHome: string;
+
+  beforeEach(() => {
+    xdgHome = mkdtempSync(join(tmpdir(), 'zen-agent-agent-test-'));
+    process.env.XDG_DATA_HOME = xdgHome;
+  });
 
   function register(agent: ZenAgent, session: StoredSession): void {
     (agent as unknown as TestAgent).sessions.set(session.sessionId, {
@@ -110,6 +123,9 @@ describe('setSessionConfigOption', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    if (xdgHome) {
+      rmSync(xdgHome, { recursive: true, force: true });
+    }
   });
 
   it('switches provider before the first message and resets the model to the provider default', async () => {
@@ -210,173 +226,28 @@ describe('setSessionConfigOption', () => {
     ).rejects.toThrow(/Unknown thinking effort/);
   });
 
-  it("offers the OpenRouter model's supported_efforts in the thinking selector", async () => {
-    let server: import('node:http').Server | undefined;
-    let catalogHits = 0;
-    const port = await new Promise<number>((resolve) => {
-      const srv = require('node:http').createServer(
-        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
-          if (req.url?.endsWith('/models')) {
-            catalogHits += 1;
-            res.writeHead(200, { 'content-type': 'application/json' });
-            res.end(
-              JSON.stringify({
-                data: [
-                  {
-                    id: 'vendor/glm',
-                    reasoning: {
-                      supported_efforts: ['max', 'high', 'low'],
-                      default_effort: 'max',
-                    },
-                  },
-                ],
-              }),
-            );
-            return;
-          }
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({}));
-        },
-      );
-      server = srv;
-      srv.listen(0, () => {
-        const addr = srv.address() as import('node:net').AddressInfo;
-        resolve(addr.port);
-      });
+  it('offers the full thinking ladder for user-defined providers', async () => {
+    const agent = new ZenAgent();
+    const session = makeSession();
+    register(agent, session);
+
+    const res = await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'thinking_effort',
+      value: 'medium',
     });
-
-    try {
-      process.env.OPENROUTER_API_KEY = 'test';
-      process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
-      const agent = new ZenAgent();
-      const session = makeSession();
-      register(agent, session);
-
-      await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'provider',
-        value: 'openrouter',
-      });
-      await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'model',
-        value: 'vendor/glm',
-      });
-
-      const res = await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'thinking_effort',
-        value: 'max',
-      });
-      const thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
-        { options?: Array<{ value: string }> } | undefined;
-      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'low', 'high', 'max']);
-      expect(session.config.thinkingEffort).toBe('max');
-      expect(catalogHits).toBeGreaterThan(0);
-    } finally {
-      server?.close();
-      server = undefined;
-      // The models cache is keyed by baseUrl, so the next test's port gets a
-      // fresh lookup; nothing else to reset here.
-    }
-  });
-
-  it('offers every supported tier, including minimal, sorted ascending', async () => {
-    let server: import('node:http').Server | undefined;
-    const port = await new Promise<number>((resolve) => {
-      const srv = require('node:http').createServer(
-        (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
-          if (req.url?.endsWith('/models')) {
-            res.writeHead(200, { 'content-type': 'application/json' });
-            res.end(
-              JSON.stringify({
-                data: [
-                  {
-                    // gemini-style: minimal but no low tier.
-                    id: 'vendor/gemini',
-                    reasoning: {
-                      supported_efforts: ['high', 'minimal'],
-                      default_effort: 'medium',
-                    },
-                  },
-                  {
-                    // gpt-5-style: both minimal and low.
-                    id: 'vendor/gpt5',
-                    reasoning: {
-                      supported_efforts: ['high', 'medium', 'low', 'minimal'],
-                      default_effort: 'medium',
-                    },
-                  },
-                ],
-              }),
-            );
-            return;
-          }
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({}));
-        },
-      );
-      server = srv;
-      srv.listen(0, () => {
-        const addr = srv.address() as import('node:net').AddressInfo;
-        resolve(addr.port);
-      });
-    });
-
-    try {
-      process.env.OPENROUTER_API_KEY = 'test';
-      process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
-      const agent = new ZenAgent();
-      const session = makeSession();
-      register(agent, session);
-
-      await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'provider',
-        value: 'openrouter',
-      });
-
-      await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'model',
-        value: 'vendor/gemini',
-      });
-      let res = await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'thinking_effort',
-        value: 'low',
-      });
-      let thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
-        { options?: Array<{ value: string }> } | undefined;
-      // The gemini-style model lists minimal (but not low): minimal appears
-      // as its own tier, no synthetic Low substitute.
-      expect(thinkingOption?.options?.map((o) => o.value)).toEqual(['off', 'minimal', 'high']);
-
-      await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'model',
-        value: 'vendor/gpt5',
-      });
-      res = await agent.setSessionConfigOption({
-        sessionId: session.sessionId,
-        configId: 'thinking_effort',
-        value: 'medium',
-      });
-      thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
-        { options?: Array<{ value: string }> } | undefined;
-      // gpt-5-style model lists minimal and low: both appear, sorted
-      // ascending, with no tiers hidden.
-      expect(thinkingOption?.options?.map((o) => o.value)).toEqual([
-        'off',
-        'minimal',
-        'low',
-        'medium',
-        'high',
-      ]);
-    } finally {
-      server?.close();
-      server = undefined;
-    }
+    const thinkingOption = res.configOptions?.find((o) => o.id === 'thinking_effort') as
+      { options?: Array<{ value: string }> } | undefined;
+    expect(thinkingOption?.options?.map((o) => o.value)).toEqual([
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(session.config.thinkingEffort).toBe('medium');
   });
 });
 

@@ -1,5 +1,5 @@
 import * as acp from '@agentclientprotocol/sdk';
-import type { LlmToolCall } from './deepseek.js';
+import type { LlmToolCall } from './llm-client.js';
 import { isRecord } from './is-record.js';
 import { resolveMedia } from './media.js';
 import type { ToolExecutionResult, ToolExecutorContext } from './tool-execution.js';

@@ -1,8 +1,27 @@
+import type { Model } from '@earendil-works/pi-ai';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runChatCompletions } from './chat-completions.js';
 import { testServerBaseUrl } from './test-server.js';
 
 let server: import('node:http').Server | undefined;
+
+/** Minimal pi model for adapter-level tests. */
+function testModel(baseUrl: string): Model<'openai-completions'> {
+  return {
+    id: 'test-model',
+    name: 'Test Model',
+    api: 'openai-completions',
+    provider: 'test',
+    baseUrl,
+    reasoning: true,
+    input: ['text', 'image'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 384_000,
+    compat: { supportsDeveloperRole: false },
+    thinkingLevelMap: {},
+  };
+}
 
 afterEach(() => {
   server?.closeAllConnections?.();
@@ -41,12 +60,9 @@ describe('pi-ai message adapter', () => {
     });
 
     const result = await runChatCompletions({
-      baseUrl: testServerBaseUrl(server, port),
+      model: testModel(testServerBaseUrl(server, port)),
       apiKey: 'test',
-      provider: 'test',
-      compat: { supportsDeveloperRole: false },
       label: 'Test',
-      model: 'test-model',
       system: 'system',
       messages: [
         {

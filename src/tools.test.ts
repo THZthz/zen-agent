@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 
-vi.mock('./deepseek.js', async (importOriginal) => {
+vi.mock('./provider.js', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return { ...actual, runLlmStep: vi.fn() };
 });
 
 import { ZenAgent } from './agent.js';
-import { runLlmStep, type LlmStepResult } from './deepseek.js';
+import { runLlmStep, type LlmStepResult } from './provider.js';
 import { BASH_TOOL_SCHEMA } from './llm-client.js';
 import { readStoredSession } from './storage.js';
 
@@ -20,7 +20,7 @@ const mockedRunLlmStep = vi.mocked(runLlmStep);
 const recordedSteps: Array<{ tools?: unknown[]; system?: string }> = [];
 
 function recordStep(result: LlmStepResult): void {
-  mockedRunLlmStep.mockImplementationOnce(async (options) => {
+  mockedRunLlmStep.mockImplementationOnce(async (_provider, options) => {
     recordedSteps.push({ tools: options.tools, system: options.system });
     return result;
   });

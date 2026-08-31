@@ -6,13 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 
-vi.mock('./deepseek.js', async (importOriginal) => {
+vi.mock('./provider.js', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return { ...actual, runLlmStep: vi.fn() };
 });
 
 import { ZenAgent } from './agent.js';
-import { runLlmStep, type LlmStepResult } from './deepseek.js';
+import { runLlmStep, type LlmStepResult } from './provider.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 

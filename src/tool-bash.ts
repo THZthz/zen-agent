@@ -1,7 +1,7 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { LlmToolCall } from './deepseek.js';
+import type { LlmToolCall } from './llm-client.js';
 import { terminalDirectory } from './storage.js';
 import { formatMs } from './turn-stats.js';
 import {

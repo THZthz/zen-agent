@@ -6,6 +6,7 @@ import {
   fetchBalanceSnapshot,
   getContextWindowTokens,
   getModelPricing,
+  getProviderCurrency,
   type LlmUsage,
 } from './provider.js';
 import type { StoredSession } from './storage.js';
@@ -79,8 +80,8 @@ export function mergeTurnStats(active: ActiveSession, turn: TurnStats): void {
 }
 
 /** Billing currency of the session's provider (CNY for DeepSeek, USD for OpenRouter). */
-export function costCurrency(active: ActiveSession): 'CNY' | 'USD' {
-  return active.session.config.provider === 'openrouter' ? 'USD' : 'CNY';
+export function costCurrency(active: ActiveSession): string {
+  return getProviderCurrency(active.session.config.provider);
 }
 
 /**
