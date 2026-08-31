@@ -2,6 +2,7 @@ import { ZenAgentCore } from './agent-core.js';
 import { withSessionManagement } from './agent-session.js';
 import { withTurnExecution } from './agent-turn.js';
 import { withPromptExecution } from './agent-prompt.js';
+import { withAgentCommands } from './agent-commands.js';
 import { withTurnReporting } from './turn-reporting.js';
 
 /**
@@ -18,10 +19,10 @@ import { withTurnReporting } from './turn-reporting.js';
  * | Wire conversion                  | chat-completions.ts pure layer |
  *
  * Layering: session lifecycle (agent-session.ts), turn reporting
- * (turn-reporting.ts), the LLM turn loop (agent-turn.ts), and the
- * prompt/slash-command entry point (agent-prompt.ts), all over shared state
- * and plumbing in agent-core.ts.
+ * (turn-reporting.ts), the LLM turn loop (agent-turn.ts), slash-command
+ * handlers (agent-commands.ts), and the prompt/slash-command entry point
+ * (agent-prompt.ts), all over shared state and plumbing in agent-core.ts.
  */
 export class ZenAgent extends withPromptExecution(
-  withTurnExecution(withTurnReporting(withSessionManagement(ZenAgentCore))),
+  withAgentCommands(withTurnExecution(withTurnReporting(withSessionManagement(ZenAgentCore)))),
 ) {}
