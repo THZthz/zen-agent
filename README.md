@@ -34,36 +34,7 @@ ZEN_AGENT_PROVIDERS_FILE="$HOME/.config/zen-agent/providers.json" \
 DEEPSEEK_API_KEY=... node dist/index.js
 ```
 
-## Configuration
-
-All configuration is environment variables. The exhaustive set, as it would appear in Zed's `agent_servers[].env` (or any env-file / launcher):
-
-```json
-{
-  "XDG_DATA_HOME": "/home/you/.local/share",
-  "ZEN_AGENT_PROVIDERS_FILE": "/home/you/.config/zen-agent/providers.json",
-  "ZEN_AGENT_DEFAULT_PROVIDER": "deepseek",
-  "ZEN_AGENT_MAX_TURN_STEPS": "25",
-  "ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT": "50000",
-  "ZEN_AGENT_CHAT_TIMEOUT_MS": "6600000",
-  "ZEN_AGENT_CHAT_RPM": "0",
-  "ZEN_AGENT_MAX_MEDIA_BYTES": "10000000",
-  "ZEN_AGENT_MAX_RESOURCE_BYTES": "262144",
-  "ZEN_AGENT_SHOW_STATS": "1",
-  "ZEN_AGENT_SHOW_SKILLS_CATALOG": "0",
-  "ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS": "0",
-  "ZEN_AGENT_SANDBOX": "0",
-  "ZEN_AGENT_SANDBOX_CMD": "",
-  "ZEN_AGENT_SANDBOX_BLOCK_SHIM": "/home/you/projects/zen-agent/bin/zen-agent-sandbox-block.sh",
-  "DEEPSEEK_API_KEY": "sk-...",
-  "OPENROUTER_API_KEY": "sk-or-v1-...",
-  "ZAI_API_KEY": "zai-...",
-  "GROQ_API_KEY": "gsk_..."
-}
-```
-
-- Use `ZEN_AGENT_PROVIDERS` (inline JSON) **or** `ZEN_AGENT_PROVIDERS_FILE` (a JSON file) — not both.
-- The `*_API_KEY` variables above are the `apiKeyEnv` names referenced by the provider definitions below; any env var name works as long as the provider config points at it.
+There are **no built-in providers** — see [Providers](#providers-default-zen_agent_providers-config) for a ready-to-copy `providers.json` that declares DeepSeek, OpenRouter, Z.ai and Groq.
 
 ## Zed Configuration
 
@@ -107,6 +78,9 @@ Point Zed's ACP agent at the built entrypoint (`agent_servers` → type `custom`
 }
 ```
 
+- Use `ZEN_AGENT_PROVIDERS` (inline JSON) **or** `ZEN_AGENT_PROVIDERS_FILE` (a JSON file) — not both.
+- The `*_API_KEY` variables above are the `apiKeyEnv` names referenced by the provider definitions in `providers.json`; any env var name works as long as the provider config points at it.
+
 ### Sandboxed
 
 To run the agent process itself inside bubblewrap, use `bin/zen-agent-bwrap.sh` as `command` and add `"ZEN_AGENT_SANDBOX": "1"` to `env` to sandbox the bash tool as well (see [Sandboxing](#sandboxing)).
@@ -115,11 +89,11 @@ To run the agent process itself inside bubblewrap, use `bin/zen-agent-bwrap.sh` 
 
 Zed shows three selectors per session (also settable via `default_config_options`):
 
-| Option          | Values                                                                                                                                                                |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider        | every `ZEN_AGENT_PROVIDERS` entry (no built-ins; `ZEN_AGENT_DEFAULT_PROVIDER` or the first entry is the default)                                                      |
-| Model           | declared models, or the live catalog when `fetchModels: true` (fetched through pi-ai, cached in `$XDG_DATA_HOME/zen-agent/models/`; any slug via `set_config_option`) |
-| Thinking effort | full ladder (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); `off` omits the field so the provider picks its default                                      |
+| Option          | Values                                                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider        | every `ZEN_AGENT_PROVIDERS` entry (no built-ins; `ZEN_AGENT_DEFAULT_PROVIDER` or the first entry is the default)                                                                                                          |
+| Model           | declared models, or the live catalog when `fetchModels: true` (fetched through pi-ai, cached in `$XDG_DATA_HOME/zen-agent/models/`; any slug via `set_config_option`)                                                     |
+| Thinking effort | full ladder (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) by default; models with a declared `thinkingEfforts` list show exactly that list (see [Providers](#providers-default-zen_agent_providers-config)) |
 
 Provider, model, thinking effort, the `/tools` toggle and the `/prompt` system-prompt setter are **locked after the session's first message** — set them before you start the conversation (status queries stay available).
 
