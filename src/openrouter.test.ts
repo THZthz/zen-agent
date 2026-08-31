@@ -16,6 +16,7 @@ import {
   mapOpenRouterEffort,
   runOpenRouterStep,
 } from './openrouter.js';
+import { testServerBaseUrl } from './test-server.js';
 
 describe('runOpenRouterStep (live SSE)', () => {
   const originalEnv = { ...process.env };
@@ -107,7 +108,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     const t0 = Date.now();
     const reasoningArrivals: number[] = [];
     const result = await runOpenRouterStep({
@@ -156,7 +157,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     const result = await runOpenRouterStep({
       messages: [{ role: 'user', content: 'hi' }],
       thinkingEffort: 'off',
@@ -195,7 +196,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
 
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'max' });
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
@@ -249,7 +250,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     process.env.OPENROUTER_MODEL = 'vendor/glm';
 
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'max' });
@@ -300,7 +301,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     process.env.OPENROUTER_MODEL = 'vendor/full';
 
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
@@ -348,7 +349,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     process.env.OPENROUTER_MODEL = 'vendor/stable';
 
     // Two steps at the same effort: the allowlist lookup is cached in memory,
@@ -395,7 +396,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     process.env.OPENROUTER_SITE_URL = 'https://zed.dev';
     process.env.OPENROUTER_APP_NAME = 'Zen Agent';
     process.env.OPENROUTER_MODEL = 'openai/gpt-5';
@@ -435,7 +436,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
 
     process.env.OPENROUTER_PROVIDER_SORT = 'latency';
     await runOpenRouterStep({ messages: [{ role: 'user', content: 'hi' }], thinkingEffort: 'off' });
@@ -476,7 +477,7 @@ describe('runOpenRouterStep (live SSE)', () => {
       });
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
 
     await runOpenRouterStep({
       messages: [{ role: 'user', content: 'hi' }],
@@ -623,7 +624,7 @@ describe('getOpenRouterReasoning', () => {
     });
 
     process.env.OPENROUTER_API_KEY = 'test';
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
 
     expect(await getOpenRouterReasoning('vendor/model')).toEqual({
       supportedEfforts: ['max', 'high', 'low'],
@@ -744,7 +745,7 @@ describe('getOpenRouterModelInfo', () => {
     });
 
     process.env.OPENROUTER_API_KEY = 'test';
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     const info = await getOpenRouterModelInfo('vendor/model');
     expect(info).toEqual({ inputPerM: 0.5, outputPerM: 1.5, contextLength: 123456 });
   });
@@ -782,7 +783,7 @@ describe('getOpenRouterModelInfo', () => {
     });
 
     process.env.OPENROUTER_API_KEY = 'test';
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
 
     // First call hits the failure and falls back WITHOUT poisoning the cache.
     const fallback = await getOpenRouterModelInfo('vendor/model');
@@ -868,7 +869,7 @@ describe('getOpenRouterModelOptions', () => {
     });
 
     process.env.OPENROUTER_API_KEY = 'test';
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
 
     const options = await getOpenRouterModelOptions(dir);
     expect(options?.map((o) => o.value)).toEqual([
@@ -972,7 +973,7 @@ describe('fetchOpenRouterBalance', () => {
       );
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     const balance = await fetchOpenRouterBalance();
 
     expect(authorization).toBe('Bearer test');
@@ -992,7 +993,7 @@ describe('fetchOpenRouterBalance', () => {
       res.end('{"error":{"message":"invalid key"}}');
     });
 
-    process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+    process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
     await expect(fetchOpenRouterBalance()).rejects.toThrow(/401/);
   });
 

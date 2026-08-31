@@ -6,6 +6,7 @@ import {
   isPeakTime,
   runLlmStep,
 } from './deepseek.js';
+import { testServerBaseUrl } from './test-server.js';
 
 describe('isPeakTime', () => {
   // Beijing time = UTC+8, no DST.
@@ -175,7 +176,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       }, 600);
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     const t0 = Date.now();
     const reasoningArrivals: number[] = [];
     const textArrivals: number[] = [];
@@ -227,7 +228,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       res.end();
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     const result = await runLlmStep({
       messages: [{ role: 'user', content: 'run' }],
       model: 'deepseek-v4-flash',
@@ -268,7 +269,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       });
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     const result = await runLlmStep({
       messages: [
         { role: 'user', content: 'check' },
@@ -350,7 +351,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       });
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     await runLlmStep({
       messages: [{ role: 'user', content: 'hi' }],
       model: 'deepseek-v4-flash',
@@ -387,7 +388,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       });
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     await runLlmStep({
       messages: [{ role: 'user', content: 'hi' }],
       model: 'deepseek-v4-flash',
@@ -423,7 +424,7 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
       });
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     for (const effort of ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
       await runLlmStep({
         messages: [{ role: 'user', content: 'hi' }],
@@ -467,13 +468,14 @@ describe('runLlmStep (live SSE, no AI SDK)', () => {
           res.end();
         },
       );
+      server = srv;
       srv.listen(0, () => {
         const addr = srv.address() as import('node:net').AddressInfo;
         resolve(addr.port);
       });
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     const reasoning: string[] = [];
     const result = await runLlmStep({
       messages: [{ role: 'user', content: 'hi' }],
@@ -541,7 +543,7 @@ describe('runLlmStep message wiring', () => {
 
     process.env.DEEPSEEK_API_KEY = 'test';
     process.env.DEEPSEEK_MODEL = 'deepseek-v4-flash';
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
 
     await runLlmStep({
       messages: [
@@ -620,7 +622,7 @@ describe('fetchDeepSeekBalance', () => {
       );
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     const balance = await fetchDeepSeekBalance();
 
     expect(authorization).toBe('Bearer test');
@@ -639,7 +641,7 @@ describe('fetchDeepSeekBalance', () => {
       res.end('{"error":{"message":"invalid key"}}');
     });
 
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
     await expect(fetchDeepSeekBalance()).rejects.toThrow(/401/);
   });
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runChatCompletions } from './chat-completions.js';
 import { resetChatRateLimit } from './rate-limit.js';
+import { testServerBaseUrl } from './test-server.js';
 
 const originalEnv = { ...process.env };
 let server: import('node:http').Server | undefined;
@@ -40,7 +41,7 @@ describe('runChatCompletions', () => {
     });
     await expect(
       runChatCompletions({
-        baseUrl: `http://127.0.0.1:${port}`,
+        baseUrl: testServerBaseUrl(server, port),
         apiKey: 'test',
         provider: 'test',
         label: 'Test',
@@ -70,7 +71,7 @@ describe('runChatCompletions', () => {
     });
 
     const options = {
-      baseUrl: `http://127.0.0.1:${port}`,
+      baseUrl: testServerBaseUrl(server, port),
       apiKey: 'test',
       provider: 'test',
       label: 'Test',
@@ -111,7 +112,7 @@ describe('runChatCompletions', () => {
     });
 
     const result = await runChatCompletions({
-      baseUrl: `http://127.0.0.1:${port}`,
+      baseUrl: testServerBaseUrl(server, port),
       apiKey: 'test',
       provider: 'test',
       label: 'Test',
@@ -156,7 +157,7 @@ describe('runChatCompletions tools field', () => {
       });
     });
     await runChatCompletions({
-      baseUrl: `http://127.0.0.1:${port}`,
+      baseUrl: testServerBaseUrl(server, port),
       apiKey: 'test',
       provider: 'test',
       label: 'Test',

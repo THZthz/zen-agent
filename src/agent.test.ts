@@ -7,6 +7,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { ZenAgent } from './agent.js';
 import { prepareReplayEvents } from './replay.js';
 import { emptySessionUsage, type StoredSession } from './storage.js';
+import { testServerBaseUrl } from './test-server.js';
 
 type ReplayEvent = {
   sessionUpdate: string;
@@ -246,7 +247,7 @@ describe('setSessionConfigOption', () => {
 
     try {
       process.env.OPENROUTER_API_KEY = 'test';
-      process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+      process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
       const agent = new ZenAgent();
       const session = makeSession();
       register(agent, session);
@@ -324,7 +325,7 @@ describe('setSessionConfigOption', () => {
 
     try {
       process.env.OPENROUTER_API_KEY = 'test';
-      process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${port}/api/v1`;
+      process.env.OPENROUTER_BASE_URL = `${testServerBaseUrl(server, port)}/api/v1`;
       const agent = new ZenAgent();
       const session = makeSession();
       register(agent, session);

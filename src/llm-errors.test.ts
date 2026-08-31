@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatLlmError } from './llm-errors.js';
+import { testServerBaseUrl } from './test-server.js';
 
 const originalEnv = { ...process.env };
 let server: import('node:http').Server | undefined;
@@ -98,7 +99,7 @@ describe('formatLlmError', () => {
         }),
       );
     });
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
 
     const reachable = await formatLlmError(apiError(503, 'service unavailable'), {
       provider: 'deepseek',
@@ -112,7 +113,7 @@ describe('formatLlmError', () => {
       res.writeHead(500);
       res.end('boom');
     });
-    process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.DEEPSEEK_BASE_URL = testServerBaseUrl(server, port);
 
     const msg = await formatLlmError(apiError(503, 'service unavailable'), {
       provider: 'deepseek',

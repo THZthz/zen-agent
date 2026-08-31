@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { runChatCompletions } from './chat-completions.js';
+import { testServerBaseUrl } from './test-server.js';
 
 let server: import('node:http').Server | undefined;
 
@@ -40,9 +41,10 @@ describe('pi-ai message adapter', () => {
     });
 
     const result = await runChatCompletions({
-      baseUrl: `http://127.0.0.1:${port}`,
+      baseUrl: testServerBaseUrl(server, port),
       apiKey: 'test',
       provider: 'test',
+      compat: { supportsDeveloperRole: false },
       label: 'Test',
       model: 'test-model',
       system: 'system',
