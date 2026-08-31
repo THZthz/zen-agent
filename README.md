@@ -7,7 +7,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Single `bash` tool; no approval prompts
 - Image/audio input on multimodal OpenRouter models: paste, drag & drop or @-mention images in Zed, and the model can load local screenshots/audio itself via a `read_media` tool
 - Live streaming of thinking and answers
-- DeepSeek (default) and OpenRouter providers, chosen per session
+- DeepSeek (default) and OpenRouter providers, plus any OpenAI-compatible endpoint via endpoint + API key (auto-discovers models); chosen per session
 - Persistent sessions (`<project>/.sessions/`) with resume/load across Zed restarts
 - Slash commands: `/prompt`, `/sandbox`, `/tools`, one per installed skill
 - [Agent Skills](https://www.skills.sh/) support
@@ -18,7 +18,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 
 - Node.js 22+
 - WSL2/Linux
-- `DEEPSEEK_API_KEY` and/or `OPENROUTER_API_KEY`
+- `DEEPSEEK_API_KEY` and/or `OPENROUTER_API_KEY` (or your own provider's key)
 
 ## Setup
 
@@ -68,13 +68,28 @@ To run the agent process itself inside bubblewrap, use `bin/zen-agent-bwrap.sh` 
 
 Zed shows three selectors per session (also settable via `default_config_options`):
 
-| Option          | Values                                                                                                                                                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider        | `deepseek`, `openrouter`                                                                                                                                                                                                            |
-| Model           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter: live model catalog (auto-fetched, cached in `<project>/.sessions/client/models.openrouter.json`; `openrouter/free` default, any slug via env or `set_config_option`) |
-| Thinking effort | DeepSeek: `off`, `low`, `high`, `max` · OpenRouter: `off` plus the selected model's supported levels, sorted ascending (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; every value when the model is unknown)           |
+| Option          | Values                                                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider        | `deepseek`, `openrouter`, plus every `ZEN_AGENT_PROVIDERS` entry                                                                                                                                                                            |
+| Model           | DeepSeek: `deepseek-v4-flash`, `deepseek-v4-pro` · OpenRouter/auto-discovered: live model catalog (fetched through pi-ai, cached in `$XDG_DATA_HOME/zen-agent/models/`; `openrouter/free` default, any slug via env or `set_config_option`) |
+| Thinking effort | DeepSeek: `off`, `low`, `high`, `max` · allowlist providers: `off` plus the selected model's supported levels, sorted ascending · generic: full ladder (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)                          |
 
 Provider, model, thinking effort, the `/tools` toggle and the `/prompt` system-prompt setter are **locked after the session's first message** — set them before you start the conversation (status queries stay available).
+
+### Custom Providers
+
+Add any OpenAI-compatible provider with a base URL + API key; models are auto-discovered from `GET {baseUrl}/models`:
+
+```json
+{
+  "env": {
+    "GROQ_API_KEY": "gsk_...",
+    "ZEN_AGENT_PROVIDERS": "[{\"id\":\"groq\",\"name\":\"Groq\",\"baseUrl\":\"https://api.groq.com/openai/v1\",\"apiKeyEnv\":\"GROQ_API_KEY\",\"defaultModel\":\"llama-3.3-70b-versatile\"}]"
+  }
+}
+```
+
+Or point `ZEN_AGENT_PROVIDERS_FILE` at a JSON file with the same array shape. Optional fields: `name`, `currency` (default `USD`), `apiKeyEnv` (omit for keyless local endpoints like Ollama), and `models` (a static list; omit it to auto-discover). Set `ZEN_AGENT_DEFAULT_PROVIDER` to change the default session provider from `deepseek`.
 
 ### Image & Audio Input
 
@@ -110,29 +125,32 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 
 ## Environment Variables
 
-| Variable                                 | Default                          | Description                                                                                              |
-| ---------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `DEEPSEEK_API_KEY`                       | —                                | DeepSeek API key (required for DeepSeek sessions)                                                        |
-| `DEEPSEEK_BASE_URL`                      | `https://api.deepseek.com`       | DeepSeek-compatible base URL                                                                             |
-| `DEEPSEEK_MODEL`                         | `deepseek-v4-flash`              | Fallback DeepSeek model                                                                                  |
-| `DEEPSEEK_CONTEXT_WINDOW`                | `1000000`                        | Context window size in tokens for the usage display                                                      |
-| `DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK`  | per model, peak/off-peak         | Override DeepSeek cache-hit input price (CNY per 1M tokens)                                              |
-| `DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK` | per model, peak/off-peak         | Override DeepSeek cache-miss input price                                                                 |
-| `DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK`     | per model, peak/off-peak         | Override DeepSeek output price                                                                           |
-| `OPENROUTER_API_KEY`                     | —                                | OpenRouter API key (required for OpenRouter sessions)                                                    |
-| `OPENROUTER_BASE_URL`                    | `https://openrouter.ai/api/v1`   | OpenRouter-compatible base URL                                                                           |
-| `OPENROUTER_MODEL`                       | `openrouter/free`                | Fallback OpenRouter model slug                                                                           |
-| `OPENROUTER_PROVIDER_SORT`               | `price`                          | OpenRouter provider routing sort (`price`, `throughput`, `latency`; empty disables the `provider` block) |
-| `OPENROUTER_SITE_URL`                    | —                                | Sent as `HTTP-Referer` (app attribution)                                                                 |
-| `OPENROUTER_APP_NAME`                    | —                                | Sent as `X-Title` (app attribution)                                                                      |
-| `ZEN_AGENT_MAX_TURN_STEPS`               | `25`                             | Max LLM/tool rounds per user prompt                                                                      |
-| `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT`   | `50000`                          | Max bytes of bash output sent to the model per tool call (tail kept)                                     |
-| `ZEN_AGENT_SHOW_STATS`                   | `1`                              | Set `0` to hide the per-turn stats line                                                                  |
-| `ZEN_AGENT_SHOW_SKILLS_CATALOG`          | off                              | Inject the skills catalog into the environment message                                                   |
-| `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS`   | `0` (wait forever)               | Hard-abort escape hatch for pending cancels                                                              |
-| `ZEN_AGENT_SANDBOX`                      | —                                | `1` = always sandbox bash tool calls                                                                     |
-| `ZEN_AGENT_SANDBOX_CMD`                  | default policy                   | Override the bwrap command for bash tool calls                                                           |
-| `ZEN_AGENT_SANDBOX_BLOCK_SHIM`           | `bin/zen-agent-sandbox-block.sh` | Override the shim shadowing `rm`/`grep`/`find`                                                           |
+| Variable                                 | Default                          | Description                                                                                                       |
+| ---------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `DEEPSEEK_API_KEY`                       | —                                | DeepSeek API key (required for DeepSeek sessions)                                                                 |
+| `DEEPSEEK_BASE_URL`                      | `https://api.deepseek.com`       | DeepSeek-compatible base URL                                                                                      |
+| `DEEPSEEK_MODEL`                         | `deepseek-v4-flash`              | Fallback DeepSeek model                                                                                           |
+| `DEEPSEEK_CONTEXT_WINDOW`                | `1000000`                        | Context window size in tokens for the usage display                                                               |
+| `DEEPSEEK_PRICE_CACHE_HIT_CNY_PER_MTOK`  | per model, peak/off-peak         | Override DeepSeek cache-hit input price (CNY per 1M tokens)                                                       |
+| `DEEPSEEK_PRICE_CACHE_MISS_CNY_PER_MTOK` | per model, peak/off-peak         | Override DeepSeek cache-miss input price                                                                          |
+| `DEEPSEEK_PRICE_OUTPUT_CNY_PER_MTOK`     | per model, peak/off-peak         | Override DeepSeek output price                                                                                    |
+| `OPENROUTER_API_KEY`                     | —                                | OpenRouter API key (required for OpenRouter sessions)                                                             |
+| `OPENROUTER_BASE_URL`                    | `https://openrouter.ai/api/v1`   | OpenRouter-compatible base URL                                                                                    |
+| `OPENROUTER_MODEL`                       | `openrouter/free`                | Fallback OpenRouter model slug                                                                                    |
+| `OPENROUTER_PROVIDER_SORT`               | `price`                          | OpenRouter provider routing sort (`price`, `throughput`, `latency`; empty disables the `provider` block)          |
+| `OPENROUTER_SITE_URL`                    | —                                | Sent as `HTTP-Referer` (app attribution)                                                                          |
+| `OPENROUTER_APP_NAME`                    | —                                | Sent as `X-Title` (app attribution)                                                                               |
+| `ZEN_AGENT_PROVIDERS`                    | —                                | JSON array of user-defined providers (endpoint + API key env + optional model list; omit models to auto-discover) |
+| `ZEN_AGENT_PROVIDERS_FILE`               | —                                | Path to a JSON file with the same provider array                                                                  |
+| `ZEN_AGENT_DEFAULT_PROVIDER`             | `deepseek`                       | Default provider for new sessions                                                                                 |
+| `ZEN_AGENT_MAX_TURN_STEPS`               | `25`                             | Max LLM/tool rounds per user prompt                                                                               |
+| `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT`   | `50000`                          | Max bytes of bash output sent to the model per tool call (tail kept)                                              |
+| `ZEN_AGENT_SHOW_STATS`                   | `1`                              | Set `0` to hide the per-turn stats line                                                                           |
+| `ZEN_AGENT_SHOW_SKILLS_CATALOG`          | off                              | Inject the skills catalog into the environment message                                                            |
+| `ZEN_AGENT_GRACEFUL_CANCEL_TIMEOUT_MS`   | `0` (wait forever)               | Hard-abort escape hatch for pending cancels                                                                       |
+| `ZEN_AGENT_SANDBOX`                      | —                                | `1` = always sandbox bash tool calls                                                                              |
+| `ZEN_AGENT_SANDBOX_CMD`                  | default policy                   | Override the bwrap command for bash tool calls                                                                    |
+| `ZEN_AGENT_SANDBOX_BLOCK_SHIM`           | `bin/zen-agent-sandbox-block.sh` | Override the shim shadowing `rm`/`grep`/`find`                                                                    |
 
 ## Displayed Info
 
