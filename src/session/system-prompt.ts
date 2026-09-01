@@ -104,7 +104,7 @@ export async function buildEnvironmentMessage(session: StoredSession): Promise<s
   if (git) {
     lines.push(...git);
     lines.push(
-      '<git-remainder>',
+      '<git-reminder>',
       '> Follow Conventional Commits; keep the commit message body concise.',
       '> Split your changes into multiple commits if needed; each commit should be focused on a single purpose; commit as you work.',
     );
@@ -112,7 +112,7 @@ export async function buildEnvironmentMessage(session: StoredSession): Promise<s
     if (submodules.length > 0) {
       lines.push(`> This project contains git submodules: ${submodules.join(', ')}.`);
     }
-    lines.push('</git-remainder>');
+    lines.push('</git-reminder>');
   }
   // Skills are opt-in and frozen at session creation: with
   // ZEN_AGENT_SHOW_SKILLS_CATALOG=1 the catalog (and everything else in this
