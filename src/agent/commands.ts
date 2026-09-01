@@ -2,11 +2,12 @@ import * as acp from '@agentclientprotocol/sdk';
 import type { ActiveSession, Constructor, ZenAgentCore } from './core.js';
 import type { TurnSurface } from './turn.js';
 import { ENVIRONMENT_MESSAGE_NAME } from '../session/system-prompt.js';
+import { getReadOnlyBindPaths } from '../tools/sandbox.js';
 import { buildSystemPrompt } from '../session/system-prompt.js';
 import { buildSkillInvocationPrompt, listSkills } from '../session/skills.js';
 
 /**
- * Built-in slash-command handlers (`/prompt`, `/sandbox`, `/tools` and
+ * Built-in slash-command handlers (`/prompt`, `/sandbox`, `/robind`, `/tools` and
  * installed-skill invocation) — see the ownership map in agent.ts. The
  * prompt entry point (agent-prompt.ts) owns parsing, the known-command gate
  * and every persistence boundary around a command; this module owns what a
@@ -44,6 +45,10 @@ export function withAgentCommands<T extends Constructor<ZenAgentCore & TurnSurfa
         case 'sandbox':
           return {
             stopReason: await this.handleSandboxSlashCommand(active, cx, command.argument),
+          };
+        case 'robind':
+          return {
+            stopReason: await this.handleROBindSlashCommand(active, cx, command.argument),
           };
         case 'tools':
           return {
@@ -230,6 +235,92 @@ Usage: /sandbox on | off`,
           text: enabled
             ? 'Bash tool calls are now sandboxed with bubblewrap for this session.'
             : 'Bash tool sandbox disabled for this session.',
+        },
+      });
+
+      return 'end_turn';
+    }
+
+    /**
+     * `/robind` toggles whether the additional read-only bind mounts from
+     * `ZEN_AGENT_SANDBOX_RO_BIND` are applied inside the bash sandbox for
+     * this session.
+     *
+     * The environment variable is only the path source: this command never
+     * changes its value, it toggles the per-session `config.roBindEnabled`
+     * flag at runtime and persists it across restarts. When
+     * `ZEN_AGENT_SANDBOX_RO_BIND` is empty there is nothing to bind, so any
+     * on|off attempt is refused with a warning and the flag is left
+     * untouched; status stays available.
+     */
+    private async handleROBindSlashCommand(
+      active: ActiveSession,
+      cx: acp.AgentContext,
+      argument: string,
+    ): Promise<acp.StopReason> {
+      const normalized = argument.trim().toLowerCase();
+      const configuredPaths = getReadOnlyBindPaths();
+      const configured = configuredPaths.length > 0;
+
+      if (normalized === '' || normalized === 'status') {
+        const state = active.session.config.roBindEnabled ? 'ON' : 'OFF';
+        const source = configured
+          ? configuredPaths.join(', ')
+          : 'not configured (ZEN_AGENT_SANDBOX_RO_BIND is empty)';
+        await this.emit(active, cx, {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: `Read-only binds: ${state} (${source})\n` + 'Usage: /robind on | off',
+          },
+        });
+        return 'end_turn';
+      }
+
+      const enabled =
+        normalized === 'on' || normalized === '1' || normalized === 'true' || normalized === 'yes';
+      const disabled =
+        normalized === 'off' || normalized === '0' || normalized === 'false' || normalized === 'no';
+
+      if (!enabled && !disabled) {
+        await this.emit(active, cx, {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: `Unknown /robind argument: ${argument}\n` + 'Usage: /robind on | off',
+          },
+        });
+        return 'end_turn';
+      }
+
+      if (!configured) {
+        await this.emit(active, cx, {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text:
+              'ZEN_AGENT_SANDBOX_RO_BIND is empty; nothing to toggle. ' +
+              'Set it to a comma-separated list of paths and try again.',
+          },
+        });
+        return 'end_turn';
+      }
+
+      active.session.config.roBindEnabled = enabled;
+      await this.save(active);
+      void this.logRuntime(active.session.cwd, 'info', 'read-only binds toggled', {
+        sessionId: active.session.sessionId,
+        roBindEnabled: enabled,
+        paths: configuredPaths,
+      });
+
+      await this.emit(active, cx, {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: enabled
+            ? `Read-only bind mounts enabled for this session: ${configuredPaths.join(', ')}`
+            : 'Read-only bind mounts disabled for this session.',
         },
       });
 

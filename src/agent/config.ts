@@ -115,6 +115,13 @@ export const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
     },
   },
   {
+    name: 'robind',
+    description: 'Toggle read-only bind mounts for additional paths in bash sandbox',
+    input: {
+      hint: 'on | off | (empty for status)',
+    },
+  },
+  {
     name: 'tools',
     description: 'Enable or disable all tools (bash, read_media) for this session',
     input: {

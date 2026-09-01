@@ -138,6 +138,14 @@ export interface SessionConfig {
    */
   sandbox: boolean;
   /**
+   * Whether the additional read-only bind mounts listed in
+   * `ZEN_AGENT_SANDBOX_RO_BIND` are applied to the bash sandbox. Toggled at
+   * runtime with the `/robind` slash command (per session) and persisted so
+   * a resumed session keeps its choice; the environment variable only
+   * supplies the paths and is never modified by the command.
+   */
+  roBindEnabled: boolean;
+  /**
    * Whether the session may use tools at all (bash + read_media). Toggled
    * at runtime with the `/tools` slash command and persisted so a session
    * resumed after a restart keeps its choice. When off, no tool schemas are
@@ -283,6 +291,7 @@ export async function createStoredSession(
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: '',
       sandbox: false,
+      roBindEnabled: false,
       toolsEnabled: true,
     },
     usage: emptySessionUsage(),
@@ -332,6 +341,7 @@ function defaultConfig(provider: ProviderId = getDefaultProviderId()): SessionCo
     thinkingEffort: DEFAULT_THINKING_EFFORT,
     systemPrompt: '',
     sandbox: false,
+    roBindEnabled: false,
     toolsEnabled: true,
   };
 }
@@ -551,6 +561,8 @@ function normalizeStoredSession(parsed: { [key: string]: unknown }): {
     systemPrompt: typeof rawConfig.systemPrompt === 'string' ? rawConfig.systemPrompt : '',
     // Older sessions predate the flag; absent means off.
     sandbox: rawConfig.sandbox === true,
+    // Older sessions predate the flag; absent means off (see /robind).
+    roBindEnabled: rawConfig.roBindEnabled === true,
     // Older sessions predate the flag; absent means enabled (the default).
     toolsEnabled: rawConfig.toolsEnabled !== false,
   };

@@ -214,6 +214,116 @@ describe('/sandbox slash command', () => {
   });
 });
 
+describe('/robind slash command', () => {
+  const RO_BIND_ENV = 'ZEN_AGENT_SANDBOX_RO_BIND';
+
+  beforeEach(() => {
+    mockedRunLlmStep.mockReset();
+    delete process.env[RO_BIND_ENV];
+  });
+
+  /** The `-lc` script of the most recent terminal.create call. */
+  function lastCreatedScript(
+    request: ReturnType<typeof makeAgentContext>['request'],
+  ): string | undefined {
+    const calls = request.mock.calls.filter((c) => c[0] === acp.methods.client.terminal.create);
+    const params = calls.at(-1)?.[1] as { args?: string[] } | undefined;
+    return params?.args?.[1];
+  }
+
+  function sessionConfig(
+    agent: ZenAgent,
+    sessionId: string,
+  ): { sandbox: boolean; roBindEnabled: boolean } {
+    const active = (
+      agent as unknown as {
+        sessions: Map<
+          string,
+          { session: { config: { sandbox: boolean; roBindEnabled: boolean } } }
+        >;
+      }
+    ).sessions.get(sessionId)!;
+    return active.session.config;
+  }
+
+  it('warns and does nothing when ZEN_AGENT_SANDBOX_RO_BIND is empty', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+    try {
+      const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+      const response = await agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: '/robind on' }] },
+        cx,
+      );
+      expect(response.stopReason).toBe('end_turn');
+      expect(agentMessages(notifications).join('\n')).toContain(
+        'ZEN_AGENT_SANDBOX_RO_BIND is empty; nothing to toggle.',
+      );
+      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('reports status with the configured paths', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+    process.env[RO_BIND_ENV] = '/mnt/data,/mnt/secrets';
+    try {
+      const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind' }] }, cx);
+      expect(agentMessages(notifications).join('\n')).toContain(
+        'Read-only binds: OFF (/mnt/data, /mnt/secrets)',
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('toggles ro-bind mounts in subsequent sandboxed bash calls', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+    process.env[RO_BIND_ENV] = '/mnt/data,/mnt/secrets';
+    try {
+      const { agent, cx, request, sessionId } = await setupAgent(cwd);
+
+      // Without /robind the extra paths are not bound.
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/sandbox on' }] }, cx);
+      queueBashThenAnswer();
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+      expect(lastCreatedScript(request)).toContain('bwrap');
+      expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/data /mnt/data');
+
+      // /robind on adds them; /robind off removes them again.
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind on' }] }, cx);
+      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(true);
+      queueBashThenAnswer();
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+      expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/data /mnt/data');
+      expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/secrets /mnt/secrets');
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind off' }] }, cx);
+      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(false);
+      queueBashThenAnswer();
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+      expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/data /mnt/data');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unknown arguments without changing state', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+    process.env[RO_BIND_ENV] = '/mnt/data';
+    try {
+      const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind maybe' }] }, cx);
+      expect(agentMessages(notifications).join('\n')).toContain('Usage: /robind on | off');
+      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('bash tool sandbox blocks rm/grep/find', () => {
   beforeEach(() => {
     mockedRunLlmStep.mockReset();

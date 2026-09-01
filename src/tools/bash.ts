@@ -49,7 +49,7 @@ export async function executeBashToolCall(
   const commandScriptPath = join(terminalDir, `${terminalCallId}.sh`);
   await mkdir(terminalDir, { recursive: true, mode: 0o700 });
   await writeFile(commandScriptPath, command, 'utf8');
-  const scriptCommand = `${bashSandboxPrefix(context.sandbox)}bash ${shellQuote(commandScriptPath)}`;
+  const scriptCommand = `${bashSandboxPrefix(context.sandbox, context.roBindEnabled)}bash ${shellQuote(commandScriptPath)}`;
   const wrappedCommand = `script -q -e -c ${shellQuote(scriptCommand)} ${shellQuote(logPath)}`;
   const toolStart = Date.now();
 

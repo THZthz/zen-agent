@@ -124,17 +124,21 @@ function blockedBinaryBinds(): string[] {
  * Shadowing the binaries only affects processes inside the namespace:
  * scripts on the host keep using the real `rm`/`grep`/`find`. Override the
  * entire bwrap command with `ZEN_AGENT_SANDBOX_CMD` if a different policy
- * is needed (e.g. `--ro-bind / /` plus explicit writable binds).
+ * is needed (e.g. `--ro-bind / /` plus explicit writable binds). The extra
+ * paths from `ZEN_AGENT_SANDBOX_RO_BIND` are added only when the per-session
+ * `/robind` flag is on (see `bashSandboxPrefix`).
  */
-function defaultBashSandbox(): string {
+function defaultBashSandbox(roBindEnabled: boolean): string {
+  const roBindPaths = roBindEnabled ? getReadOnlyBindPaths().map((p) => `--ro-bind ${p} ${p}`) : [];
   return [
-    'bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev',
-    '--bind /dev/pts /dev/pts --tmpfs /dev/shm',
+    `bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev`,
+    `--bind /dev/pts /dev/pts --tmpfs /dev/shm`,
+    ...roBindPaths,
     ...blockedBinaryBinds(),
   ].join(' ');
 }
 
-export function bashSandboxPrefix(enabled: boolean): string {
+export function bashSandboxPrefix(enabled: boolean, roBindEnabled: boolean): string {
   if (!enabled) {
     return '';
   }
@@ -142,7 +146,7 @@ export function bashSandboxPrefix(enabled: boolean): string {
   if (custom !== undefined && custom.trim() !== '') {
     return `${custom.trim()} `;
   }
-  return `${defaultBashSandbox()} `;
+  return `${defaultBashSandbox(roBindEnabled)} `;
 }
 
 /**
@@ -166,3 +170,21 @@ export function bashSandboxPrefix(enabled: boolean): string {
  * use `trash`, `rg` and `fdfind` for those operations; host scripts are
  * unaffected because the shadowing lives in the bwrap mount namespace.
  */
+
+/** Environment variable for comma-separated paths to be mounted read-only in the sandbox. */
+const ZEN_AGENT_SANDBOX_RO_BIND = 'ZEN_AGENT_SANDBOX_RO_BIND';
+
+/**
+ * Comma-separated list of paths to be mounted read-only in the sandbox.
+ * When set and the `/robind` flag is on, these paths are added as
+ * `--ro-bind <path> <path>` to the bwrap command. The environment variable
+ * is only the path source: it is never modified at runtime.
+ */
+export function getReadOnlyBindPaths(): string[] {
+  const value = process.env[ZEN_AGENT_SANDBOX_RO_BIND];
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
