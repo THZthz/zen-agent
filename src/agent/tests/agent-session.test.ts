@@ -33,7 +33,7 @@ function makeSession(sessionId: string, cwd: string, title: string): StoredSessi
       thinkingEffort: 'off',
       systemPrompt: '',
       sandbox: false,
-      roBindEnabled: false,
+      roBindPaths: [],
       toolsEnabled: false,
     },
     usage: emptySessionUsage(),

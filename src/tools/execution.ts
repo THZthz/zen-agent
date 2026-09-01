@@ -31,10 +31,10 @@ export interface ToolExecutorContext {
    */
   sandbox: boolean;
   /**
-   * Whether the additional `--ro-bind` paths from `ZEN_AGENT_SANDBOX_RO_BIND`
-   * are applied inside that sandbox (toggled per session with `/robind`).
+   * Additional paths mounted read-only inside that sandbox as
+   * `--ro-bind <path> <path>` (set per session with `/robind`; empty = none).
    */
-  roBindEnabled: boolean;
+  roBindPaths: string[];
   /**
    * Whether the session may use tools at all (set by the `/tools` slash
    * command). When false, executeLlmToolCall refuses every call with a

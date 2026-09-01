@@ -61,7 +61,6 @@ There are **no built-in providers** — see [Providers](#providers-default-zen_a
         "ZEN_AGENT_SANDBOX": "0",
         "ZEN_AGENT_SANDBOX_CMD": "",
         "DEEPSEEK_API_KEY": "your-deepseek-api-key",
-        "ZEN_AGENT_SANDBOX_RO_BIND": "/home/<username>",
         "OPENROUTER_API_KEY": "sk-or-v1-...",
         "ZAI_API_KEY": "zai-...",
         "GROQ_API_KEY": "gsk_..."
@@ -218,13 +217,13 @@ Sessions on models that declare `image`/`audio` in their `modalities` (or whose 
 
 ## Slash Commands
 
-| Command                 | Description                                                                                                                                                                                                           |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/prompt <text>`        | Replace the session's system prompt (no argument: print the current one); locked after the first user message                                                                                                         |
-| `/sandbox on\|off`      | Toggle the per-session bash sandbox (no argument: show status)                                                                                                                                                        |
-| `/robind on\|off`       | Toggle the read-only bind mounts from `ZEN_AGENT_SANDBOX_RO_BIND` for the session (no argument: show status); when the variable is empty the command warns and does nothing                                           |
-| `/tools on\|off`        | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status); locked after the first user message. `off` makes the session chat-only (environment messages dropped); `on` restores them |
-| `/<skill-name> <input>` | Invoke an installed Agent Skill                                                                                                                                                                                       |
+| Command                    | Description                                                                                                                                                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/prompt <text>`           | Replace the session's system prompt (no argument: print the current one); locked after the first user message                                                                                                         |
+| `/sandbox on\|off`         | Toggle the per-session bash sandbox (no argument: show status)                                                                                                                                                        |
+| `/robind <path>[,<path>…]` | Replace the session's read-only bind mounts in the bash sandbox (no argument: show status); `/robind clear` removes them all                                                                                          |
+| `/tools on\|off`           | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status); locked after the first user message. `off` makes the session chat-only (environment messages dropped); `on` restores them |
+| `/<skill-name> <input>`    | Invoke an installed Agent Skill                                                                                                                                                                                       |
 
 ## Skills
 
@@ -239,7 +238,7 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 
 ## Sandboxing
 
-The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the agent inside `bwrap` with `/mnt` (Windows drives) mounted read-only. The bash tool runs in a PTY owned by Zed on the host, so it needs its own sandbox: set `ZEN_AGENT_SANDBOX=1` (or run `/sandbox on`) to wrap every bash call in `bwrap` with the same `/mnt` policy. Inside that sandbox `rm`, `grep` and `find` are shadowed by the package's `bin/zen-agent-sandbox-block.sh` shim suggesting `trash`, `rg` and `fdfind`; the host is unaffected.
+The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the agent inside `bwrap` with `/mnt` (Windows drives) mounted read-only. The bash tool runs in a PTY owned by Zed on the host, so it needs its own sandbox: set `ZEN_AGENT_SANDBOX=1` (or run `/sandbox on`) to wrap every bash call in `bwrap` with the same `/mnt` policy. Inside that sandbox `rm`, `grep` and `find` are shadowed by the package's `bin/zen-agent-sandbox-block.sh` shim suggesting `trash`, `rg` and `fdfind`; the host is unaffected. Extra read-only paths can be added per session with `/robind <path>[,<path>…]` (the list replaces the previous one; `/robind clear` empties it).
 
 ## Environment Variables
 
@@ -262,7 +261,6 @@ The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the age
 | `ZEN_AGENT_SANDBOX`                    | —                      | `1` = always sandbox bash tool calls                                                                                                                                   |
 | `ZEN_AGENT_SANDBOX_CMD`                | default policy         | Override the bwrap command for bash tool calls                                                                                                                         |
 | `ZEN_AGENT_SANDBOX_BLOCK_SHIM`         | shipped in the package | Override the shim shadowing `rm`/`grep`/`find`                                                                                                                         |
-| `ZEN_AGENT_SANDBOX_RO_BIND`            | —                      | Comma-separated paths to mount read-only inside the bash sandbox; apply per session with `/robind on` (the variable itself is never modified)                          |
 | `<provider apiKeyEnv>`                 | —                      | Any env var referenced by a provider's `apiKeyEnv`, e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY`, `GROQ_API_KEY`                                       |
 
 ## Displayed Info

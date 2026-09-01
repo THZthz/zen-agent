@@ -344,7 +344,7 @@ export class ZenAgentCore {
       {
         session: active.session,
         sandbox: this.sessionSandboxEnabled(active.session),
-        roBindEnabled: active.session.config.roBindEnabled,
+        roBindPaths: active.session.config.roBindPaths,
         toolsEnabled: active.session.config.toolsEnabled,
         mediaModalities: await this.mediaModalities(active),
         clientCapabilities: this.clientCapabilities,

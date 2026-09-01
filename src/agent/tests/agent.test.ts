@@ -35,7 +35,7 @@ function makeSession(sessionId = 's1'): StoredSession {
       thinkingEffort: 'off',
       systemPrompt: '',
       sandbox: false,
-      roBindEnabled: false,
+      roBindPaths: [],
       toolsEnabled: true,
     },
     usage: emptySessionUsage(),

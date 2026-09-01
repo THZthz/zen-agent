@@ -215,11 +215,8 @@ describe('/sandbox slash command', () => {
 });
 
 describe('/robind slash command', () => {
-  const RO_BIND_ENV = 'ZEN_AGENT_SANDBOX_RO_BIND';
-
   beforeEach(() => {
     mockedRunLlmStep.mockReset();
-    delete process.env[RO_BIND_ENV];
   });
 
   /** The `-lc` script of the most recent terminal.create call. */
@@ -234,54 +231,63 @@ describe('/robind slash command', () => {
   function sessionConfig(
     agent: ZenAgent,
     sessionId: string,
-  ): { sandbox: boolean; roBindEnabled: boolean } {
+  ): { sandbox: boolean; roBindPaths: string[] } {
     const active = (
       agent as unknown as {
-        sessions: Map<
-          string,
-          { session: { config: { sandbox: boolean; roBindEnabled: boolean } } }
-        >;
+        sessions: Map<string, { session: { config: { sandbox: boolean; roBindPaths: string[] } } }>;
       }
     ).sessions.get(sessionId)!;
     return active.session.config;
   }
 
-  it('warns and does nothing when ZEN_AGENT_SANDBOX_RO_BIND is empty', async () => {
+  it('reports OFF with no paths by default', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
 
       const response = await agent.prompt(
-        { sessionId, prompt: [{ type: 'text', text: '/robind on' }] },
+        { sessionId, prompt: [{ type: 'text', text: '/robind' }] },
         cx,
       );
       expect(response.stopReason).toBe('end_turn');
       expect(agentMessages(notifications).join('\n')).toContain(
-        'ZEN_AGENT_SANDBOX_RO_BIND is empty; nothing to toggle.',
+        'Read-only binds: OFF (no paths configured)',
       );
-      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(false);
+      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  it('reports status with the configured paths', async () => {
+  it('replaces the whole path list and reports it in status', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
-    process.env[RO_BIND_ENV] = '/mnt/data,/mnt/secrets';
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+
+      await agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: '/robind /mnt/data, /mnt/secrets' }] },
+        cx,
+      );
+      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual(['/mnt/data', '/mnt/secrets']);
+
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind' }] }, cx);
       expect(agentMessages(notifications).join('\n')).toContain(
-        'Read-only binds: OFF (/mnt/data, /mnt/secrets)',
+        'Read-only binds: ON (/mnt/data, /mnt/secrets)',
       );
+
+      // A new list replaces the old one entirely.
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind /mnt/other' }] }, cx);
+      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual(['/mnt/other']);
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind clear' }] }, cx);
+      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  it('toggles ro-bind mounts in subsequent sandboxed bash calls', async () => {
+  it('applies the paths in subsequent sandboxed bash calls', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
-    process.env[RO_BIND_ENV] = '/mnt/data,/mnt/secrets';
     try {
       const { agent, cx, request, sessionId } = await setupAgent(cwd);
 
@@ -292,32 +298,46 @@ describe('/robind slash command', () => {
       expect(lastCreatedScript(request)).toContain('bwrap');
       expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/data /mnt/data');
 
-      // /robind on adds them; /robind off removes them again.
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind on' }] }, cx);
-      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(true);
+      // Setting a list adds every path as a ro-bind.
+      await agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: '/robind /mnt/data,/mnt/secrets' }] },
+        cx,
+      );
       queueBashThenAnswer();
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
       expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/data /mnt/data');
       expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/secrets /mnt/secrets');
 
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind off' }] }, cx);
-      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(false);
+      // Replacing the list drops the old paths; clearing drops all of them.
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind /mnt/other' }] }, cx);
       queueBashThenAnswer();
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+      expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/other /mnt/other');
       expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/data /mnt/data');
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind clear' }] }, cx);
+      queueBashThenAnswer();
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+      expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/other /mnt/other');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  it('rejects unknown arguments without changing state', async () => {
+  it('rejects an empty list and the legacy on/off forms without changing state', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
-    process.env[RO_BIND_ENV] = '/mnt/data';
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind maybe' }] }, cx);
-      expect(agentMessages(notifications).join('\n')).toContain('Usage: /robind on | off');
-      expect(sessionConfig(agent, sessionId).roBindEnabled).toBe(false);
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind on' }] }, cx);
+      expect(agentMessages(notifications).join('\n')).toContain(
+        'Usage: /robind <path>[,<path>...] | clear',
+      );
+      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind , ,' }] }, cx);
+      expect(agentMessages(notifications).join('\n')).toContain('No valid paths');
+      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

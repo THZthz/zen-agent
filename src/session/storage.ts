@@ -138,13 +138,12 @@ export interface SessionConfig {
    */
   sandbox: boolean;
   /**
-   * Whether the additional read-only bind mounts listed in
-   * `ZEN_AGENT_SANDBOX_RO_BIND` are applied to the bash sandbox. Toggled at
-   * runtime with the `/robind` slash command (per session) and persisted so
-   * a resumed session keeps its choice; the environment variable only
-   * supplies the paths and is never modified by the command.
+   * Additional paths mounted read-only inside the bash sandbox as
+   * `--ro-bind <path> <path>`. Set at runtime with the `/robind` slash
+   * command (per session) and persisted so a resumed session keeps its
+   * list; an empty list means no extra binds.
    */
-  roBindEnabled: boolean;
+  roBindPaths: string[];
   /**
    * Whether the session may use tools at all (bash + read_media). Toggled
    * at runtime with the `/tools` slash command and persisted so a session
@@ -291,7 +290,7 @@ export async function createStoredSession(
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: '',
       sandbox: false,
-      roBindEnabled: false,
+      roBindPaths: [],
       toolsEnabled: true,
     },
     usage: emptySessionUsage(),
@@ -341,7 +340,7 @@ function defaultConfig(provider: ProviderId = getDefaultProviderId()): SessionCo
     thinkingEffort: DEFAULT_THINKING_EFFORT,
     systemPrompt: '',
     sandbox: false,
-    roBindEnabled: false,
+    roBindPaths: [],
     toolsEnabled: true,
   };
 }
@@ -561,8 +560,13 @@ function normalizeStoredSession(parsed: { [key: string]: unknown }): {
     systemPrompt: typeof rawConfig.systemPrompt === 'string' ? rawConfig.systemPrompt : '',
     // Older sessions predate the flag; absent means off.
     sandbox: rawConfig.sandbox === true,
-    // Older sessions predate the flag; absent means off (see /robind).
-    roBindEnabled: rawConfig.roBindEnabled === true,
+    // Sessions predating path storage have no list (the old
+    // ZEN_AGENT_SANDBOX_RO_BIND env source is gone); absent means none.
+    roBindPaths: Array.isArray(rawConfig.roBindPaths)
+      ? (rawConfig.roBindPaths as unknown[]).filter(
+          (p): p is string => typeof p === 'string' && p.trim() !== '',
+        )
+      : [],
     // Older sessions predate the flag; absent means enabled (the default).
     toolsEnabled: rawConfig.toolsEnabled !== false,
   };
