@@ -24,6 +24,7 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 USAGE_KEYS = (
     "turns",
@@ -61,23 +62,23 @@ def open_db(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
 
 
-def fmt_int(value) -> str:
+def fmt_int(value: object) -> str:
     return "-" if value is None else str(value)
 
 
-def fmt_cost(value) -> str:
-    return "-" if value is None else f"{value:.6f}"
+def fmt_cost(value: object) -> str:
+    return "-" if value is None else f"{float(value):.6f}"
 
 
-def fmt_hit_rate(value) -> str:
-    return "-" if value is None else f"{value * 100:.1f}%"
+def fmt_hit_rate(value: object) -> str:
+    return "-" if value is None else f"{float(value) * 100:.1f}%"
 
 
-def fmt_ts(value) -> str:
-    return "-" if not value else value.replace("T", " ")[:19]
+def fmt_ts(value: object) -> str:
+    return "-" if not value else str(value).replace("T", " ")[:19]
 
 
-def fmt_value(value) -> str:
+def fmt_value(value: object) -> str:
     return f"{value:.6f}" if isinstance(value, float) else str(value)
 
 
@@ -85,7 +86,7 @@ def truncate(text: str, width: int) -> str:
     return text if len(text) <= width else text[: width - 3] + "..."
 
 
-def print_kv(pairs) -> None:
+def print_kv(pairs: list[tuple[str, str]]) -> None:
     if not pairs:
         return
     width = max(len(key) for key, _ in pairs)
@@ -93,7 +94,9 @@ def print_kv(pairs) -> None:
         print(f"  {key.ljust(width)}  {value}")
 
 
-def print_table(headers, rows, aligns) -> None:
+def print_table(
+    headers: list[str], rows: list[list[str]], aligns: str
+) -> None:
     """Print pre-formatted string rows; aligns is one l/r per column."""
     widths = [len(h) for h in headers]
     for row in rows:
@@ -113,15 +116,14 @@ def print_table(headers, rows, aligns) -> None:
 
 
 def cmd_list(db: sqlite3.Connection) -> None:
-    rows = db.execute(
-        "SELECT session_id, title, cwd, updated_at, usage"
-        " FROM sessions ORDER BY updated_at DESC"
+    raw_rows = db.execute(
+        "SELECT session_id, title, cwd, updated_at, usage FROM sessions ORDER BY updated_at DESC"
     ).fetchall()
-    if not rows:
+    if not raw_rows:
         print("no sessions")
         return
-    table = []
-    for session_id, title, cwd, updated_at, usage_json in rows:
+    table: list[list[str]] = []
+    for session_id, title, cwd, updated_at, usage_json in raw_rows:
         usage = json.loads(usage_json)
         name = title or os.path.basename(cwd.rstrip("/")) or cwd
         table.append([
@@ -143,15 +145,14 @@ def cmd_list(db: sqlite3.Connection) -> None:
 
 
 def cmd_show(db: sqlite3.Connection, session_id: str) -> None:
-    row = db.execute(
+    raw_row = db.execute(
         "SELECT session_id, title, cwd, created_at, updated_at, config, usage,"
         " turn_stats, cache_diagnostics FROM sessions WHERE session_id = ?",
         (session_id,),
     ).fetchone()
-    if row is None:
+    if raw_row is None:
         sys.exit(f"error: session not found: {session_id}")
-    session_id, title, cwd, created_at, updated_at, config_json, usage_json, \
-        turn_stats_json, cache_json = row
+    session_id, title, cwd, created_at, updated_at, config_json, usage_json, turn_stats_json, cache_json = raw_row
     config = json.loads(config_json)
     usage = json.loads(usage_json)
 
@@ -211,12 +212,12 @@ def cmd_show(db: sqlite3.Connection, session_id: str) -> None:
         )
 
     print("\nllm log")
-    entries = db.execute(
+    raw_entries = db.execute(
         "SELECT seq, created_at, entry FROM llm_log"
         " WHERE session_id = ? ORDER BY seq",
         (session_id,),
     ).fetchall()
-    if not entries:
+    if not raw_entries:
         print("  (none)")
     else:
         print_table(
@@ -224,60 +225,62 @@ def cmd_show(db: sqlite3.Connection, session_id: str) -> None:
             [[
                 str(seq),
                 fmt_ts(created_at),
-                json.loads(entry).get("type", "-"),
-                fmt_int((json.loads(entry).get("usage") or {}).get("inputTokens")),
-                fmt_int((json.loads(entry).get("usage") or {}).get("outputTokens")),
-                fmt_int((json.loads(entry).get("usage") or {}).get("cacheReadTokens")),
-                fmt_int((json.loads(entry).get("usage") or {}).get("cacheMissTokens")),
-                fmt_int((json.loads(entry).get("usage") or {}).get("llmMs")),
-                json.loads(entry).get("finishReason", "-"),
-            ] for seq, created_at, entry in entries],
+                str(json.loads(entry).get("type", "-")),
+                fmt_int(json.loads(entry).get("usage", {}).get("inputTokens")),
+                fmt_int(json.loads(entry).get("usage", {}).get("outputTokens")),
+                fmt_int(json.loads(entry).get("usage", {}).get("cacheReadTokens")),
+                fmt_int(json.loads(entry).get("usage", {}).get("cacheMissTokens")),
+                fmt_int(json.loads(entry).get("usage", {}).get("llmMs")),
+                str(json.loads(entry).get("finishReason", "-")),
+            ] for seq, created_at, entry in raw_entries],
             "rlrrrrrrl",
         )
 
 
 def cmd_totals(db: sqlite3.Connection) -> None:
-    rows = db.execute("SELECT usage FROM sessions").fetchall()
-    if not rows:
+    raw_rows = db.execute("SELECT usage FROM sessions").fetchall()
+    if not raw_rows:
         print("no sessions")
         return
-    totals: dict[str, int | float] = {}
-    for (usage_json,) in rows:
+    totals: dict[str, float] = {}
+    for (usage_json,) in raw_rows:
         for key, value in json.loads(usage_json).items():
             if isinstance(value, (int, float)):
-                totals[key] = totals.get(key, 0) + value
+                totals[key] = totals.get(key, 0.0) + float(value)
     print_kv(
-        [("sessions", len(rows))]
-        + [(key, fmt_value(totals.get(key, 0))) for key in USAGE_KEYS]
+        [("sessions", str(len(raw_rows)))]
+        + [(key, fmt_value(totals.get(key, 0.0))) for key in USAGE_KEYS]
     )
 
 
-def parse_args(argv):
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="zen-agent-stats",
         description="Query Zen Agent session statistics (read-only).",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--db",
         help="database file (default: ZEN_AGENT_DB_FILE, else ~/.local/share/zen-agent/zen-agent.db)",
     )
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("list", help="one line per session (default)")
+    _ = sub.add_parser("list", help="one line per session (default)")
     show = sub.add_parser("show", help="usage, per-turn and cache details for one session")
-    show.add_argument("session_id")
-    sub.add_parser("totals", help="sums across all sessions")
+    _ = show.add_argument("session_id")
+    _ = sub.add_parser("totals", help="sums across all sessions")
     args = parser.parse_args(argv)
     args.command = args.command or "list"
     return args
 
 
-def main(argv=None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     db = open_db(resolve_db(args.db))
     try:
-        if args.command == "show":
-            cmd_show(db, args.session_id)
-        elif args.command == "totals":
+        command = args.command
+        if command == "show":
+            session_id = args.session_id
+            cmd_show(db, session_id)
+        elif command == "totals":
             cmd_totals(db)
         else:
             cmd_list(db)
