@@ -129,7 +129,6 @@ describe('setSessionConfigOption', () => {
   });
 
   it('switches provider before the first message and resets the model to the provider default', async () => {
-    delete process.env.OPENROUTER_MODEL;
     const agent = new ZenAgent();
     const session = makeSession();
     register(agent, session);
