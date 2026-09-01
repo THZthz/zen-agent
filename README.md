@@ -61,6 +61,7 @@ There are **no built-in providers** — see [Providers](#providers-default-zen_a
         "ZEN_AGENT_SANDBOX": "0",
         "ZEN_AGENT_SANDBOX_CMD": "",
         "DEEPSEEK_API_KEY": "your-deepseek-api-key",
+        "ZEN_AGENT_SANDBOX_RO_BIND": "/home/<username>",
         "OPENROUTER_API_KEY": "sk-or-v1-...",
         "ZAI_API_KEY": "zai-...",
         "GROQ_API_KEY": "gsk_..."
@@ -221,6 +222,7 @@ Sessions on models that declare `image`/`audio` in their `modalities` (or whose 
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/prompt <text>`        | Replace the session's system prompt (no argument: print the current one); locked after the first user message                                                                                                         |
 | `/sandbox on\|off`      | Toggle the per-session bash sandbox (no argument: show status)                                                                                                                                                        |
+| `/robind on\|off`       | Toggle the read-only bind mounts from `ZEN_AGENT_SANDBOX_RO_BIND` for the session (no argument: show status); when the variable is empty the command warns and does nothing                                           |
 | `/tools on\|off`        | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status); locked after the first user message. `off` makes the session chat-only (environment messages dropped); `on` restores them |
 | `/<skill-name> <input>` | Invoke an installed Agent Skill                                                                                                                                                                                       |
 
@@ -243,11 +245,11 @@ The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the age
 
 | Variable                               | Default                | Description                                                                                                                                                            |
 | -------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `XDG_DATA_HOME`                        | `~/.local/share`       | Global data dir: the model catalog cache under `zen-agent/`                                                                                                            |
 | `ZEN_AGENT_PROVIDERS`                  | —                      | JSON array of provider definitions (endpoint + API key env + `models` and/or `fetchModels: true`)                                                                      |
 | `ZEN_AGENT_PROVIDERS_FILE`             | —                      | Path to a JSON file with the same provider array (alternative to `ZEN_AGENT_PROVIDERS`)                                                                                |
-| `ZEN_AGENT_DEFAULT_PROVIDER`           | first provider         | Default provider for new sessions                                                                                                                                      |
 | `ZEN_AGENT_DB_FILE`                    | next to the package    | SQLite database file holding sessions, transcripts, logs and terminal records (relative paths resolve against the agent's cwd); set it explicitly when running via npx |
-| `XDG_DATA_HOME`                        | `~/.local/share`       | Global data dir: the model catalog cache under `zen-agent/`                                                                                                            |
+| `ZEN_AGENT_DEFAULT_PROVIDER`           | first provider         | Default provider for new sessions                                                                                                                                      |
 | `ZEN_AGENT_MAX_TURN_STEPS`             | `25`                   | Max LLM/tool rounds per user prompt                                                                                                                                    |
 | `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` | `50000`                | Max bytes of bash output sent to the model per tool call (tail kept)                                                                                                   |
 | `ZEN_AGENT_CHAT_TIMEOUT_MS`            | `6600000` (6.6 min)    | Hard timeout for a single LLM chat request                                                                                                                             |
