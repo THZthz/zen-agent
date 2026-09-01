@@ -1,6 +1,6 @@
 {
   "name": "zen-agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "ACP v1 coding agent for Zed on WSL2 with a single unrestricted bash tool.",
   "type": "module",
   "bin": {
