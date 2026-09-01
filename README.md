@@ -260,6 +260,7 @@ The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the age
 | `ZEN_AGENT_SANDBOX`                    | —                      | `1` = always sandbox bash tool calls                                                                                                                                   |
 | `ZEN_AGENT_SANDBOX_CMD`                | default policy         | Override the bwrap command for bash tool calls                                                                                                                         |
 | `ZEN_AGENT_SANDBOX_BLOCK_SHIM`         | shipped in the package | Override the shim shadowing `rm`/`grep`/`find`                                                                                                                         |
+| `ZEN_AGENT_SANDBOX_RO_BIND`            | —                      | Comma-separated paths to mount read-only inside the bash sandbox; apply per session with `/robind on` (the variable itself is never modified)                          |
 | `<provider apiKeyEnv>`                 | —                      | Any env var referenced by a provider's `apiKeyEnv`, e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY`, `GROQ_API_KEY`                                       |
 
 ## Displayed Info
