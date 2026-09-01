@@ -231,6 +231,11 @@ describe('buildSystemPrompt tools gating', () => {
     expect(prompt).toContain(
       'You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation.',
     );
+    // The prompt is modality-independent: read_media is described by its tool
+    // schema alone, so the lazy modality lookup can never churn the cached
+    // prefix via the system prompt.
+    expect(prompt).not.toContain('read_media');
+    expect(prompt).not.toContain('<read-media-tool>');
   });
 
   it('omits every tool reference when /tools off', () => {
@@ -238,10 +243,13 @@ describe('buildSystemPrompt tools gating', () => {
     session.config.toolsEnabled = false;
     const prompt = buildSystemPrompt(session);
     expect(prompt).not.toContain('You can use bash to inspect files');
-    expect(prompt).not.toContain('use shell tools such as cat, sed, awk, or tee');
+    expect(prompt).not.toContain('use shell tools such as `cat`, `sed`, `awk`, or `tee`');
+    expect(prompt).not.toContain('<toolbox>');
     expect(prompt).not.toMatch(/bash/i);
-    expect(prompt).toContain('You are an experienced software engineer');
+    expect(prompt).toContain('You are an experienced and prudent software engineer');
     expect(prompt).toContain('Always use utf-8');
+    expect(prompt).toContain('<system-prompt>');
+    expect(prompt).toContain('</system-prompt>');
   });
 
   it('keeps the enabled prompt byte-identical with and without the no-tools split', () => {
@@ -251,9 +259,35 @@ describe('buildSystemPrompt tools gating', () => {
     session.config.toolsEnabled = true;
     const prompt = buildSystemPrompt(session);
     expect(prompt).toBe(
-      'You are an experienced software engineer.\n\n' +
-        'You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. Prefer small, targeted bash commands. Avoid large output from using bash tool. When modifying files, use shell tools such as cat, sed, awk, or tee. ALWAYS use trash instead of rm, rg instead of grep, fdfind (fd) instead of find if they exist. Prefer using uv to manage python.\n\n' +
+      [
+        '<system-prompt>',
+        '<persona>',
+        'You are an experienced and prudent software engineer.',
+        '</persona>',
+        '',
+        '<principles>',
+        '<workflow>',
+        "**You approach every code change with caution.** Code is not an asset—it is a liability. Your goal is to achieve clarity, modularity, and maintainability. Upon receiving a task, you first gather sufficient information, then clarify the user's requirements to make sure you understand exactly what needs to be done. Next, you carefully review the code and concisely explain your proposed plan to the user. You proceed with editing only after user's confirmation.",
+        '</workflow>',
+        '<think-before-coding>',
+        "**Don't assume. Don't hide confusion. Surface tradeoffs.** State your assumptions explicitly; if uncertain, ask. If multiple interpretations exist, present them - don't pick silently. If something is unclear, stop; name what's confusing and ask.",
+        '</think-before-coding>',
+        '<simplicity-first>',
+        '**Minimum code that solves the problem. Nothing speculative.** No features beyond what was asked. No abstractions for single-use code. No "flexibility" or "configurability" that wasn\'t requested. No error handling for impossible scenarios. If you write 200 lines and it could be 50, rewrite it. Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.',
+        '</simplicity-first>',
+        '</principles>',
+        '',
+        '<toolbox>',
+        '<bash-tool>',
+        'You can use bash to inspect files, edit files, run tests, install packages, or perform any other shell operation. Prefer small, targeted bash commands. Avoid large output from using bash tool. When modifying files, use shell tools such as `cat`, `sed`, `awk`, or `tee`. ALWAYS use `trash` instead of `rm`, `rg` instead of `grep`, `fdfind` (`fd`) instead of `find` if they exist. Prefer using `uv` to manage python.',
+        '</bash-tool>',
+        '</toolbox>',
+        '',
+        '<reminder>',
         '> Always use utf-8, no emojis unless needed by your task.',
+        '</reminder>',
+        '</system-prompt>',
+      ].join('\n'),
     );
   });
 

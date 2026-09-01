@@ -150,7 +150,9 @@ describe('/tools slash command', () => {
     expect(recordedSteps[0]?.tools).toEqual([]);
     // The bash paragraph must not appear when tools are off.
     expect(recordedSteps[0]?.system).not.toContain('You can use bash to inspect files');
-    expect(recordedSteps[0]?.system).toContain('You are an experienced software engineer');
+    expect(recordedSteps[0]?.system).toContain(
+      'You are an experienced and prudent software engineer',
+    );
   });
 
   it('keeps the cache prefix byte-stable across steps while tools are off', async () => {
@@ -412,7 +414,7 @@ describe('/prompt slash command', () => {
 
     await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/prompt' }] }, cx);
     expect(agentMessages(notifications).join('\n')).toContain(
-      'You are an experienced software engineer',
+      'You are an experienced and prudent software engineer',
     );
   });
 });
