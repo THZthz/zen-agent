@@ -4,3 +4,4 @@ dist/
 *.log
 .sessions/
 zen-agent.db*
+.npmrc

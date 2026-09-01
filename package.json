@@ -8,6 +8,10 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
@@ -15,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "acp",
