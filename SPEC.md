@@ -19,7 +19,7 @@ LLM providers are **user-defined** — there are no built-ins. Every provider is
 | --------------------------- | ------------------------------------------------------------------------------------------------ |
 | `initialize`                | Negotiate protocol version and capabilities.                                                     |
 | `authenticate`              | No-op; returns `{}`.                                                                             |
-| `session/new`               | Create a persistent session under `<cwd>/.sessions/` and freeze the environment message.         |
+| `session/new`               | Create a persistent session (row in the SQLite database) and freeze the environment message.     |
 | `session/load`              | Load a stored session and replay its events.                                                     |
 | `session/list`              | List stored sessions (by `cwd`, or the global index).                                            |
 | `session/resume`            | Load without replaying history.                                                                  |
@@ -41,20 +41,23 @@ LLM providers are **user-defined** — there are no built-ins. Every provider is
 
 ## 3. Sessions & Storage
 
-Layout under the project's `.sessions/` directory:
+Everything persists in one SQLite database (built-in `node:sqlite`, WAL mode + busy timeout for concurrent agent processes). The file defaults to `zen-agent.db` next to the package and is overridden by `ZEN_AGENT_DB_FILE` (relative paths resolve against the agent process cwd):
 
 ```
-.sessions/
-  <sessionId>/state.json                      session state (below)
-  <sessionId>/llm.jsonl                       LLM request/response transcript
-  <sessionId>/terminals/input-<ts>-<callId>.sh    bash script per tool call
-  <sessionId>/terminals/output-<ts>-<callId>.log  full `script -q -e` output
-  client/<startupTs>_<uuid>/log.jsonl         per-process runtime diagnostic log
+sessions        one row per session; scalar columns (session_id, cwd,
+                created_at, updated_at, title) + JSON columns (config, usage,
+                events, llm_messages, turn_stats, cache_diagnostics)
+llm_log         LLM request/response transcript, one JSON entry per row
+runtime_log     per-process diagnostic log, grouped by startup_key
+terminal_calls  one row per bash tool call (id, session_id, created_at,
+                command, output)
 ```
+
+Each bash tool call also writes `/tmp/zen-agent/<id>.sh` (input script) and `/tmp/zen-agent/<id>.log` (full `script -q -e` output), named by a short `msg_<base62>` id that matches the `terminal_calls` row id; the database row is the durable copy, the files stay around for direct inspection.
+
+A session row holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`, `toolsEnabled`), `usage` and `turnStats` (cumulative + per-turn statistics). The `sessions` table itself is the session index (id -> cwd, titles, `updatedAt`); no separate index exists. Deleted sessions remove their row plus their `llm_log` and `terminal_calls` entries.
 
 Provider model catalogs are cached globally under `$XDG_DATA_HOME/zen-agent/models/<providerId>.pi.json` (pi `ModelsStore`) plus `<providerId>.catalog.json` (Zen metadata: modalities, tool support) so offline starts restore the last-known catalog.
-
-`state.json` holds: `sessionId`, `cwd`, `createdAt`/`updatedAt`, `title`, `events` (ACP `session/update` payloads for replay), `llmMessages` (full conversation), `config` (`provider`, `model`, `thinkingEffort`, `systemPrompt`, `sandbox`, `toolsEnabled`), `usage` and `turnStats` (cumulative + per-turn statistics). A global index at `$XDG_DATA_HOME/zen-agent/index.json` maps session ids to their `cwd`.
 
 - **`session/new`** validates an absolute `cwd`, creates the session and appends a frozen environment message (working directory, session time, git state) as a `user` message named `Environment` — byte-stable so provider prefix caches keep hitting. With `/tools off` the environment message is omitted (chat-only session). Returns `{ sessionId, configOptions }`. `mcpServers`/`additionalDirectories` are accepted and ignored.
 - **`session/load`** replays persisted events through `prepareReplayEvents` (see §5.2) and returns the current `configOptions`; **`session/resume`** loads without replay.
@@ -117,7 +120,7 @@ Byte-identical across providers.
 ### 5.2 Execution
 
 - Requires client `terminal: true`. Runs `/bin/bash -lc <command>` in the session `cwd` via `terminal/create`, waits with `terminal/wait_for_exit`, fetches output with `terminal/output`, releases with `terminal/release`; on hard abort `terminal/kill` + `terminal/release`. No local `child_process` execution.
-- The command script and full output are saved under `terminals/` (output via `script -q -e` to preserve TTY behavior). Only the last `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` (default 50 000) bytes go back to the model, with a pointer to the log file.
+- The command script and full output are kept as `/tmp/zen-agent/<id>.sh` / `<id>.log` (output via `script -q -e` to preserve TTY behavior) and stored in the `terminal_calls` table. Only the last `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` (default 50 000) bytes go back to the model, with a pointer to the log file and the database row.
 - Tool cards show `$ <command>` and append `⏱ <duration>` to the output.
 - **Replay across restarts**: each `tool_call` carries `_meta.terminal_info = { terminal_id: "zen-<callId>", cwd }` (display-only terminal) and the final update streams `_meta.terminal_output = { terminal_id, data }` + `_meta.terminal_exit = { terminal_id, exit_code, signal }`. Zed re-creates the display terminal during `session/load`, so bash cards replay with collapsible terminal output. `prepareReplayEvents` rewrites stale real terminal ids and synthesizes the metadata for legacy sessions.
 
@@ -200,7 +203,7 @@ A model's declared `thinkingEfforts` (per-model, in declared order) restricts th
 
 ## 7. Usage & Stats## 7. Usage & Stats
 
-- Per-step and per-turn token/cost/timing stats accumulate into `session.usage` (cumulative) and `turnStats` (per turn), persisted in `state.json`.
+- Per-step and per-turn token/cost/timing stats accumulate into `session.usage` (cumulative) and `turnStats` (per turn), persisted in the session row.
 - ACP `usage_update` after each LLM step: `used`/`size` (context window from the provider: DeepSeek env or OpenRouter model) and `cost: { amount, currency }` — `CNY` (DeepSeek) or `USD` (OpenRouter) — which Zed renders as the token-usage ring in the agent panel header.
 - With `ZEN_AGENT_SHOW_STATS` (default on), a per-turn stats line is emitted as a display-only `agent_message_chunk` (never pushed to `llmMessages`, so it costs no context): `Turn 3 · 4 steps · think 3.2s · answer 8.5s · tools 14.2s` + `in 45.6K · out 3.4K · cache hit 87% · ¥0.043 (session ¥0.12)`.
 - The experimental `session/prompt` `usage` field carries cumulative input/output/thought/cache tokens.
@@ -210,12 +213,12 @@ A model's declared `thinkingEfforts` (per-model, in declared order) restricts th
 
 After `session/new`/`load`/`resume`, an `available_commands_update` notification advertises:
 
-| Command        | Behavior                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model. The set form is locked after the first user message (the system prompt is part of the cache prefix); printing stays open.                                                                                                                                                  |
-| `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in `state.json`; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                                                                                                                                                                                     |
-| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in `state.json`; locked after the first user message (tool list + environment are part of the cache prefix), status stays open. Off makes the session chat-only: the environment snapshot is dropped from the history and nothing is injected on load/resume; on restores the snapshot. Off sends no tool schemas and refuses any emitted tool call. |
-| `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`.                                                                                                                                                                |
+| Command        | Behavior                                                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`       | Set the session's entire system prompt (multi-line supported) or print the current one; returns `end_turn` without calling the model. The set form is locked after the first user message (the system prompt is part of the cache prefix); printing stays open.                                                                                                                                                     |
+| `sandbox`      | Toggle `config.sandbox` (`on`/`off`/status), persisted in the session row; refused while `ZEN_AGENT_SANDBOX=1`.                                                                                                                                                                                                                                                                                                     |
+| `tools`        | Toggle `config.toolsEnabled` (`on`/`off`/status), persisted in the session row; locked after the first user message (tool list + environment are part of the cache prefix), status stays open. Off makes the session chat-only: the environment snapshot is dropped from the history and nothing is injected on load/resume; on restores the snapshot. Off sends no tool schemas and refuses any emitted tool call. |
+| `<skill-name>` | One per installed skill: reads `SKILL.md` from `<cwd>/.agents/skills/` or `~/.agents/skills/`, injects it (plus the user's argument) as a user message, and runs a normal turn. Always available, independent of `ZEN_AGENT_SHOW_SKILLS_CATALOG`.                                                                                                                                                                   |
 
 Unknown commands reply `Unknown slash command` and return `end_turn`.
 
@@ -223,8 +226,8 @@ Skills: with `ZEN_AGENT_SHOW_SKILLS_CATALOG=1`, a compact catalog (name, descrip
 
 ## 9. Logs
 
-- `llm.jsonl`: every LLM request (system prompt, messages) and response (text, tool calls, finish reason, usage).
-- `client/<startupTs>_<uuid>/log.jsonl`: lifecycle events (session created/loaded, prompt received, terminal created/finished), `llm step stats`, `turn stats`, `turn stats balance verify`, skill invocations, graceful-cancel events.
+- `llm_log` (db): every LLM request (system prompt, messages) and response (text, tool calls, finish reason, usage), one JSON entry per row.
+- `runtime_log` (db): lifecycle events (session created/loaded, prompt received, terminal created/finished), `llm step stats`, `turn stats`, `turn stats balance verify`, skill invocations, graceful-cancel events — grouped per agent process by `startup_key` ("YYYY-MM-DD-HH-mm-ss_<uuid>").
 
 ## 10. Project Layout
 
@@ -271,15 +274,16 @@ zen-agent/
       sandbox.ts               bwrap policy + rm/grep/find shim shadowing
       tests/                   execution, sandbox, media flow tests
     session/                   persistence, replay, skills, system prompt
-      storage.ts               session persistence under <cwd>/.sessions/
-      session-index.ts         session index under the user data dir
+      storage.ts               SQLite-backed session persistence (db.ts)
+      db.ts                    the single SQLite database: path, schema, inserts
+      data-dir.ts              user data dir + crash-safe file writes (catalog cache)
       replay.ts                session/load event replay + terminal metadata synthesis
       skills.ts                Agent Skills discovery and invocation
       system-prompt.ts         system prompt, environment message, user naming
       tests/                   storage, skills, system prompt tests
     util/                      shared helpers
       env.ts                   environment variable parsing
-      logger.ts                log.jsonl writer
+      logger.ts                log entry builder
       is-record.ts             record type guard
     test-server.ts             local HTTP server for provider tests
     test-setup.ts              vitest setup
@@ -300,13 +304,14 @@ zen-agent/
 - `provider.test.ts` / `provider-pi.test.ts` / `provider-catalog.test.ts` — facade dispatch, user-provider parsing (declared models, `fetchModels` validation), pi collection + model options, generic `/models` discovery + parse + persistence, SSE streaming through a user-defined provider against a local HTTP server.
 - `agent.test.ts` / `agent.graceful.test.ts` — session lifecycle, config options + locking, graceful cancel, stats lines (with `runLlmStep` mocked).
 - `skills.test.ts` / `skills-slash.test.ts` / `sandbox.test.ts` / `tools.test.ts` / `system-prompt.test.ts` / `tool-execution.test.ts` — skills, sandbox toggling, tools toggling + refusal, environment messages, terminal artifacts.
+- `db.test.ts` / `storage-validate.test.ts` / `storage-delete.test.ts` — database path resolution + schema, session row CRUD/list/delete cascades, raw-row normalization backfill, corrupt-column errors, llm/runtime/terminal record inserts.
 - `media.test.ts` / `prompt-content.test.ts` / `user-parts.test.ts` / `media-flow.test.ts` - media path resolution, prompt-block intake, OpenAI wire mapping (image_url data URIs, input_audio), and the end-to-end read_media turn flow (provider mocked).
 
 ## 13. Decisions
 
 1. **Providers**: no built-ins — users define every provider in `ZEN_AGENT_PROVIDERS` with declared `models` and/or `fetchModels: true` auto-discovery, all through pi-ai's `createProvider`/`Models`. The wire/stream layer stays Zen-owned (`chat-completions.ts`) so healing, rate limiting, timeouts and usage rollup stay under test. Model metadata (context, cost, modalities) is declared by the user instead of being guessed from catalogs.
 2. **ACP SDK**: official `@agentclientprotocol/sdk`.
-3. **Sessions**: persisted under `<cwd>/.sessions/` with load/list/resume/delete/close.
+3. **Sessions**: one shared SQLite database (`ZEN_AGENT_DB_FILE`, default next to the package) with load/list/resume/delete/close; terminal input/output also recorded there plus mirrored to `/tmp/zen-agent/`.
 4. **MCP servers**: ignored; only the `bash` tool is exposed.
 5. **Bash execution**: always through the client's ACP terminal; no local subprocess.
 6. **Cancellation**: graceful only (the current unit of work completes); hard abort on close/delete or the timeout escape hatch.

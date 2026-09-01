@@ -8,7 +8,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 - Image/audio input on multimodal OpenRouter models: paste, drag & drop or @-mention images in Zed, and the model can load local screenshots/audio itself via a `read_media` tool
 - Live streaming of thinking and answers
 - User-defined OpenAI-compatible providers (no built-ins): declare models in `ZEN_AGENT_PROVIDERS` or auto-discover them with `fetchModels: true`
-- Persistent sessions (`<project>/.sessions/`) with resume/load across Zed restarts
+- Persistent sessions in a single SQLite database (`ZEN_AGENT_DB_FILE`) with resume/load across Zed restarts
 - Slash commands: `/prompt`, `/sandbox`, `/tools`, one per installed skill
 - [Agent Skills](https://www.skills.sh/) support
 - Token usage, cache-hit ratio, cost and timing reporting (per-provider currency)
@@ -16,7 +16,7 @@ An [Agent Client Protocol](https://agentclientprotocol.com) v1 coding agent for 
 
 ## Requirements
 
-- Node.js 22+
+- Node.js 24+ (`node:sqlite` is built in)
 - WSL2/Linux
 - At least one provider configured via `ZEN_AGENT_PROVIDERS` / `ZEN_AGENT_PROVIDERS_FILE` (no providers are built in)
 
@@ -246,7 +246,8 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 | `ZEN_AGENT_PROVIDERS`                  | —                                | JSON array of provider definitions (endpoint + API key env + `models` and/or `fetchModels: true`)                                |
 | `ZEN_AGENT_PROVIDERS_FILE`             | —                                | Path to a JSON file with the same provider array (alternative to `ZEN_AGENT_PROVIDERS`)                                          |
 | `ZEN_AGENT_DEFAULT_PROVIDER`           | first provider                   | Default provider for new sessions                                                                                                |
-| `XDG_DATA_HOME`                        | `~/.local/share`                 | Global data dir: model catalogs + session index under `zen-agent/`                                                               |
+| `ZEN_AGENT_DB_FILE`                    | next to the package              | SQLite database file holding sessions, transcripts, logs and terminal records (relative paths resolve against the agent's cwd)   |
+| `XDG_DATA_HOME`                        | `~/.local/share`                 | Global data dir: the model catalog cache under `zen-agent/`                                                                      |
 | `ZEN_AGENT_MAX_TURN_STEPS`             | `25`                             | Max LLM/tool rounds per user prompt                                                                                              |
 | `ZEN_AGENT_TERMINAL_OUTPUT_BYTE_LIMIT` | `50000`                          | Max bytes of bash output sent to the model per tool call (tail kept)                                                             |
 | `ZEN_AGENT_CHAT_TIMEOUT_MS`            | `6600000` (6.6 min)              | Hard timeout for a single LLM chat request                                                                                       |
