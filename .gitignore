@@ -5,3 +5,4 @@ dist/
 .sessions/
 zen-agent.db*
 .npmrc
+__pycache__/
