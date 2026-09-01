@@ -1,13 +1,17 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { SessionUpdate } from '@agentclientprotocol/sdk';
+import type { SessionInfo, SessionUpdate } from '@agentclientprotocol/sdk';
 import type { CacheDiagnosticEntry } from '../providers/cache-diagnostics.js';
 import type { TurnStats } from '../agent/stats.js';
-import { forgetSession, rememberSession, writeFileAtomic } from './session-index.js';
+import { openDb } from './db.js';
 import { getDefaultProviderId, getProviderDefinition } from '../providers/registry.js';
 
-export { findSessionCwd, listStoredSessions } from './session-index.js';
+/**
+ * Session persistence on a single shared SQLite database (see db.ts): one row
+ * per session in `sessions` (JSON columns for the collections that used to be
+ * state.json fields), append-only transcripts in `llm_log` / `runtime_log`,
+ * and bash tool calls in `terminal_calls`. The public async API is unchanged
+ * from the former per-project state.json files so callers keep working.
+ */
 
 /**
  * One part of a multi-part user message. Media parts carry base64 payloads
@@ -222,25 +226,25 @@ export interface StoredSession {
 }
 
 /**
- * Session storage layout (one directory per session):
+ * Database rows (see db.ts for the schema):
  *
- *   <project>/.sessions/<sessionId>/state.json
- *   <project>/.sessions/<sessionId>/llm.jsonl
- *   <project>/.sessions/<sessionId>/terminals/input-<timestamp>-<callId>.sh
- *   <project>/.sessions/<sessionId>/terminals/output-<timestamp>-<callId>.log
- *   <project>/.sessions/client/<startupTimestamp>_<uuid>/log.jsonl
+ *   sessions        one row per session - scalar columns (session_id, cwd,
+ *                   created_at, updated_at, title) plus JSON columns (config,
+ *                   usage, events, llm_messages, turn_stats,
+ *                   cache_diagnostics)
+ *   llm_log         LLM request/response transcript, one JSON entry per row
+ *   runtime_log     per-process diagnostic log, keyed by startup_key
+ *   terminal_calls  one row per bash tool call (command + full output)
  */
-export function sessionDirectory(cwd: string): string {
-  return join(cwd, '.sessions');
-}
 
 /**
- * Require a session id to be exactly one filesystem path component.
+ * Require a session id to be exactly one path-like token.
  *
  * Session ids are persisted and may later arrive back from an ACP client or a
  * hand-created session, so this intentionally accepts legacy safe ids such as
  * `sess_manual` rather than enforcing only the current generated format.
  */
+
 export function validateSessionId(sessionId: string): string {
   if (
     typeof sessionId !== 'string' ||
@@ -256,51 +260,14 @@ export function validateSessionId(sessionId: string): string {
   return sessionId;
 }
 
-/** Per-session root: <project>/.sessions/<sessionId>/ */
-export function sessionRootDirectory(cwd: string, sessionId: string): string {
-  validateSessionId(sessionId);
-  return join(sessionDirectory(cwd), sessionId);
-}
-
-/** Terminal artifacts for a session: <project>/.sessions/<sessionId>/terminals/ */
-export function terminalDirectory(cwd: string, sessionId: string): string {
-  return join(sessionRootDirectory(cwd, sessionId), 'terminals');
-}
-
-/** Session state: <project>/.sessions/<sessionId>/state.json */
-export function sessionPath(cwd: string, sessionId: string): string {
-  return join(sessionRootDirectory(cwd, sessionId), 'state.json');
-}
-
-/** LLM request/response transcript: <project>/.sessions/<sessionId>/llm.jsonl */
-export function sessionLlmLogPath(cwd: string, sessionId: string): string {
-  return join(sessionRootDirectory(cwd, sessionId), 'llm.jsonl');
-}
-
-/**
- * Zen Agent's own per-startup debug log:
- * <project>/.sessions/client/<startupTimestamp>_<uuid>/log.jsonl
- * `startupKey` is created once per agent process (local-time timestamp
- * "YYYY-MM-DD-HH-mm-ss" plus UUID) so every run of the agent gets its own
- * log directory, e.g. 2026-08-21-23-06-04_<uuid>.
- */
-export function clientLogPath(cwd: string, startupKey: string): string {
-  return join(sessionDirectory(cwd), 'client', startupKey, 'log.jsonl');
-}
-
 function generateSessionId(): string {
   return validateSessionId(`sess_${randomBytes(12).toString('hex')}`);
-}
-
-async function ensureDirectory(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
 }
 
 export async function createStoredSession(
   cwd: string,
   provider: ProviderId = getDefaultProviderId(),
 ): Promise<StoredSession> {
-  await ensureDirectory(sessionDirectory(cwd));
   const now = new Date().toISOString();
   const session: StoredSession = {
     sessionId: generateSessionId(),
@@ -323,16 +290,39 @@ export async function createStoredSession(
     cacheDiagnostics: [],
   };
   await writeSession(session);
-  await rememberSession(session);
   return session;
 }
 
+/** Insert or replace the session row. JSON columns mirror the former
+ * state.json fields; normalization on load keeps old shapes readable. */
 export async function writeSession(session: StoredSession): Promise<void> {
-  await writeFileAtomic(
-    sessionPath(session.cwd, session.sessionId),
-    `${JSON.stringify(session, null, 2)}\n`,
-  );
-  await rememberSession(session);
+  openDb()
+    .prepare(
+      `INSERT INTO sessions
+         (session_id, cwd, created_at, updated_at, title, config, usage,
+          events, llm_messages, turn_stats, cache_diagnostics)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         cwd = excluded.cwd, created_at = excluded.created_at,
+         updated_at = excluded.updated_at, title = excluded.title,
+         config = excluded.config, usage = excluded.usage,
+         events = excluded.events, llm_messages = excluded.llm_messages,
+         turn_stats = excluded.turn_stats,
+         cache_diagnostics = excluded.cache_diagnostics`,
+    )
+    .run(
+      session.sessionId,
+      session.cwd,
+      session.createdAt,
+      session.updatedAt,
+      session.title,
+      JSON.stringify(session.config),
+      JSON.stringify(session.usage),
+      JSON.stringify(session.events),
+      JSON.stringify(session.llmMessages),
+      JSON.stringify(session.turnStats),
+      JSON.stringify(session.cacheDiagnostics ?? []),
+    );
 }
 
 function defaultConfig(provider: ProviderId = getDefaultProviderId()): SessionConfig {
@@ -520,10 +510,10 @@ function normalizeObjectEntries<T>(raw: unknown): NormalizedItems<T> {
 }
 
 /**
- * Validate a parsed state.json and backfill fields missing from older
- * sessions or partially damaged files, so one bad field degrades to its
- * default instead of a TypeError deep inside the agent. Unrecoverable shapes
- * (wrong session id / cwd / not an object) throw a clean, actionable error.
+ * Backfill fields missing from older sessions or partially damaged rows, so
+ * one bad field degrades to its default instead of a TypeError deep inside
+ * the agent. Identity (session id / cwd) is checked by the caller against the
+ * row columns before this runs.
  *
  * Collection fields additionally get an element-level pass (see
  * normalizeEvents / normalizeLlmMessages): structurally unusable elements are
@@ -531,25 +521,12 @@ function normalizeObjectEntries<T>(raw: unknown): NormalizedItems<T> {
  * entirely, which is worse than losing one malformed entry. The dropped
  * count is returned so the caller can surface it in the runtime log.
  */
-function normalizeStoredSession(
-  parsed: unknown,
-  cwd: string,
-  sessionId: string,
-): { session: StoredSession; droppedEntries: number } {
-  const corrupt = (detail: string): Error =>
-    new Error(`Session file for ${sessionId} is corrupted: ${detail}`);
 
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw corrupt('not a session object');
-  }
-  const raw = parsed as Record<string, unknown>;
-
-  if (raw.sessionId !== sessionId) {
-    throw new Error(`Session file ${sessionId} has an invalid sessionId`);
-  }
-  if (raw.cwd !== cwd) {
-    throw new Error(`Session ${sessionId} belongs to ${String(raw.cwd)}, not ${cwd}`);
-  }
+function normalizeStoredSession(parsed: { [key: string]: unknown }): {
+  session: StoredSession;
+  droppedEntries: number;
+} {
+  const raw = parsed;
 
   // --- config ---
   const rawConfig =
@@ -608,8 +585,8 @@ function normalizeStoredSession(
   const cacheDiagnostics = normalizeObjectEntries<CacheDiagnosticEntry>(raw.cacheDiagnostics);
   return {
     session: {
-      sessionId,
-      cwd,
+      sessionId: String(raw.sessionId),
+      cwd: String(raw.cwd),
       createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowIso,
       updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso,
       title: typeof raw.title === 'string' ? raw.title : null,
@@ -625,6 +602,37 @@ function normalizeStoredSession(
   };
 }
 
+interface SessionRow {
+  session_id: string;
+  cwd: string;
+  created_at: string;
+  updated_at: string;
+  title: string | null;
+  config: string;
+  usage: string;
+  events: string;
+  llm_messages: string;
+  turn_stats: string;
+  cache_diagnostics: string;
+}
+
+/** JSON.parse a session row column; a corrupt column fails the load with the
+ * same "corrupted" error surface the former state.json files had. */
+function parseColumn(raw: string, sessionId: string, column: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(
+      `Session record for ${sessionId} is corrupted: ${column} is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
+function selectSessionRow(sessionId: string): SessionRow | undefined {
+  return openDb().prepare('SELECT * FROM sessions WHERE session_id = ?').get(sessionId) as
+    SessionRow | undefined;
+}
+
 /** Load and validate a session; `droppedEntries` counts persisted elements
  * (events, messages, stats, diagnostics) that were dropped as structurally
  * unusable, so the caller can make the data loss visible in the runtime log. */
@@ -632,31 +640,75 @@ export async function readStoredSession(
   cwd: string,
   sessionId: string,
 ): Promise<{ session: StoredSession; droppedEntries: number }> {
-  // Keep validation outside the filesystem error handler so an unsafe id is
-  // reported as invalid rather than being disguised as a missing file.
+  // Keep validation outside the query so an unsafe id is reported as invalid
+  // rather than being disguised as a missing row.
   validateSessionId(sessionId);
-  let raw: string;
-  try {
-    raw = await readFile(sessionPath(cwd, sessionId), 'utf8');
-  } catch {
-    throw new Error(`Session file not found for ${sessionId}`);
+  const row = selectSessionRow(sessionId);
+  if (!row) {
+    throw new Error(`Session not found for ${sessionId}`);
   }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      `Session file for ${sessionId} is corrupted: not valid JSON (${error instanceof Error ? error.message : String(error)})`,
-    );
+  if (row.cwd !== cwd) {
+    throw new Error(`Session ${sessionId} belongs to ${row.cwd}, not ${cwd}`);
   }
-  return normalizeStoredSession(parsed, cwd, sessionId);
+  const parsed: Record<string, unknown> = {
+    sessionId: row.session_id,
+    cwd: row.cwd,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    title: row.title,
+    config: parseColumn(row.config, sessionId, 'config'),
+    usage: parseColumn(row.usage, sessionId, 'usage'),
+    events: parseColumn(row.events, sessionId, 'events'),
+    llmMessages: parseColumn(row.llm_messages, sessionId, 'llm_messages'),
+    turnStats: parseColumn(row.turn_stats, sessionId, 'turn_stats'),
+    cacheDiagnostics: parseColumn(row.cache_diagnostics, sessionId, 'cache_diagnostics'),
+  };
+  return normalizeStoredSession(parsed);
 }
 
-export async function deleteStoredSession(cwd: string, sessionId: string): Promise<void> {
-  // Remove the whole per-session tree: state.json plus the terminal
-  // artifacts (input-*.sh / output-*.log) and llm.jsonl that would otherwise
-  // be orphaned forever (the index forgets the cwd right after).
-  await rm(sessionRootDirectory(cwd, sessionId), { recursive: true, force: true });
-  await forgetSession(sessionId);
+/** Remove the session row and everything that belongs to it: the terminal
+ * records and the LLM transcript entries a live session accumulates. */
+export async function deleteStoredSession(sessionId: string): Promise<void> {
+  validateSessionId(sessionId);
+  const db = openDb();
+  db.prepare('DELETE FROM sessions WHERE session_id = ?').run(sessionId);
+  db.prepare('DELETE FROM terminal_calls WHERE session_id = ?').run(sessionId);
+  db.prepare('DELETE FROM llm_log WHERE session_id = ?').run(sessionId);
+}
+
+/** The project a session belongs to (the former global index's job). */
+export async function findSessionCwd(sessionId: string): Promise<string | undefined> {
+  validateSessionId(sessionId);
+  const row = openDb().prepare('SELECT cwd FROM sessions WHERE session_id = ?').get(sessionId) as
+    { cwd: string } | undefined;
+  return row?.cwd;
+}
+
+function byUpdatedAtDesc(a: SessionInfo, b: SessionInfo): number {
+  const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+  const bt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+  return bt - at;
+}
+
+/** Sessions for one project (or all projects when no cwd is given), newest
+ * first. The sessions table itself is the index; no separate listing exists. */
+export async function listStoredSessions(cwd?: string): Promise<SessionInfo[]> {
+  const sql =
+    'SELECT session_id, cwd, title, updated_at FROM sessions' +
+    (cwd === undefined ? '' : ' WHERE cwd = ?');
+  const statement = openDb().prepare(sql);
+  const rows = (cwd === undefined ? statement.all() : statement.all(cwd)) as Array<{
+    session_id: string;
+    cwd: string;
+    title: string | null;
+    updated_at: string;
+  }>;
+  return rows
+    .map((row) => ({
+      sessionId: row.session_id,
+      cwd: row.cwd,
+      title: row.title,
+      updatedAt: row.updated_at,
+    }))
+    .sort(byUpdatedAtDesc);
 }

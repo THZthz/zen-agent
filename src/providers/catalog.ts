@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { indexDirectory, writeFileAtomic } from '../session/session-index.js';
+import { indexDirectory, writeFileAtomic } from '../session/data-dir.js';
 import { readFile } from 'node:fs/promises';
 
 /**

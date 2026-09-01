@@ -9,7 +9,7 @@ import {
   type StoredSession,
   type ThinkingEffort,
 } from '../session/storage.js';
-import { findSessionCwd, listStoredSessions } from '../session/session-index.js';
+import { findSessionCwd, listStoredSessions } from '../session/storage.js';
 import { getDefaultModel } from '../providers/index.js';
 import {
   buildEnvironmentMessage,
@@ -180,9 +180,9 @@ export function withSessionManagement<T extends Constructor<ZenAgentCore>>(
           throw new Error(`Session ${params.sessionId} not found`);
         }
         // The queued prompt has fully settled, so deletion cannot be followed
-        // by a late final save that recreates state.json.
+        // by a late final save that recreates the session row.
         await this.retireActiveSession(params.sessionId);
-        await deleteStoredSession(cwd, params.sessionId);
+        await deleteStoredSession(params.sessionId);
         void this.logRuntime(cwd, 'info', 'session deleted', {
           sessionId: params.sessionId,
         });

@@ -1,13 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createStoredSession,
   deleteStoredSession,
+  findSessionCwd,
   listStoredSessions,
   writeSession,
 } from '../storage.js';
+import { insertLlmLogEntry, insertTerminalCall, openDb } from '../db.js';
+
+function sessionRowCount(sessionId: string): number {
+  return (
+    openDb().prepare('SELECT COUNT(*) AS n FROM sessions WHERE session_id = ?').get(sessionId) as {
+      n: number;
+    }
+  ).n;
+}
 
 describe('deleteStoredSession', () => {
   let cwd: string;
@@ -22,67 +32,58 @@ describe('deleteStoredSession', () => {
     created.length = 0;
   });
 
-  it('rejects traversal ids without deleting the project or another session', async () => {
-    const indexDirBefore = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = join(cwd, 'xdg');
-    try {
-      const safe = await createStoredSession(cwd);
-      created.push(safe.cwd);
-      const marker = join(cwd, 'project-marker.txt');
-      writeFileSync(marker, 'keep');
+  it('rejects traversal ids without touching stored sessions', async () => {
+    const safe = await createStoredSession(cwd);
+    created.push(safe.cwd);
 
-      for (const sessionId of ['..', '../outside', 'nested/session', 'nested\\session']) {
-        await expect(deleteStoredSession(cwd, sessionId)).rejects.toThrow(/Invalid session ID/);
-      }
-
-      expect(existsSync(marker)).toBe(true);
-      expect(existsSync(join(cwd, '.sessions', safe.sessionId, 'state.json'))).toBe(true);
-      expect((await listStoredSessions(cwd)).map((entry) => entry.sessionId)).toContain(
-        safe.sessionId,
-      );
-    } finally {
-      if (indexDirBefore === undefined) delete process.env.XDG_DATA_HOME;
-      else process.env.XDG_DATA_HOME = indexDirBefore;
+    for (const sessionId of ['..', '../outside', 'nested/session', 'nested\\session']) {
+      await expect(deleteStoredSession(sessionId)).rejects.toThrow(/Invalid session ID/);
     }
+
+    expect(sessionRowCount(safe.sessionId)).toBe(1);
+    expect((await listStoredSessions(cwd)).map((entry) => entry.sessionId)).toContain(
+      safe.sessionId,
+    );
   });
 
-  it('removes the whole session tree, not just state.json', async () => {
-    const indexDirBefore = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = join(cwd, 'xdg');
-    try {
-      const session = await createStoredSession(cwd);
-      created.push(session.cwd);
+  it('removes the session row and its transcripts and terminal records', async () => {
+    const session = await createStoredSession(cwd);
+    created.push(session.cwd);
+    insertLlmLogEntry(session.sessionId, { type: 'llm_request' });
+    insertTerminalCall({
+      id: 'msg_test1',
+      sessionId: session.sessionId,
+      command: 'ls',
+      output: 'out',
+    });
+    expect(
+      openDb()
+        .prepare('SELECT COUNT(*) AS n FROM terminal_calls WHERE session_id = ?')
+        .get(session.sessionId),
+    ).toMatchObject({ n: 1 });
+    expect(
+      openDb()
+        .prepare('SELECT COUNT(*) AS n FROM llm_log WHERE session_id = ?')
+        .get(session.sessionId),
+    ).toMatchObject({ n: 1 });
 
-      // Artifacts a real session accumulates.
-      const terminals = join(cwd, '.sessions', session.sessionId, 'terminals');
-      mkdirSync(terminals, { recursive: true });
-      writeFileSync(join(terminals, 'output-1-c1.log'), 'out');
-      writeFileSync(join(cwd, '.sessions', session.sessionId, 'llm.jsonl'), '{}\n');
+    expect(sessionRowCount(session.sessionId)).toBe(1);
+    await deleteStoredSession(session.sessionId);
 
-      expect(existsSync(join(cwd, '.sessions', session.sessionId))).toBe(true);
-
-      await deleteStoredSession(cwd, session.sessionId);
-
-      expect(existsSync(join(cwd, '.sessions', session.sessionId))).toBe(false);
-      const index = JSON.parse(
-        await readFileOrNull(join(process.env.XDG_DATA_HOME!, 'zen-agent', 'index.json')),
-      );
-      expect(index[session.sessionId]).toBeUndefined();
-    } finally {
-      if (indexDirBefore === undefined) delete process.env.XDG_DATA_HOME;
-      else process.env.XDG_DATA_HOME = indexDirBefore;
-    }
+    expect(sessionRowCount(session.sessionId)).toBe(0);
+    expect(
+      openDb()
+        .prepare('SELECT COUNT(*) AS n FROM terminal_calls WHERE session_id = ?')
+        .get(session.sessionId),
+    ).toMatchObject({ n: 0 });
+    expect(
+      openDb()
+        .prepare('SELECT COUNT(*) AS n FROM llm_log WHERE session_id = ?')
+        .get(session.sessionId),
+    ).toMatchObject({ n: 0 });
+    expect(await findSessionCwd(session.sessionId)).toBeUndefined();
   });
 });
-
-async function readFileOrNull(path: string): Promise<string> {
-  const { readFile } = await import('node:fs/promises');
-  try {
-    return await readFile(path, 'utf8');
-  } catch {
-    return '{}';
-  }
-}
 
 describe('listStoredSessions', () => {
   let cwd: string;
@@ -90,47 +91,42 @@ describe('listStoredSessions', () => {
 
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'zen-storage-list-'));
-    process.env.XDG_DATA_HOME = join(cwd, 'xdg');
   });
 
   afterEach(() => {
-    delete process.env.XDG_DATA_HOME;
     for (const dir of created) rmSync(dir, { recursive: true, force: true });
     created.length = 0;
   });
 
-  it('lists indexed sessions from the index plus unindexed on-disk ones', async () => {
+  it('lists this project only, newest first', async () => {
     const a = await createStoredSession(cwd);
     created.push(a.cwd);
-    a.title = 'Indexed session';
+    a.title = 'Older session';
+    a.updatedAt = '2026-01-01T00:00:00.000Z';
     await writeSession(a);
 
-    // An unindexed session: state.json on disk, no index entry.
-    mkdirSync(join(cwd, '.sessions', 'sess_manual'), { recursive: true });
-    writeFileSync(
-      join(cwd, '.sessions', 'sess_manual', 'state.json'),
-      JSON.stringify({
-        sessionId: 'sess_manual',
-        cwd,
-        createdAt: '2026-01-02T00:00:00.000Z',
-        updatedAt: '2026-01-02T00:00:00.000Z',
-        title: 'Manual session',
-        events: [],
-        llmMessages: [],
-        config: {},
-        usage: {},
-        turnStats: [],
-      }),
-    );
+    const other = mkdtempSync(join(tmpdir(), 'zen-storage-list-other-'));
+    created.push(other);
+    const b = await createStoredSession(other);
+    b.title = 'Other project';
+    await writeSession(b);
 
     const listed = await listStoredSessions(cwd);
-    const byId = new Map(listed.map((entry) => [entry.sessionId, entry]));
-    expect(byId.get(a.sessionId)?.title).toBe('Indexed session');
-    expect(byId.get('sess_manual')?.title).toBe('Manual session');
-    expect(listed.map((e) => e.sessionId)).toEqual(
-      [...listed]
-        .sort((x, y) => Date.parse(y.updatedAt ?? '') - Date.parse(x.updatedAt ?? ''))
-        .map((e) => e.sessionId),
+    expect(listed.map((entry) => entry.sessionId)).toEqual([a.sessionId]);
+    expect(listed[0]).toMatchObject({
+      sessionId: a.sessionId,
+      cwd,
+      title: 'Older session',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const everywhere = (await listStoredSessions()).filter((entry) =>
+      [cwd, other].includes(entry.cwd),
     );
+    expect(new Set(everywhere.map((entry) => entry.sessionId))).toEqual(
+      new Set([a.sessionId, b.sessionId]),
+    );
+    // Newest first regardless of insertion order.
+    expect(everywhere[0]?.sessionId).toBe(b.sessionId);
   });
 });

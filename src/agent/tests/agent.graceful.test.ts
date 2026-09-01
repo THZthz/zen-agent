@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
@@ -12,6 +12,7 @@ vi.mock('../../providers/index.js', async (importOriginal) => {
 import { ZenAgent } from '../index.js';
 import { runLlmStep, type LlmStepResult } from '../../providers/index.js';
 import { readStoredSession } from '../../session/storage.js';
+import { openDb } from '../../session/db.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 
@@ -458,8 +459,7 @@ describe('debug log stats', () => {
     mockedRunLlmStep.mockReset();
   });
 
-  it('writes per-step and per-turn stats with cache hit ratio to log.jsonl', async () => {
-    const { readFileSync } = await import('node:fs');
+  it('writes per-step and per-turn stats with cache hit ratio to the runtime log', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-test-'));
     try {
       const { agent, cx, sessionId } = await setupAgent(cwd);
@@ -486,17 +486,18 @@ describe('debug log stats', () => {
       const startupLogKey = (agent as unknown as { startupLogKey: string }).startupLogKey;
       // Local-time startup timestamp + uuid: 2026-08-21-23-06-04_<uuid>.
       expect(startupLogKey).toMatch(/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}_[0-9a-f-]{36}$/);
-      const logPath = join(cwd, '.sessions', 'client', startupLogKey, 'log.jsonl');
+
+      const readEntries = (): Array<Record<string, unknown>> =>
+        (
+          openDb()
+            .prepare('SELECT entry FROM runtime_log WHERE startup_key = ? ORDER BY seq')
+            .all(startupLogKey) as Array<{ entry: string }>
+        ).map((row) => JSON.parse(row.entry) as Record<string, unknown>);
 
       let entries: Array<Record<string, unknown>> = [];
       // logRuntime is fire-and-forget; wait until the turn entry lands.
       await vi.waitFor(() => {
-        const raw = readFileSync(logPath, 'utf8');
-        entries = raw
-          .trim()
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as Record<string, unknown>);
+        entries = readEntries();
         expect(entries.some((e) => e.message === 'turn stats')).toBe(true);
       });
 
@@ -537,6 +538,51 @@ describe('debug log stats', () => {
       });
       expect(turn!.llmMs).toBe(500);
       expect(turn!.toolMs).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('terminal call records', () => {
+  beforeEach(() => {
+    mockedRunLlmStep.mockReset();
+  });
+
+  it('stores command and full output in terminal_calls and names /tmp artifacts', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-terminal-'));
+    try {
+      const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
+      mockedRunLlmStep.mockResolvedValueOnce(bashStep());
+      mockedRunLlmStep.mockResolvedValueOnce({
+        text: 'done',
+        reasoning: '',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: null,
+      });
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
+
+      const update = notifications
+        .map((n) => n.update)
+        .filter((u) => u.sessionUpdate === 'tool_call_update')
+        .at(-1) as { rawOutput?: Record<string, unknown> } | undefined;
+      const rawOutput = update?.rawOutput ?? {};
+      expect(rawOutput.fullOutputPath).toMatch(/^\/tmp\/zen-agent\/msg_[0-9A-Za-z]+\.log$/);
+      expect(rawOutput.commandScriptPath).toMatch(/^\/tmp\/zen-agent\/msg_[0-9A-Za-z]+\.sh$/);
+      expect(existsSync(String(rawOutput.commandScriptPath))).toBe(true);
+
+      const row = openDb()
+        .prepare('SELECT * FROM terminal_calls WHERE id = ?')
+        .get(String(rawOutput.terminalCallId)) as Record<string, unknown> | undefined;
+      expect(row).toBeDefined();
+      expect(row).toMatchObject({
+        session_id: sessionId,
+        command: 'echo hi',
+        // The ACP terminal/output mock answer is stored when the script log
+        // is absent (the mock never runs `script`).
+        output: 'done',
+      });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
@@ -13,7 +12,7 @@ vi.mock('../../providers/index.js', async (importOriginal) => {
 import { ZenAgent } from '../../agent/index.js';
 import { runLlmStep, type LlmStepResult } from '../../providers/index.js';
 import { coalesceReplayEvents, prepareReplayEvents } from '../replay.js';
-import { sessionPath } from '../storage.js';
+import { readStoredSession } from '../storage.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 
@@ -89,7 +88,7 @@ describe('transcript does not duplicate terminal output', () => {
     expect(wireUpdate._meta?.terminal_output).toBeDefined();
 
     // Persisted transcript: no duplicated payload, but rawOutput.output kept.
-    const stored = JSON.parse(await readFile(sessionPath(cwd, created.sessionId), 'utf8')) as {
+    const stored = (await readStoredSession(cwd, created.sessionId)).session as unknown as {
       events: Array<{
         sessionUpdate: string;
         status?: string;

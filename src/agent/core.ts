@@ -2,13 +2,12 @@ import * as acp from '@agentclientprotocol/sdk';
 import { randomUUID } from 'node:crypto';
 import {
   writeSession,
-  clientLogPath,
-  sessionLlmLogPath,
   validateSessionId,
   type ProviderId,
   type StoredSession,
 } from '../session/storage.js';
-import { appendJsonLine, makeLogEntry } from '../util/logger.js';
+import { makeLogEntry } from '../util/logger.js';
+import { insertLlmLogEntry, insertRuntimeLogEntry } from '../session/db.js';
 import { executeLlmToolCall, type ToolExecutionResult } from '../tools/execution.js';
 import { getModelModalities, type LlmToolCall } from '../providers/index.js';
 import { BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA } from '../providers/llm-client.js';
@@ -79,10 +78,10 @@ export class ZenAgentCore {
     { currency: string; total: number }
   >();
   /**
-   * Per-startup debug log identity: "YYYY-MM-DD-HH-mm-ss_<uuid>", e.g.
+   * Per-startup log identity: "YYYY-MM-DD-HH-mm-ss_<uuid>", e.g.
    * 2026-08-21-23-06-04_<uuid>. Created once per agent process; all runtime
-   * diagnostics for this run are appended to
-   * <project>/.sessions/client/<startupKey>/log.jsonl.
+   * diagnostics for this run are inserted into the runtime_log table grouped
+   * by this key.
    */
   protected readonly startupLogKey = `${formatStartupTimestamp(new Date())}_${randomUUID()}`;
 
@@ -364,26 +363,11 @@ export class ZenAgentCore {
     message: string,
     details?: Record<string, unknown>,
   ): Promise<void> {
-    try {
-      await appendJsonLine(
-        clientLogPath(cwd, this.startupLogKey),
-        makeLogEntry(level, message, details),
-      );
-    } catch {
-      // Logging must never break the agent.
-    }
+    insertRuntimeLogEntry(this.startupLogKey, cwd, makeLogEntry(level, message, details));
   }
 
-  protected async logLlmExchange(
-    cwd: string,
-    sessionId: string,
-    entry: Record<string, unknown>,
-  ): Promise<void> {
-    try {
-      await appendJsonLine(sessionLlmLogPath(cwd, sessionId), entry);
-    } catch {
-      // Logging must never break the agent.
-    }
+  protected async logLlmExchange(sessionId: string, entry: Record<string, unknown>): Promise<void> {
+    insertLlmLogEntry(sessionId, entry);
   }
 
   protected async emit(

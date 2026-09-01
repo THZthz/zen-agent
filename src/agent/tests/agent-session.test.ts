@@ -1,12 +1,21 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZenAgent } from '../index.js';
 import type { ActiveSession } from '../core.js';
-import { clientLogPath, emptySessionUsage, type StoredSession } from '../../session/storage.js';
+import { emptySessionUsage, writeSession, type StoredSession } from '../../session/storage.js';
+import { openDb } from '../../session/db.js';
+
+/** Parsed runtime_log entries for one agent process (startup key). */
+function runtimeEntries(startupKey: string): Array<Record<string, unknown>> {
+  return (
+    openDb()
+      .prepare('SELECT entry FROM runtime_log WHERE startup_key = ? ORDER BY seq')
+      .all(startupKey) as Array<{ entry: string }>
+  ).map((row) => JSON.parse(row.entry) as Record<string, unknown>);
+}
 
 function makeSession(sessionId: string, cwd: string, title: string): StoredSession {
   const now = new Date().toISOString();
@@ -37,27 +46,19 @@ type TestAgent = ZenAgent & {
 
 describe('session load/resume lifecycle', () => {
   let cwd: string;
-  let previousDataHome: string | undefined;
-
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'zen-agent-session-lifecycle-'));
-    previousDataHome = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = join(cwd, 'xdg');
   });
 
   afterEach(() => {
-    if (previousDataHome === undefined) delete process.env.XDG_DATA_HOME;
-    else process.env.XDG_DATA_HOME = previousDataHome;
     rmSync(cwd, { recursive: true, force: true });
   });
 
   for (const method of ['loadSession', 'resumeSession'] as const) {
-    it(`${method} aborts and settles the active turn before reading state.json`, async () => {
+    it(`${method} aborts and settles the active turn before reading the session row`, async () => {
       const sessionId = `sess_${method}`;
       const stale = makeSession(sessionId, cwd, 'before final save');
-      const statePath = join(cwd, '.sessions', sessionId, 'state.json');
-      mkdirSync(join(cwd, '.sessions', sessionId), { recursive: true });
-      writeFileSync(statePath, JSON.stringify(stale), 'utf8');
+      await writeSession(stale);
 
       const agent = new ZenAgent() as TestAgent;
       const abortController = new AbortController();
@@ -102,7 +103,7 @@ describe('session load/resume lifecycle', () => {
         title: 'from final save',
         updatedAt: new Date(Date.now() + 1_000).toISOString(),
       };
-      writeFileSync(statePath, JSON.stringify(finalState), 'utf8');
+      await writeSession(finalState);
       settleTurn({ stopReason: 'cancelled' });
 
       await lifecycle;
@@ -117,17 +118,11 @@ describe('session load/resume lifecycle', () => {
 
 describe('session load normalization reporting', () => {
   let cwd: string;
-  let previousDataHome: string | undefined;
-
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'zen-agent-load-diagnostics-'));
-    previousDataHome = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = join(cwd, 'xdg');
   });
 
   afterEach(() => {
-    if (previousDataHome === undefined) delete process.env.XDG_DATA_HOME;
-    else process.env.XDG_DATA_HOME = previousDataHome;
     rmSync(cwd, { recursive: true, force: true });
   });
 
@@ -136,8 +131,7 @@ describe('session load normalization reporting', () => {
     const stale = makeSession(sessionId, cwd, 'with garbage');
     stale.events.push({ noSessionUpdate: true } as never);
     stale.llmMessages.push({ role: 'bogus' } as never);
-    mkdirSync(join(cwd, '.sessions', sessionId), { recursive: true });
-    writeFileSync(join(cwd, '.sessions', sessionId, 'state.json'), JSON.stringify(stale), 'utf8');
+    await writeSession(stale);
 
     const agent = new ZenAgent() as TestAgent;
     const cx = {
@@ -150,16 +144,9 @@ describe('session load normalization reporting', () => {
     await agent.loadSession({ cwd, sessionId } as acp.LoadSessionRequest, cx);
 
     const startupKey = (agent as unknown as { startupLogKey: string }).startupLogKey;
-    const logFile = clientLogPath(cwd, startupKey);
-    // logRuntime is fire-and-forget; poll until the line lands.
-    await vi.waitFor(async () => {
-      const raw = await readFile(logFile, 'utf8');
-      const entries = raw
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as Record<string, unknown>);
-      const loaded = entries.find((entry) => entry.message === 'session loaded');
+    // logRuntime is fire-and-forget; poll until the entry lands.
+    await vi.waitFor(() => {
+      const loaded = runtimeEntries(startupKey).find((entry) => entry.message === 'session loaded');
       expect(loaded).toBeDefined();
       expect(loaded?.droppedEntries).toBe(2);
     });

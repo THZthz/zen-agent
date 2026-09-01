@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
@@ -18,7 +17,7 @@ vi.mock('../../providers/index.js', async (importOriginal) => {
 import { ZenAgent } from '../../agent/index.js';
 import { runLlmStep, getModelModalities, type LlmStepResult } from '../../providers/index.js';
 import { BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA } from '../../providers/llm-client.js';
-import { clientLogPath } from '../../session/storage.js';
+import { openDb } from '../../session/db.js';
 
 const mockedRunLlmStep = vi.mocked(runLlmStep);
 const mockedGetModelModalities = vi.mocked(getModelModalities);
@@ -77,11 +76,16 @@ describe('model modality lookup retries until definitive', () => {
     // …but NOT memoized: once the lookup succeeds, read_media is offered.
     expect(toolsPerStep[1]).toEqual([BASH_TOOL_SCHEMA, READ_MEDIA_TOOL_SCHEMA]);
 
-    // The transient unknown is visible in log.jsonl (warn + recovery info).
+    // The transient unknown is visible in the runtime log (warn + recovery).
     const startupKey = (agent as unknown as { startupLogKey: string }).startupLogKey;
-    const logFile = clientLogPath(cwd, startupKey);
-    await vi.waitFor(async () => {
-      const raw = await readFile(logFile, 'utf8');
+    await vi.waitFor(() => {
+      const raw = (
+        openDb()
+          .prepare('SELECT entry FROM runtime_log WHERE startup_key = ? ORDER BY seq')
+          .all(startupKey) as Array<{ entry: string }>
+      )
+        .map((row) => row.entry)
+        .join('\n');
       expect(raw).toContain('model input modalities unknown');
       expect(raw).toContain('model input modalities resolved');
     });

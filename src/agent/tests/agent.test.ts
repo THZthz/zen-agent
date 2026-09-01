@@ -6,7 +6,7 @@ import * as acp from '@agentclientprotocol/sdk';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { ZenAgent } from '../index.js';
 import { coalesceReplayEvents, prepareReplayEvents } from '../../session/replay.js';
-import { emptySessionUsage, type StoredSession } from '../../session/storage.js';
+import { emptySessionUsage, writeSession, type StoredSession } from '../../session/storage.js';
 
 type ReplayEvent = {
   sessionUpdate: string;
@@ -608,7 +608,7 @@ describe('graceful cancel', () => {
 
 describe('loadSession environment backfill', () => {
   it('prepends a frozen environment message and appends a continuation notice for empty sessions', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { mkdtempSync, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const { vi } = await import('vitest');
@@ -629,12 +629,7 @@ describe('loadSession environment backfill', () => {
 
       const session = makeSession('sess_empty');
       session.cwd = dir;
-      mkdirSync(join(dir, '.sessions', 'sess_empty'), { recursive: true });
-      writeFileSync(
-        join(dir, '.sessions', 'sess_empty', 'state.json'),
-        JSON.stringify(session),
-        'utf8',
-      );
+      await writeSession(session);
 
       const notify = vi.fn(async () => {});
       const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
@@ -655,7 +650,7 @@ describe('loadSession environment backfill', () => {
   });
 
   it('injects no environment messages when the session has tools off', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { mkdtempSync, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const { vi } = await import('vitest');
@@ -678,12 +673,7 @@ describe('loadSession environment backfill', () => {
       session.cwd = dir;
       session.config.toolsEnabled = false;
       session.llmMessages = [];
-      mkdirSync(join(dir, '.sessions', 'sess_noenv'), { recursive: true });
-      writeFileSync(
-        join(dir, '.sessions', 'sess_noenv', 'state.json'),
-        JSON.stringify(session),
-        'utf8',
-      );
+      await writeSession(session);
 
       const notify = vi.fn(async () => {});
       const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];
@@ -698,7 +688,7 @@ describe('loadSession environment backfill', () => {
   });
 
   it('strips stale environment messages from a tools-off session on load', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { mkdtempSync, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const { vi } = await import('vitest');
@@ -731,12 +721,7 @@ describe('loadSession environment backfill', () => {
         },
         { role: 'user', content: 'hello' },
       ];
-      mkdirSync(join(dir, '.sessions', 'sess_stale'), { recursive: true });
-      writeFileSync(
-        join(dir, '.sessions', 'sess_stale', 'state.json'),
-        JSON.stringify(session),
-        'utf8',
-      );
+      await writeSession(session);
 
       const notify = vi.fn(async () => {});
       const cx = { notify } as unknown as Parameters<typeof agent.loadSession>[1];

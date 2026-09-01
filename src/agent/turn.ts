@@ -100,7 +100,7 @@ export function withTurnExecution<
           // for the request, the transcript, and the cache diagnostics.
           const system = buildSystemPrompt(active.session);
 
-          void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
+          void this.logLlmExchange(active.session.sessionId, {
             type: 'llm_request',
             timestamp: new Date().toISOString(),
             model: active.session.config.model,
@@ -156,7 +156,7 @@ export function withTurnExecution<
             throw error;
           }
 
-          void this.logLlmExchange(active.session.cwd, active.session.sessionId, {
+          void this.logLlmExchange(active.session.sessionId, {
             type: 'llm_response',
             timestamp: new Date().toISOString(),
             text: llmResult.text,

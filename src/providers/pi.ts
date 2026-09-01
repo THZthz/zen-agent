@@ -10,7 +10,7 @@ import {
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { indexDirectory, writeFileAtomic } from '../session/session-index.js';
+import { indexDirectory, writeFileAtomic } from '../session/data-dir.js';
 import {
   fetchCatalog,
   getCatalog,

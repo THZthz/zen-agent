@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { sessionDirectory, type LlmMessage, type StoredSession } from './storage.js';
+import { type LlmMessage, type StoredSession } from './storage.js';
+import { dbFilePath } from './db.js';
 import { buildSkillsSection, listSkills } from './skills.js';
 
 const execFileAsync = promisify(execFile);
@@ -95,7 +96,7 @@ export async function buildEnvironmentMessage(session: StoredSession): Promise<s
   const lines = [
     '<environment>',
     '<session-state>fresh-started</session-state>',
-    `<session-transcript>${sessionDirectory(session.cwd)}</session-transcript>`,
+    `<session-transcript>${dbFilePath()}</session-transcript>`,
     `<working-directory>${session.cwd}</working-directory>`,
     `<current-time>${session.createdAt}</current-time>`,
   ];

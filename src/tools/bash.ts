@@ -1,8 +1,9 @@
 import * as acp from '@agentclientprotocol/sdk';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { LlmToolCall } from '../providers/llm-client.js';
-import { terminalDirectory } from '../session/storage.js';
+import { dbFilePath, insertTerminalCall } from '../session/db.js';
+import { newMessageId } from '../agent/config.js';
 import { formatMs } from '../agent/stats.js';
 import {
   bashSandboxPrefix,
@@ -11,6 +12,9 @@ import {
   truncateTerminalOutput,
 } from './sandbox.js';
 import type { ToolExecutionResult, ToolExecutorContext } from './execution.js';
+
+/** Directory holding the per-call input scripts and full output logs. */
+const TERMINAL_ARTIFACTS_DIRECTORY = '/tmp/zen-agent';
 
 /**
  * Bash tool execution (see the ownership map in agent.ts): terminal
@@ -33,13 +37,17 @@ export async function executeBashToolCall(
 ): Promise<ToolExecutionResult> {
   const { session, clientCapabilities, emit, logRuntime } = context;
 
-  const terminalDir = terminalDirectory(session.cwd, session.sessionId);
-  // The same timestamp pairs an input script with its output log, and keeps
-  // multiple runs of the same tool call id distinct on disk.
-  const timestamp = Date.now();
-  const logPath = join(terminalDir, `output-${timestamp}-${call.id}.log`);
-  const commandScriptPath = join(terminalDir, `input-${timestamp}-${call.id}.sh`);
-  await mkdir(terminalDir, { recursive: true });
+  // Every bash call gets a short id (the message-id generator) naming its
+  // artifacts, so the input script, the output log and the terminal_calls row
+  // share one handle: /tmp/zen-agent/<id>.sh, /tmp/zen-agent/<id>.log and the
+  // database row that stores the same command + full output. The files stay
+  // for direct inspection (the model re-reads them after truncation); /tmp
+  // clearing on reboot is fine because the database row is the durable copy.
+  const terminalCallId = newMessageId();
+  const terminalDir = TERMINAL_ARTIFACTS_DIRECTORY;
+  const logPath = join(terminalDir, `${terminalCallId}.log`);
+  const commandScriptPath = join(terminalDir, `${terminalCallId}.sh`);
+  await mkdir(terminalDir, { recursive: true, mode: 0o700 });
   await writeFile(commandScriptPath, command, 'utf8');
   const scriptCommand = `${bashSandboxPrefix(context.sandbox)}bash ${shellQuote(commandScriptPath)}`;
   const wrappedCommand = `script -q -e -c ${shellQuote(scriptCommand)} ${shellQuote(logPath)}`;
@@ -201,9 +209,24 @@ export async function executeBashToolCall(
     const outputText =
       outputResp.output ||
       (status === 'completed' ? '(no output)' : `exit code ${exit.exitCode ?? 'unknown'}`);
+    // The `script` log holds the full output even when the ACP client capped
+    // its own buffer; store it (and the command) in the session database.
+    const recordedOutput = await readFile(logPath, 'utf8').catch(() => '');
+    const stored = insertTerminalCall({
+      id: terminalCallId,
+      sessionId: session.sessionId,
+      command,
+      output: recordedOutput.length > 0 ? recordedOutput : outputText,
+    });
+    if (!stored) {
+      void logRuntime('warn', 'terminal output store failed', {
+        sessionId: session.sessionId,
+        terminalCallId,
+      });
+    }
     const modelOutput = truncateTerminalOutput(outputText, terminalOutputByteLimit());
     const outputForModel = modelOutput.truncated
-      ? `${modelOutput.text}[Terminal output truncated: showing the last ${modelOutput.keptBytes} of ${modelOutput.originalBytes} bytes; full output saved to ${logPath}]`
+      ? `${modelOutput.text}[Terminal output truncated: showing the last ${modelOutput.keptBytes} of ${modelOutput.originalBytes} bytes; full output saved to ${logPath} and the session database (terminal_calls id ${terminalCallId})]`
       : `${outputText}`;
     const displayText = `${outputText}\n\n${formatMs(durationMs)}`;
 
@@ -230,6 +253,8 @@ export async function executeBashToolCall(
         durationMs,
         fullOutputPath: logPath,
         commandScriptPath,
+        terminalCallId,
+        dbFile: dbFilePath(),
       },
       // Stream the recorded output into the display-only terminal so that
       // after a Zed restart the replayed tool call shows the output inside

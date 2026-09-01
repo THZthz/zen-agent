@@ -25,9 +25,9 @@ export interface TruncatedTerminalOutput {
  * The cut is adjusted forward to a UTF-8 lead byte so the kept text never
  * contains a split multi-byte sequence (and never exceeds `maxBytes`).
  *
- * Used for the model-visible tool result only: the full output stays on
- * disk at the log path (and in the terminal card), so the model can read
- * more with bash whenever it needs to.
+ * Used for the model-visible tool result only: the full output stays at
+ * /tmp/zen-agent/<id>.log and in the session database (terminal_calls), so
+ * the model can read more with bash whenever it needs to.
  */
 export function truncateTerminalOutput(text: string, maxBytes: number): TruncatedTerminalOutput {
   const bytes = Buffer.from(text, 'utf8');

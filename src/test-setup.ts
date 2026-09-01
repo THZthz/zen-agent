@@ -1,3 +1,14 @@
+import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Session persistence is a single shared SQLite database; tests get their own
+// per-process file so they never touch the developer's real data.
+process.env.ZEN_AGENT_DB_FILE ??= join(
+  tmpdir(),
+  `zen-agent-test-${process.pid}-${randomBytes(4).toString('hex')}.db`,
+);
+
 /**
  * Global vitest setup: configure default user-defined providers so tests
  * that create sessions (and therefore resolve the default provider) work
