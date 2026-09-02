@@ -7,9 +7,13 @@ arrays turn_stats and cache_diagnostics, llm_log one row per LLM
 request/response. This script prints those numbers as plain text.
 
 Usage:
-  zen-agent-stats.py list              one line per session (default)
-  zen-agent-stats.py show SESSION_ID    usage, per-turn and cache details
-  zen-agent-stats.py totals             sums across all sessions
+  zen-agent-stats.py list               one line per session (default)
+  zen-agent-stats.py show SESSION_ID     usage, per-turn and cache details
+  zen-agent-stats.py turns SESSION_ID    one row per turn
+  zen-agent-stats.py turn SESSION_ID N   one turn's stats and its steps
+  zen-agent-stats.py steps SESSION_ID    one row per LLM step
+  zen-agent-stats.py step SESSION_ID N   one LLM step's request/response/usage
+  zen-agent-stats.py totals              sums across all sessions
 
 Database location: --db flag, else ZEN_AGENT_DB_FILE, else
 $XDG_DATA_HOME/zen-agent/zen-agent.db. The file is only ever opened
@@ -237,6 +241,182 @@ def cmd_show(db: sqlite3.Connection, session_id: str) -> None:
         )
 
 
+def load_turn_stats(db: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
+    row = db.execute(
+        "SELECT turn_stats FROM sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if row is None:
+        sys.exit(f"error: session not found: {session_id}")
+    return json.loads(row[0])
+
+
+def load_steps(db: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
+    """Pair llm_log request/response entries into steps, with turn numbers.
+
+    A step is one llm_request plus its llm_response; a request without a
+    response (the turn was interrupted) is kept as an incomplete step. Turn
+    numbers come from walking turn_stats[].steps: each recorded turn counts
+    that many usage-bearing responses. Steps that do not fit (interrupted
+    turn, response without usage) get turn None, shown as "-".
+    """
+    turn_counts = [t.get("steps", 0) for t in load_turn_stats(db, session_id)]
+    steps: list[dict[str, Any]] = []
+    pending: dict[str, Any] | None = None
+    for (entry_json,) in db.execute(
+        "SELECT entry FROM llm_log WHERE session_id = ? ORDER BY seq", (session_id,)
+    ):
+        entry = json.loads(entry_json)
+        if entry.get("type") == "llm_request":
+            if pending is not None:
+                steps.append({"request": pending, "response": None, "turn": None})
+            pending = entry
+        elif entry.get("type") == "llm_response":
+            steps.append({"request": pending, "response": entry, "turn": None})
+            pending = None
+    if pending is not None:
+        steps.append({"request": pending, "response": None, "turn": None})
+    turn_index = 0
+    used = 0
+    for step in steps:
+        response = step["response"]
+        if response is None or not response.get("usage"):
+            continue
+        while turn_index < len(turn_counts) and used >= turn_counts[turn_index]:
+            turn_index += 1
+            used = 0
+        if turn_index < len(turn_counts):
+            step["turn"] = turn_index + 1
+            used += 1
+    return steps
+
+
+STEP_HEADERS = [
+    "STEP", "TURN", "MODEL", "INPUT", "OUTPUT", "CACHE_RD", "CACHE_MISS",
+    "REASONING", "LLM_MS", "THINK_MS", "FINISH", "TOOLS",
+]
+STEP_ALIGNS = "rrlrrrrrrrlr"
+
+
+def step_row(number: int, step: dict[str, Any]) -> list[str]:
+    request = step["request"] or {}
+    response = step["response"]
+    usage = (response or {}).get("usage") or {}
+    return [
+        str(number),
+        str(step["turn"]) if step["turn"] else "-",
+        str(request.get("model", "-")),
+        fmt_int(usage.get("inputTokens")),
+        fmt_int(usage.get("outputTokens")),
+        fmt_int(usage.get("cacheReadTokens")),
+        fmt_int(usage.get("cacheMissTokens")),
+        fmt_int(usage.get("reasoningTokens")),
+        fmt_int(usage.get("llmMs")),
+        fmt_int(usage.get("thinkingMs")),
+        str((response or {}).get("finishReason", "-")),
+        str(len(response.get("toolCalls", []))) if response else "-",
+    ]
+
+
+def cmd_turns(db: sqlite3.Connection, session_id: str) -> None:
+    turns = load_turn_stats(db, session_id)
+    if not turns:
+        print("no turns")
+        return
+    print_table(
+        ["TURN", "STEPS", "INPUT", "OUTPUT", "CACHE_RD", "CACHE_MISS", "REASONING",
+         "COST", "LLM_MS", "THINK_MS", "ANSWER_MS", "TOOL_MS"],
+        [[
+            str(i + 1),
+            fmt_int(t.get("steps")),
+            fmt_int(t.get("inputTokens")),
+            fmt_int(t.get("outputTokens")),
+            fmt_int(t.get("cacheReadTokens")),
+            fmt_int(t.get("cacheMissTokens")),
+            fmt_int(t.get("reasoningTokens")),
+            fmt_cost(t.get("cost")),
+            fmt_int(t.get("llmMs")),
+            fmt_int(t.get("thinkingMs")),
+            fmt_int(t.get("answeringMs")),
+            fmt_int(t.get("toolMs")),
+        ] for i, t in enumerate(turns)],
+        "r" * 12,
+    )
+
+
+def cmd_turn(db: sqlite3.Connection, session_id: str, turn_number: int) -> None:
+    turns = load_turn_stats(db, session_id)
+    if not 1 <= turn_number <= len(turns):
+        sys.exit(f"error: session has {len(turns)} turns")
+    turn = turns[turn_number - 1]
+    print(f"session   {session_id}")
+    print(f"turn      {turn_number}")
+    print("\nstats")
+    print_kv([(key, fmt_value(turn.get(key))) for key in USAGE_KEYS[1:]])
+    print("\nsteps")
+    rows = [
+        step_row(i, s) for i, s in enumerate(load_steps(db, session_id), 1)
+        if s["turn"] == turn_number
+    ]
+    if not rows:
+        print("  (none)")
+    else:
+        print_table(STEP_HEADERS, rows, STEP_ALIGNS)
+
+
+def cmd_steps(db: sqlite3.Connection, session_id: str) -> None:
+    steps = load_steps(db, session_id)
+    if not steps:
+        print("no steps")
+        return
+    print_table(STEP_HEADERS, [step_row(i, s) for i, s in enumerate(steps, 1)], STEP_ALIGNS)
+
+
+def cmd_step(db: sqlite3.Connection, session_id: str, step_number: int) -> None:
+    steps = load_steps(db, session_id)
+    if not 1 <= step_number <= len(steps):
+        sys.exit(f"error: session has {len(steps)} steps")
+    step = steps[step_number - 1]
+    request = step["request"]
+    response = step["response"]
+    print(f"session   {session_id}")
+    print(f"step      {step_number}")
+    print(f"turn      {step['turn'] or '-'}")
+    print("\nrequest")
+    if request:
+        print_kv([
+            ("time", fmt_ts(request.get("timestamp"))),
+            ("model", str(request.get("model", "-"))),
+            ("thinkingEffort", str(request.get("thinkingEffort", "-"))),
+            ("messages", str(len(request.get("messages", [])))),
+            ("systemChars", str(len(request.get("system") or ""))),
+        ])
+    else:
+        print("  (none)")
+    print("\nresponse")
+    if response:
+        pairs = [
+            ("time", fmt_ts(response.get("timestamp"))),
+            ("finishReason", str(response.get("finishReason", "-"))),
+            ("toolCalls", str(len(response.get("toolCalls", [])))),
+        ]
+        for i, call in enumerate(response.get("toolCalls", []), 1):
+            pairs.append((
+                f"call {i}",
+                f"{call.get('name', '-')}  {truncate(json.dumps(call.get('input')), 100)}",
+            ))
+        text = response.get("text") or ""
+        pairs.append(("text", truncate(" ".join(text.split()), 100) if text else "(empty)"))
+        print_kv(pairs)
+    else:
+        print("  (no response - step did not complete)")
+    print("\nusage")
+    usage = (response or {}).get("usage")
+    if usage:
+        print_kv([(key, fmt_value(value)) for key, value in usage.items()])
+    else:
+        print("  (none)")
+
+
 def cmd_totals(db: sqlite3.Connection) -> None:
     raw_rows = db.execute("SELECT usage FROM sessions").fetchall()
     if not raw_rows:
@@ -266,6 +446,16 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     _ = sub.add_parser("list", help="one line per session (default)")
     show = sub.add_parser("show", help="usage, per-turn and cache details for one session")
     _ = show.add_argument("session_id")
+    turns = sub.add_parser("turns", help="one row per turn")
+    _ = turns.add_argument("session_id")
+    turn = sub.add_parser("turn", help="one turn's stats and its steps")
+    _ = turn.add_argument("session_id")
+    _ = turn.add_argument("turn", type=int)
+    steps = sub.add_parser("steps", help="one row per LLM step")
+    _ = steps.add_argument("session_id")
+    step = sub.add_parser("step", help="one LLM step's request, response and usage")
+    _ = step.add_argument("session_id")
+    _ = step.add_argument("step", type=int)
     _ = sub.add_parser("totals", help="sums across all sessions")
     args = parser.parse_args(argv)
     args.command = args.command or "list"
@@ -280,6 +470,14 @@ def main(argv: list[str] | None = None) -> None:
         if command == "show":
             session_id = args.session_id
             cmd_show(db, session_id)
+        elif command == "turns":
+            cmd_turns(db, args.session_id)
+        elif command == "turn":
+            cmd_turn(db, args.session_id, args.turn)
+        elif command == "steps":
+            cmd_steps(db, args.session_id)
+        elif command == "step":
+            cmd_step(db, args.session_id, args.step)
         elif command == "totals":
             cmd_totals(db)
         else:
