@@ -13,6 +13,8 @@ Usage:
   zen-agent-stats.py turn SESSION_ID N   one turn's stats and its steps
   zen-agent-stats.py steps SESSION_ID    one row per LLM step
   zen-agent-stats.py step SESSION_ID N   one LLM step's request/response/usage
+  zen-agent-stats.py commands SESSION_ID  one row per executed command
+  zen-agent-stats.py timeline SESSION_ID  one row per step: what happened
   zen-agent-stats.py totals              sums across all sessions
 
 Database location: --db flag, else ZEN_AGENT_DB_FILE, else
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -417,6 +420,88 @@ def cmd_step(db: sqlite3.Connection, session_id: str, step_number: int) -> None:
         print("  (none)")
 
 
+def parse_exit_code(output: str) -> str:
+    codes = re.findall(r'COMMAND_EXIT_CODE="(-?\d+)"', output)
+    return codes[-1] if codes else "-"
+
+
+def cmd_commands(db: sqlite3.Connection, session_id: str) -> None:
+    """Executed commands (terminal_calls), mapped to their step by time:
+    a command runs after its step's response and before the next request."""
+    steps = load_steps(db, session_id)
+    owners = [
+        (i, (s["response"] or {}).get("timestamp", ""))
+        for i, s in enumerate(steps, 1)
+        if s["response"] is not None
+    ]
+    rows: list[list[str]] = []
+    for created_at, command, output in db.execute(
+        "SELECT created_at, command, output FROM terminal_calls"
+        " WHERE session_id = ? ORDER BY created_at",
+        (session_id,),
+    ):
+        step_number = max(
+            (i for i, ts in owners if ts <= created_at), default=0
+        )
+        step = steps[step_number - 1] if step_number else None
+        rows.append([
+            fmt_ts(created_at),
+            str(step_number) if step_number else "-",
+            str(step["turn"]) if step and step["turn"] else "-",
+            parse_exit_code(output),
+            str(len(output)),
+            truncate(" ".join(command.split()), 90),
+        ])
+    if not rows:
+        print("no commands")
+        return
+    print_table(
+        ["TIME", "STEP", "TURN", "EXIT", "BYTES", "COMMAND"],
+        rows,
+        "lrrrrl",
+    )
+
+
+def step_summary(step: dict[str, Any]) -> str:
+    response = step["response"]
+    if response is None:
+        return "-"
+    calls = response.get("toolCalls", [])
+    if calls:
+        parts = []
+        for call in calls:
+            name = call.get("name", "-")
+            if name == "bash":
+                command = " ".join(
+                    str((call.get("input") or {}).get("command", "")).split()
+                )
+                parts.append(f"bash: {command}")
+            else:
+                parts.append(f"{name}: {json.dumps(call.get('input'))}")
+        return truncate(" | ".join(parts), 90)
+    text = response.get("text") or ""
+    if text:
+        return "answer: " + truncate(" ".join(text.split()), 80)
+    return "-"
+
+
+def cmd_timeline(db: sqlite3.Connection, session_id: str) -> None:
+    steps = load_steps(db, session_id)
+    if not steps:
+        print("no steps")
+        return
+    print_table(
+        ["TIME", "STEP", "TURN", "WHAT"],
+        [[
+            fmt_ts((s["request"] or {}).get("timestamp")),
+            str(i),
+            str(s["turn"]) if s["turn"] else "-",
+            step_summary(s),
+        ] for i, s in enumerate(steps, 1)],
+        "lrrl",
+    )
+
+
 def cmd_totals(db: sqlite3.Connection) -> None:
     raw_rows = db.execute("SELECT usage FROM sessions").fetchall()
     if not raw_rows:
@@ -456,6 +541,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     step = sub.add_parser("step", help="one LLM step's request, response and usage")
     _ = step.add_argument("session_id")
     _ = step.add_argument("step", type=int)
+    commands = sub.add_parser("commands", help="one row per executed command")
+    _ = commands.add_argument("session_id")
+    timeline = sub.add_parser("timeline", help="one row per step with a short summary")
+    _ = timeline.add_argument("session_id")
     _ = sub.add_parser("totals", help="sums across all sessions")
     args = parser.parse_args(argv)
     args.command = args.command or "list"
@@ -478,6 +567,10 @@ def main(argv: list[str] | None = None) -> None:
             cmd_steps(db, args.session_id)
         elif command == "step":
             cmd_step(db, args.session_id, args.step)
+        elif command == "commands":
+            cmd_commands(db, args.session_id)
+        elif command == "timeline":
+            cmd_timeline(db, args.session_id)
         elif command == "totals":
             cmd_totals(db)
         else:
