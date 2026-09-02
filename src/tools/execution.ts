@@ -31,10 +31,10 @@ export interface ToolExecutorContext {
    */
   sandbox: boolean;
   /**
-   * Additional paths mounted read-only inside that sandbox as
-   * `--ro-bind <path> <path>` (set per session with `/robind`; empty = none).
+   * Paths mounted read-write inside that sandbox as `--bind <path> <path>`
+   * (set per session with `/writable`; defaults to `/tmp` and `/var/tmp`).
    */
-  roBindPaths: string[];
+  writablePaths: string[];
   /**
    * Whether the session may use tools at all (set by the `/tools` slash
    * command). When false, executeLlmToolCall refuses every call with a

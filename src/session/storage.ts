@@ -138,12 +138,13 @@ export interface SessionConfig {
    */
   sandbox: boolean;
   /**
-   * Additional paths mounted read-only inside the bash sandbox as
-   * `--ro-bind <path> <path>`. Set at runtime with the `/robind` slash
-   * command (per session) and persisted so a resumed session keeps its
-   * list; an empty list means no extra binds.
+   * Paths mounted read-write inside the bash sandbox as `--bind <path> <path>`;
+   * everything else (the whole rootfs) is read-only. Set at runtime with the
+   * `/writable` slash command (per session) and persisted so a resumed session
+   * keeps its list. The default is `/tmp` and `/var/tmp` so the agent always
+   * has scratch space; an empty list means no writable paths at all.
    */
-  roBindPaths: string[];
+  writablePaths: string[];
   /**
    * Whether the session may use tools at all (bash + read_media). Toggled
    * at runtime with the `/tools` slash command and persisted so a session
@@ -290,7 +291,7 @@ export async function createStoredSession(
       thinkingEffort: DEFAULT_THINKING_EFFORT,
       systemPrompt: '',
       sandbox: false,
-      roBindPaths: [],
+      writablePaths: ['/tmp', '/var/tmp'],
       toolsEnabled: true,
     },
     usage: emptySessionUsage(),
@@ -340,7 +341,7 @@ function defaultConfig(provider: ProviderId = getDefaultProviderId()): SessionCo
     thinkingEffort: DEFAULT_THINKING_EFFORT,
     systemPrompt: '',
     sandbox: false,
-    roBindPaths: [],
+    writablePaths: ['/tmp', '/var/tmp'],
     toolsEnabled: true,
   };
 }
@@ -560,13 +561,14 @@ function normalizeStoredSession(parsed: { [key: string]: unknown }): {
     systemPrompt: typeof rawConfig.systemPrompt === 'string' ? rawConfig.systemPrompt : '',
     // Older sessions predate the flag; absent means off.
     sandbox: rawConfig.sandbox === true,
-    // Sessions predating path storage have no list (the old
-    // ZEN_AGENT_SANDBOX_RO_BIND env source is gone); absent means none.
-    roBindPaths: Array.isArray(rawConfig.roBindPaths)
-      ? (rawConfig.roBindPaths as unknown[]).filter(
+    // The sandbox is deny-by-default (root read-only): writable paths are an
+    // explicit allowlist. Absent or a legacy `roBindPaths` list (the old
+    // `/robind` semantics, gone) fall back to the default scratch paths.
+    writablePaths: Array.isArray(rawConfig.writablePaths)
+      ? (rawConfig.writablePaths as unknown[]).filter(
           (p): p is string => typeof p === 'string' && p.trim() !== '',
         )
-      : [],
+      : ['/tmp', '/var/tmp'],
     // Older sessions predate the flag; absent means enabled (the default).
     toolsEnabled: rawConfig.toolsEnabled !== false,
   };
