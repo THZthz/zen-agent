@@ -113,32 +113,34 @@ function blockedBinaryBinds(): string[] {
 /**
  * Default bubblewrap sandbox used for bash tool calls when
  * `ZEN_AGENT_SANDBOX=1`:
- *   --bind / /           rootfs behaves exactly as on the host
- *   --ro-bind /mnt /mnt  /mnt becomes read-only (reads OK, writes fail)
- *   --dev /dev           fresh devtmpfs (host /dev is unusable in a userns)
- *   --ro-bind shim ...   `rm`, `grep` and `find` are replaced by a shim
- *                        that refuses to run (use trash/rg/fdfind instead)
+ *   --ro-bind / /   the whole rootfs becomes READ-ONLY: the agent can only
+ *                   write to paths explicitly listed in `writablePaths`
+ *   --dev /dev      fresh devtmpfs (host /dev is unusable in a userns)
+ *   --bind path     each writable path is bind-mounted read-write
+ *   --ro-bind shim  `rm`, `grep` and `find` are replaced by a shim that
+ *                   refuses to run (use trash/rg/fdfind instead)
  *
  * The sandboxed process runs as the invoking uid in a new user+mount
- * namespace, so it cannot remount /mnt read-write or escape the namespace.
- * Shadowing the binaries only affects processes inside the namespace:
- * scripts on the host keep using the real `rm`/`grep`/`find`. Override the
- * entire bwrap command with `ZEN_AGENT_SANDBOX_CMD` if a different policy
- * is needed (e.g. `--ro-bind / /` plus explicit writable binds). The
- * session's extra `/robind` paths are added as `--ro-bind <path> <path>`
- * (see `bashSandboxPrefix`).
+ * namespace, so it cannot remount anything read-write or escape the
+ * namespace. Shadowing the binaries only affects processes inside the
+ * namespace: scripts on the host keep using the real `rm`/`grep`/`find`.
+ * Override the entire bwrap command with `ZEN_AGENT_SANDBOX_CMD` if a
+ * different policy is needed. The session's `/writable` paths are added as
+ * `--bind <path> <path>` (see `bashSandboxPrefix`); a missing path fails
+ * the whole bwrap invocation loudly (`Can't find source path`) rather than
+ * silently dropping the path.
  */
-function defaultBashSandbox(roBindPaths: string[]): string {
-  const roBindArgs = roBindPaths.map((p) => `--ro-bind ${p} ${p}`);
+function defaultBashSandbox(writablePaths: string[]): string {
+  const bindArgs = writablePaths.map((p) => `--bind ${p} ${p}`);
   return [
-    `bwrap --die-with-parent --bind / / --ro-bind /mnt /mnt --dev /dev`,
+    `bwrap --die-with-parent --ro-bind / / --dev /dev`,
     `--bind /dev/pts /dev/pts --tmpfs /dev/shm`,
-    ...roBindArgs,
+    ...bindArgs,
     ...blockedBinaryBinds(),
   ].join(' ');
 }
 
-export function bashSandboxPrefix(enabled: boolean, roBindPaths: string[]): string {
+export function bashSandboxPrefix(enabled: boolean, writablePaths: string[]): string {
   if (!enabled) {
     return '';
   }
@@ -146,7 +148,7 @@ export function bashSandboxPrefix(enabled: boolean, roBindPaths: string[]): stri
   if (custom !== undefined && custom.trim() !== '') {
     return `${custom.trim()} `;
   }
-  return `${defaultBashSandbox(roBindPaths)} `;
+  return `${defaultBashSandbox(writablePaths)} `;
 }
 
 /**
