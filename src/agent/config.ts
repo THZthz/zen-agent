@@ -161,10 +161,10 @@ function toBase62(bigintNum: bigint): string {
   return result;
 }
 
-export function newMessageId(): string {
+export function newShortId(prefix: string): string {
   const id = sonyflake.nextId(); // Returns a BigInt or stringified BigInt
   const bigintId = BigInt(id);
-  return `msg_${toBase62(bigintId)}`; // Example: msg_7zK4X9p2Q
+  return `${prefix}${toBase62(bigintId)}`; // Example: msg_7zK4X9p2Q
 }
 
 /**

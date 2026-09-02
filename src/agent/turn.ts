@@ -1,6 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk';
 import type { ActiveSession, Constructor, ZenAgentCore } from './core.js';
-import { MAX_TURN_STEPS, newMessageId } from './config.js';
+import { MAX_TURN_STEPS, newShortId } from './config.js';
 import { buildSystemPrompt, ENVIRONMENT_MESSAGE_NAME } from '../session/system-prompt.js';
 import { runLlmStep } from '../providers/index.js';
 import type { AssistantMessage } from '../session/storage.js';
@@ -94,7 +94,7 @@ export function withTurnExecution<
             return finalize('cancelled');
           }
 
-          const assistantMessageId = newMessageId();
+          const assistantMessageId = newShortId('msg_');
           // Captured once per step: the system prompt is part of the byte-stable
           // prefix the provider's context cache keys on, so it must be identical
           // for the request, the transcript, and the cache diagnostics.

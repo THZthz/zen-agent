@@ -1,6 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk';
 import type { ActiveSession, Constructor, ZenAgentCore } from './core.js';
-import { newMessageId } from './config.js';
+import { newShortId } from './config.js';
 import {
   costFromUsage,
   fetchBalanceSnapshot,
@@ -248,7 +248,7 @@ export function withTurnReporting<T extends Constructor<ZenAgentCore>>(
       ].join('\n');
       await this.emit(active, cx, {
         sessionUpdate: 'agent_message_chunk',
-        messageId: newMessageId(),
+        messageId: newShortId('msg_'),
         content: { type: 'text', text },
       });
       // Cross-check the locally estimated cost against the provider's actual

@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { LlmToolCall } from '../providers/llm-client.js';
 import { dbFilePath, insertTerminalCall } from '../session/db.js';
-import { newMessageId } from '../agent/config.js';
+import { newShortId } from '../agent/config.js';
 import { formatMs } from '../agent/stats.js';
 import {
   bashSandboxPrefix,
@@ -43,7 +43,7 @@ export async function executeBashToolCall(
   // database row that stores the same command + full output. The files stay
   // for direct inspection (the model re-reads them after truncation); /tmp
   // clearing on reboot is fine because the database row is the durable copy.
-  const terminalCallId = newMessageId();
+  const terminalCallId = newShortId('term_');
   const terminalDir = TERMINAL_ARTIFACTS_DIRECTORY;
   const logPath = join(terminalDir, `${terminalCallId}.log`);
   const commandScriptPath = join(terminalDir, `${terminalCallId}.sh`);
