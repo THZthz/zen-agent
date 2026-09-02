@@ -115,10 +115,10 @@ export const AVAILABLE_COMMANDS: acp.AvailableCommand[] = [
     },
   },
   {
-    name: 'robind',
-    description: 'Set read-only bind mounts for additional paths in bash sandbox',
+    name: 'writable',
+    description: 'Manage paths writable inside the bash sandbox (everything else is read-only)',
     input: {
-      hint: '<path>[,<path>...] | clear | (empty for status)',
+      hint: 'add <path>[,<path>...] | del <path>[,<path>...] | clear | (empty for status)',
     },
   },
   {

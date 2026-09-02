@@ -6,7 +6,7 @@ import { buildSystemPrompt } from '../session/system-prompt.js';
 import { buildSkillInvocationPrompt, listSkills } from '../session/skills.js';
 
 /**
- * Built-in slash-command handlers (`/prompt`, `/sandbox`, `/robind`, `/tools` and
+ * Built-in slash-command handlers (`/prompt`, `/sandbox`, `/writable`, `/tools` and
  * installed-skill invocation) — see the ownership map in agent.ts. The
  * prompt entry point (agent-prompt.ts) owns parsing, the known-command gate
  * and every persistence boundary around a command; this module owns what a
@@ -45,9 +45,9 @@ export function withAgentCommands<T extends Constructor<ZenAgentCore & TurnSurfa
           return {
             stopReason: await this.handleSandboxSlashCommand(active, cx, command.argument),
           };
-        case 'robind':
+        case 'writable':
           return {
-            stopReason: await this.handleROBindSlashCommand(active, cx, command.argument),
+            stopReason: await this.handleWritableSlashCommand(active, cx, command.argument),
           };
         case 'tools':
           return {
@@ -241,96 +241,122 @@ Usage: /sandbox on | off`,
     }
 
     /**
-     * `/robind` manages the session's additional read-only bind mounts for
-     * the bash sandbox. With no argument it prints the current status;
-     * `/robind clear` removes every path; any other argument is a
-     * comma-separated path list that replaces the whole set (entries are
-     * trimmed and empty ones dropped). The list is persisted per session in
-     * `config.roBindPaths` and applied as `--ro-bind <path> <path>` inside
-     * the sandbox whenever it is non-empty.
+     * `/writable` manages the paths the bash sandbox keeps writable. The
+     * sandbox is deny-by-default: the whole rootfs is mounted read-only and
+     * only these paths are bind-mounted read-write. With no argument (or
+     * `status`) it prints the current list; `add <path>[,<path>...]` appends
+     * paths (trimmed, deduped, empty entries dropped); `del <path>[,<path>...]`
+     * removes them (missing entries are ignored); `clear` empties the list.
+     * The list is persisted per session in `config.writablePaths` and applied
+     * as `--bind <path> <path>` inside the sandbox.
      */
-    private async handleROBindSlashCommand(
+    private async handleWritableSlashCommand(
       active: ActiveSession,
       cx: acp.AgentContext,
       argument: string,
     ): Promise<acp.StopReason> {
-      const normalized = argument.trim().toLowerCase();
-      const usage = 'Usage: /robind <path>[,<path>...] | clear';
+      const usage =
+        'Usage: /writable [add <path>[,<path>...] | del <path>[,<path>...] | clear]';
 
-      if (normalized === '' || normalized === 'status') {
-        const paths = active.session.config.roBindPaths;
-        const state = paths.length > 0 ? 'ON' : 'OFF';
-        const source = paths.length > 0 ? paths.join(', ') : 'no paths configured';
+      if (argument.trim() === '' || argument.trim().toLowerCase() === 'status') {
+        const paths = active.session.config.writablePaths;
+        const source =
+          paths.length > 0 ? paths.join(', ') : 'no paths (everything is read-only)';
         await this.emit(active, cx, {
           sessionUpdate: 'agent_message_chunk',
           content: {
             type: 'text',
-            text: `Read-only binds: ${state} (${source})\n${usage}`,
+            text: `Writable paths: ${source}\n${usage}`,
           },
         });
         return 'end_turn';
       }
 
-      // The old `on|off` syntax toggled a flag; those words are now plain
-      // (wrong) path lists, so refuse them with the new usage instead of
-      // silently binding a directory literally named "on"/"off".
-      if (normalized === 'on' || normalized === 'off') {
-        await this.emit(active, cx, {
-          sessionUpdate: 'agent_message_chunk',
-          content: {
-            type: 'text',
-            text: `Unknown /robind argument: ${argument}\n${usage}`,
-          },
-        });
-        return 'end_turn';
-      }
+      const [verbRaw, ...rest] = argument.trim().split(/\s+/);
+      const verb = verbRaw!.toLowerCase();
+      const paths = rest
+        .join(' ')
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
 
-      if (normalized === 'clear') {
-        active.session.config.roBindPaths = [];
+      if (verb === 'clear') {
+        active.session.config.writablePaths = [];
         await this.save(active);
-        void this.logRuntime(active.session.cwd, 'info', 'read-only binds cleared', {
+        void this.logRuntime(active.session.cwd, 'info', 'writable paths cleared', {
           sessionId: active.session.sessionId,
         });
         await this.emit(active, cx, {
           sessionUpdate: 'agent_message_chunk',
           content: {
             type: 'text',
-            text: 'Read-only bind mounts cleared for this session.',
+            text: 'Writable paths cleared for this session (everything is read-only).',
           },
         });
         return 'end_turn';
       }
 
-      const paths = argument
-        .split(',')
-        .map((p) => p.trim())
-        .filter(Boolean);
-      if (paths.length === 0) {
+      if (verb === 'add') {
+        if (paths.length === 0) {
+          await this.emit(active, cx, {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'text',
+              text: `No valid paths in: ${argument}\n${usage}`,
+            },
+          });
+          return 'end_turn';
+        }
+        const existing = active.session.config.writablePaths;
+        for (const p of paths) {
+          if (!existing.includes(p)) existing.push(p);
+        }
+        await this.save(active);
+        void this.logRuntime(active.session.cwd, 'info', 'writable paths added', {
+          sessionId: active.session.sessionId,
+          paths,
+        });
         await this.emit(active, cx, {
           sessionUpdate: 'agent_message_chunk',
           content: {
             type: 'text',
-            text: `No valid paths in: ${argument}\n${usage}`,
+            text: `Writable paths added: ${paths.join(', ')}\nWritable paths: ${existing.join(', ')}`,
           },
         });
         return 'end_turn';
       }
 
-      active.session.config.roBindPaths = paths;
-      await this.save(active);
-      void this.logRuntime(active.session.cwd, 'info', 'read-only binds set', {
-        sessionId: active.session.sessionId,
-        paths,
-      });
+      if (verb === 'del') {
+        const existing = active.session.config.writablePaths;
+        const removed = paths.filter((p) => existing.includes(p));
+        active.session.config.writablePaths = existing.filter((p) => !paths.includes(p));
+        if (removed.length > 0) {
+          await this.save(active);
+          void this.logRuntime(active.session.cwd, 'info', 'writable paths removed', {
+            sessionId: active.session.sessionId,
+            paths: removed,
+          });
+        }
+        await this.emit(active, cx, {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text:
+              removed.length > 0
+                ? `Writable paths removed: ${removed.join(', ')}`
+                : `No writable paths matched: ${paths.join(', ')}`,
+          },
+        });
+        return 'end_turn';
+      }
 
       await this.emit(active, cx, {
         sessionUpdate: 'agent_message_chunk',
         content: {
           type: 'text',
-          text: `Read-only bind mounts set for this session: ${paths.join(', ')}`,
+          text: `Unknown /writable argument: ${argument}\n${usage}`,
         },
       });
-
       return 'end_turn';
     }
 
