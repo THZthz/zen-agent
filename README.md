@@ -221,7 +221,7 @@ Sessions on models that declare `image`/`audio` in their `modalities` (or whose 
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/prompt <text>`           | Replace the session's system prompt (no argument: print the current one); locked after the first user message                                                                                                         |
 | `/sandbox on\|off`         | Toggle the per-session bash sandbox (no argument: show status)                                                                                                                                                        |
-| `/robind <path>[,<path>…]` | Replace the session's read-only bind mounts in the bash sandbox (no argument: show status); `/robind clear` removes them all                                                                                          |
+| `/writable`                  | Show the session's writable paths in the bash sandbox (everything else is read-only); `add <path>[,<path>…]` adds writable paths, `del <path>[,<path>…]` removes them, `clear` removes all                                                                  |
 | `/tools on\|off`           | Enable/disable all tools (`bash`, `read_media`) for the session (no argument: show status); locked after the first user message. `off` makes the session chat-only (environment messages dropped); `on` restores them |
 | `/<skill-name> <input>`    | Invoke an installed Agent Skill                                                                                                                                                                                       |
 
@@ -238,7 +238,7 @@ By default no skill information reaches the model; set `ZEN_AGENT_SHOW_SKILLS_CA
 
 ## Sandboxing
 
-The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the agent inside `bwrap` with `/mnt` (Windows drives) mounted read-only. The bash tool runs in a PTY owned by Zed on the host, so it needs its own sandbox: set `ZEN_AGENT_SANDBOX=1` (or run `/sandbox on`) to wrap every bash call in `bwrap` with the same `/mnt` policy. Inside that sandbox `rm`, `grep` and `find` are shadowed by the package's `bin/zen-agent-sandbox-block.sh` shim suggesting `trash`, `rg` and `fdfind`; the host is unaffected. Extra read-only paths can be added per session with `/robind <path>[,<path>…]` (the list replaces the previous one; `/robind clear` empties it).
+The bundled `bin/zen-agent-bwrap.sh` (inside the installed package) runs the agent inside `bwrap` with `/mnt` (Windows drives) mounted read-only. The bash tool runs in a PTY owned by Zed on the host, so it needs its own sandbox: set `ZEN_AGENT_SANDBOX=1` (or run `/sandbox on`) to wrap every bash call in `bwrap`. The sandbox is deny-by-default: the whole rootfs is mounted read-only and only the session's writable paths (default `/tmp` and `/var/tmp`) are bind-mounted read-write; manage them per session with `/writable add|del|clear`. Inside that sandbox `rm`, `grep` and `find` are shadowed by the package's `bin/zen-agent-sandbox-block.sh` shim suggesting `trash`, `rg` and `fdfind`; the host is unaffected.
 
 ## Environment Variables
 

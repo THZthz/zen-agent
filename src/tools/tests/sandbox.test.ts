@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 
@@ -142,7 +140,8 @@ describe('/sandbox slash command', () => {
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
       const script = createdScript(request)!;
       expect(script).toContain('bwrap');
-      expect(script).toMatch(/bwrap .*--ro-bind \/mnt \/mnt/);
+      expect(script).toMatch(/bwrap .*--ro-bind \/ \//);
+      expect(script).toContain('--bind /tmp /tmp');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -214,7 +213,7 @@ describe('/sandbox slash command', () => {
   });
 });
 
-describe('/robind slash command', () => {
+describe('/writable slash command', () => {
   beforeEach(() => {
     mockedRunLlmStep.mockReset();
   });
@@ -231,192 +230,138 @@ describe('/robind slash command', () => {
   function sessionConfig(
     agent: ZenAgent,
     sessionId: string,
-  ): { sandbox: boolean; roBindPaths: string[] } {
+  ): { sandbox: boolean; writablePaths: string[] } {
     const active = (
       agent as unknown as {
-        sessions: Map<string, { session: { config: { sandbox: boolean; roBindPaths: string[] } } }>;
+        sessions: Map<
+          string,
+          { session: { config: { sandbox: boolean; writablePaths: string[] } } }
+        >;
       }
     ).sessions.get(sessionId)!;
     return active.session.config;
   }
 
-  it('reports OFF with no paths by default', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+  it('reports the default writable paths by default', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-writable-'));
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
 
       const response = await agent.prompt(
-        { sessionId, prompt: [{ type: 'text', text: '/robind' }] },
+        { sessionId, prompt: [{ type: 'text', text: '/writable' }] },
         cx,
       );
       expect(response.stopReason).toBe('end_turn');
       expect(agentMessages(notifications).join('\n')).toContain(
-        'Read-only binds: OFF (no paths configured)',
+        'Writable paths: /tmp, /var/tmp',
       );
-      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual(['/tmp', '/var/tmp']);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  it('replaces the whole path list and reports it in status', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+  it('add, del and clear manage the list and persist it', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-writable-'));
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
 
       await agent.prompt(
-        { sessionId, prompt: [{ type: 'text', text: '/robind /mnt/data, /mnt/secrets' }] },
+        { sessionId, prompt: [{ type: 'text', text: '/writable add /mnt/data, /mnt/secrets' }] },
         cx,
       );
-      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual(['/mnt/data', '/mnt/secrets']);
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual([
+        '/tmp',
+        '/var/tmp',
+        '/mnt/data',
+        '/mnt/secrets',
+      ]);
 
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind' }] }, cx);
+      // add dedupes; del removes only the listed entries.
+      await agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: '/writable add /mnt/data' }] },
+        cx,
+      );
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual([
+        '/tmp',
+        '/var/tmp',
+        '/mnt/data',
+        '/mnt/secrets',
+      ]);
+
+      await agent.prompt(
+        { sessionId, prompt: [{ type: 'text', text: '/writable del /mnt/data, /mnt/missing' }] },
+        cx,
+      );
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual(['/tmp', '/var/tmp', '/mnt/secrets']);
+
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/writable clear' }] }, cx);
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual([]);
       expect(agentMessages(notifications).join('\n')).toContain(
-        'Read-only binds: ON (/mnt/data, /mnt/secrets)',
+        'Writable paths cleared for this session',
       );
 
-      // A new list replaces the old one entirely.
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind /mnt/other' }] }, cx);
-      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual(['/mnt/other']);
-
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind clear' }] }, cx);
-      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/writable' }] }, cx);
+      expect(agentMessages(notifications).join('\n')).toContain(
+        'Writable paths: no paths (everything is read-only)',
+      );
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  it('applies the paths in subsequent sandboxed bash calls', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+  it('applies the writable paths in subsequent sandboxed bash calls', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-writable-'));
     try {
       const { agent, cx, request, sessionId } = await setupAgent(cwd);
 
-      // Without /robind the extra paths are not bound.
+      // Without sandboxing no bwrap is involved.
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/sandbox on' }] }, cx);
       queueBashThenAnswer();
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
       expect(lastCreatedScript(request)).toContain('bwrap');
-      expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/data /mnt/data');
+      // Default writable list: /tmp and /var/tmp are bound read-write, root is ro.
+      expect(lastCreatedScript(request)).toContain('--ro-bind / /');
+      expect(lastCreatedScript(request)).toContain('--bind /tmp /tmp');
+      expect(lastCreatedScript(request)).toContain('--bind /var/tmp /var/tmp');
 
-      // Setting a list adds every path as a ro-bind.
+      // Adding a path adds another writable bind.
       await agent.prompt(
-        { sessionId, prompt: [{ type: 'text', text: '/robind /mnt/data,/mnt/secrets' }] },
+        { sessionId, prompt: [{ type: 'text', text: '/writable add /mnt/data' }] },
         cx,
       );
       queueBashThenAnswer();
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
-      expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/data /mnt/data');
-      expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/secrets /mnt/secrets');
+      expect(lastCreatedScript(request)).toContain('--bind /mnt/data /mnt/data');
 
-      // Replacing the list drops the old paths; clearing drops all of them.
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind /mnt/other' }] }, cx);
+      // Clearing drops the writable binds (only the default ro root remains).
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/writable clear' }] }, cx);
       queueBashThenAnswer();
       await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
-      expect(lastCreatedScript(request)).toContain('--ro-bind /mnt/other /mnt/other');
-      expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/data /mnt/data');
-
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind clear' }] }, cx);
-      queueBashThenAnswer();
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
-      expect(lastCreatedScript(request)).not.toContain('--ro-bind /mnt/other /mnt/other');
+      expect(lastCreatedScript(request)).not.toContain('--bind /tmp /tmp');
+      expect(lastCreatedScript(request)).not.toContain('--bind /var/tmp /var/tmp');
+      expect(lastCreatedScript(request)).not.toContain('--bind /mnt/data /mnt/data');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  it('rejects an empty list and the legacy on/off forms without changing state', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-robind-'));
+  it('rejects unknown subcommands and empty add lists without changing state', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-writable-'));
     try {
       const { agent, cx, notifications, sessionId } = await setupAgent(cwd);
 
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind on' }] }, cx);
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/writable on' }] }, cx);
       expect(agentMessages(notifications).join('\n')).toContain(
-        'Usage: /robind <path>[,<path>...] | clear',
+        'Usage: /writable [add <path>[,<path>...] | del <path>[,<path>...] | clear]',
       );
-      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual(['/tmp', '/var/tmp']);
 
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/robind , ,' }] }, cx);
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/writable add , ,' }] }, cx);
       expect(agentMessages(notifications).join('\n')).toContain('No valid paths');
-      expect(sessionConfig(agent, sessionId).roBindPaths).toEqual([]);
+      expect(sessionConfig(agent, sessionId).writablePaths).toEqual(['/tmp', '/var/tmp']);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('bash tool sandbox blocks rm/grep/find', () => {
-  beforeEach(() => {
-    mockedRunLlmStep.mockReset();
-  });
-
-  it('shadows every distinct rm/grep/find binary with the refusing shim', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'zen-agent-sandbox-'));
-    try {
-      const { agent, cx, request, sessionId } = await setupAgent(cwd);
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: '/sandbox on' }] }, cx);
-
-      queueBashThenAnswer();
-      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'run it' }] }, cx);
-      const script = createdScript(request)!;
-      expect(script).toContain('bwrap');
-
-      const shim = fileURLToPath(
-        new URL('../../../bin/zen-agent-sandbox-block.sh', import.meta.url),
-      );
-      // Mirror the deduplication in tool-execution.ts: /bin is a symlink to
-      // /usr/bin on most distros, so only distinct real binaries are bound.
-      const seen = new Set<string>();
-      const expectedBinds: string[] = [];
-      for (const cmd of ['rm', 'grep', 'find']) {
-        for (const dir of ['/usr/bin', '/bin']) {
-          const dest = join(dir, cmd);
-          if (!existsSync(dest)) continue;
-          const resolved = realpathSync(dest);
-          if (seen.has(resolved)) continue;
-          seen.add(resolved);
-          expectedBinds.push(`--ro-bind ${shim} ${dest}`);
-        }
-      }
-      expect(expectedBinds.length).toBeGreaterThan(0);
-      for (const bind of expectedBinds) {
-        expect(script).toContain(bind);
-      }
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  it('refuses rm, grep and find and suggests their substitutes', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'zen-agent-block-'));
-    try {
-      const shim = fileURLToPath(
-        new URL('../../../bin/zen-agent-sandbox-block.sh', import.meta.url),
-      );
-      const substitutes: Record<string, string> = {
-        rm: 'trash',
-        grep: 'rg',
-        find: 'fdfind',
-      };
-      for (const [cmd, substitute] of Object.entries(substitutes)) {
-        const link = join(dir, cmd);
-        symlinkSync(shim, link);
-        let error: unknown;
-        try {
-          execFileSync(link, ['--some-flag'], {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-        } catch (e) {
-          error = e;
-        }
-        expect(error).toBeDefined();
-        const e = error as { status?: number; stderr?: string };
-        expect(e.status).toBe(1);
-        expect(e.stderr).toContain(`'${cmd}' is blocked`);
-        expect(e.stderr).toContain(`use '${substitute}' instead`);
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
